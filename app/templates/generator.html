@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Generate Resume{% endblock %}
+{% block page_title %}Generate Resume{% endblock %}
+{% block page_subtitle %}Paste a JD URL or text — get an ATS-optimized .docx{% endblock %}
+
+{% block content %}
+<div class="gen-layout">
+
+  <!-- Left: Input Form -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <div class="card">
+      <div class="card-title">Job Description</div>
+
+      <!-- Toggle URL / Text -->
+      <div class="input-toggle" id="jd-toggle">
+        <button class="toggle-btn active" onclick="setMode('url')">🔗 URL</button>
+        <button class="toggle-btn"        onclick="setMode('text')">📝 Paste Text</button>
+      </div>
+
+      <!-- URL input -->
+      <div id="url-input-wrap">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Job Posting URL</label>
+          <input id="jd-url" class="form-input" type="url" placeholder="https://boards.greenhouse.io/company/jobs/12345">
+          <div class="form-hint">Works with Greenhouse, Lever, Indeed, Naukri, Wellfound + more. LinkedIn may be partial.</div>
+        </div>
+      </div>
+
+      <!-- Text input (hidden by default) -->
+      <div id="text-input-wrap" style="display:none">
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Job Description Text</label>
+          <textarea id="jd-text" class="form-textarea" style="min-height:180px" placeholder="Paste the full job description here…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Emphasis Keywords -->
+    <div class="card">
+      <div class="card-title">Emphasis Keywords <span style="font-size:12px;font-weight:400;color:var(--text-3)">(optional)</span></div>
+      <p class="text-sm text-muted mb-2">Type a skill and press Enter to tell the AI what to prioritize.</p>
+      <div class="emphasis-tags" id="tags-container"></div>
+      <input id="tag-input" class="form-input mt-2" placeholder="e.g. FastAPI, AWS, distributed systems…" style="margin-top:10px">
+    </div>
+
+    <!-- Generate Button -->
+    <button id="gen-btn" class="btn btn-primary btn-lg" onclick="generateResume()" style="align-self:flex-start">
+      Generate Resume
+    </button>
+  </div>
+
+  <!-- Right: Progress + Result Panel -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Progress Steps Card -->
+    <div class="card" id="progress-card" style="display:none">
+      <div class="card-title">Generating…</div>
+      <div class="progress-steps">
+        <div class="progress-step" id="step-scrape">
+          <span class="step-icon">🌐</span> Scraping job description
+        </div>
+        <div class="progress-step" id="step-parse">
+          <span class="step-icon">🤖</span> AI analyzing JD
+        </div>
+        <div class="progress-step" id="step-profile">
+          <span class="step-icon">📦</span> Fetching your profile
+        </div>
+        <div class="progress-step" id="step-tailor">
+          <span class="step-icon">✍️</span> Tailoring resume content
+        </div>
+        <div class="progress-step" id="step-score">
+          <span class="step-icon">📊</span> Scoring for ATS
+        </div>
+        <div class="progress-step" id="step-docx">
+          <span class="step-icon">📝</span> Building .docx file
+        </div>
+      </div>
+    </div>
+
+    <!-- ATS Result Card -->
+    <div class="card ats-result" id="result-card" style="display:none">
+      <div class="card-title flex-between">
+        ATS Score
+        <a id="download-btn" href="#" class="btn btn-primary btn-sm">↓ Download .docx</a>
+      </div>
+
+      <div class="score-circle-wrap">
+        <div class="score-big" id="score-big">—</div>
+        <div class="score-label">/ 100 ATS Score</div>
+        <div id="result-meta" style="font-size:13px;color:var(--text-2);margin-top:6px;text-align:center"></div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="score-breakdown">
+        <div class="score-row">
+          <span class="score-row-label">Keyword Match <span style="font-size:11px;color:var(--text-3)">(40%)</span></span>
+          <div class="score-row-bar"><div class="score-bar-wrap"><div class="score-bar-fill" id="bar-kw" style="width:0%"></div></div></div>
+          <span class="score-row-val" id="val-kw">—</span>
+        </div>
+        <div class="score-row">
+          <span class="score-row-label">Skills <span style="font-size:11px;color:var(--text-3)">(30%)</span></span>
+          <div class="score-row-bar"><div class="score-bar-wrap"><div class="score-bar-fill" id="bar-sk" style="width:0%"></div></div></div>
+          <span class="score-row-val" id="val-sk">—</span>
+        </div>
+        <div class="score-row">
+          <span class="score-row-label">Action Verbs <span style="font-size:11px;color:var(--text-3)">(15%)</span></span>
+          <div class="score-row-bar"><div class="score-bar-wrap"><div class="score-bar-fill" id="bar-av" style="width:0%"></div></div></div>
+          <span class="score-row-val" id="val-av">—</span>
+        </div>
+        <div class="score-row">
+          <span class="score-row-label">Format <span style="font-size:11px;color:var(--text-3)">(15%)</span></span>
+          <div class="score-row-bar"><div class="score-bar-wrap"><div class="score-bar-fill" id="bar-fm" style="width:0%"></div></div></div>
+          <span class="score-row-val" id="val-fm">—</span>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div id="missing-kw-wrap" style="display:none">
+        <div class="text-sm" style="font-weight:600;color:var(--text-2);margin-bottom:6px">⚠ Missing keywords</div>
+        <div class="chip-list" id="missing-kw"></div>
+        <div style="margin-top:12px"></div>
+      </div>
+
+      <div id="matched-kw-wrap" style="display:none">
+        <div class="text-sm" style="font-weight:600;color:var(--text-2);margin-bottom:6px">✓ Matched keywords</div>
+        <div class="chip-list" id="matched-kw"></div>
+        <div style="margin-top:12px"></div>
+      </div>
+
+      <div id="suggestions-wrap" style="display:none">
+        <div class="text-sm" style="font-weight:600;color:var(--text-2);margin-bottom:6px">💡 Suggestions</div>
+        <div id="suggestions" style="display:flex;flex-direction:column;gap:5px"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let inputMode = 'url';
+let emphasisTags = [];
+
+function setMode(mode) {
+  inputMode = mode;
+  const btns = document.querySelectorAll('#jd-toggle .toggle-btn');
+  btns.forEach((b, i) => b.classList.toggle('active', (i===0 && mode==='url') || (i===1 && mode==='text')));
+  document.getElementById('url-input-wrap').style.display  = mode === 'url'  ? '' : 'none';
+  document.getElementById('text-input-wrap').style.display = mode === 'text' ? '' : 'none';
+}
+
+// Tag input
+document.getElementById('tag-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    const val = e.target.value.trim().replace(/,$/, '');
+    if (val && !emphasisTags.includes(val)) {
+      emphasisTags.push(val);
+      renderTags();
+    }
+    e.target.value = '';
+  }
+});
+
+function renderTags() {
+  document.getElementById('tags-container').innerHTML =
+    emphasisTags.map((t, i) => `
+      <span class="tag">${t}
+        <button class="tag-remove" onclick="removeTag(${i})">×</button>
+      </span>`).join('');
+}
+
+function removeTag(i) {
+  emphasisTags.splice(i, 1);
+  renderTags();
+}
+
+// Progress step helpers
+const steps = ['step-scrape','step-parse','step-profile','step-tailor','step-score','step-docx'];
+function setStep(id, state) {  // state: 'active' | 'done' | 'error'
+  const el = document.getElementById(id);
+  el.classList.remove('active','done','error');
+  el.classList.add(state);
+  if (state === 'active') {
+    el.querySelector('.step-icon').innerHTML = '<span class="step-spinner"></span>';
+  } else if (state === 'done') {
+    el.querySelector('.step-icon').textContent = '✓';
+  } else if (state === 'error') {
+    el.querySelector('.step-icon').textContent = '✗';
+  }
+}
+
+function scoreClass(s) {
+  return s >= 75 ? 'high' : s >= 50 ? 'medium' : 'low';
+}
+
+async function generateResume() {
+  const btn = document.getElementById('gen-btn');
+  const url = document.getElementById('jd-url').value.trim();
+  const text = document.getElementById('jd-text').value.trim();
+
+  if (inputMode === 'url' && !url) { showToast('Please enter a job posting URL', 'error'); return; }
+  if (inputMode === 'text' && !text) { showToast('Please paste the job description', 'error'); return; }
+
+  // Reset UI
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Generating…';
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('progress-card').style.display = '';
+
+  // Reset all steps
+  const stepIcons = { 'step-scrape':'🌐','step-parse':'🤖','step-profile':'📦','step-tailor':'✍️','step-score':'📊','step-docx':'📝' };
+  steps.forEach(s => {
+    const el = document.getElementById(s);
+    el.className = 'progress-step';
+    el.querySelector('.step-icon').textContent = stepIcons[s];
+  });
+
+  // Simulate step-by-step (API is single call; we animate while waiting)
+  const urlMode = inputMode === 'url';
+  if (!urlMode) {
+    // skip scrape step for text mode
+    setStep('step-scrape', 'done');
+  } else {
+    setStep('step-scrape', 'active');
+  }
+
+  // Animate remaining steps while we wait
+  const stepSeq = urlMode
+    ? ['step-scrape','step-parse','step-profile','step-tailor','step-score','step-docx']
+    : ['step-parse','step-profile','step-tailor','step-score','step-docx'];
+
+  let stepIdx = 0;
+  setStep(stepSeq[stepIdx], 'active');
+
+  const advanceStep = () => {
+    if (stepIdx < stepSeq.length - 1) {
+      setStep(stepSeq[stepIdx], 'done');
+      stepIdx++;
+      setStep(stepSeq[stepIdx], 'active');
+    }
+  };
+
+  // Advance steps on a delay to give visual feedback
+  const stepTimers = [1800, 3500, 5000, 8000, 12000].map((ms, i) =>
+    setTimeout(advanceStep, ms)
+  );
+
+  try {
+    const body = { emphasis: emphasisTags.length ? emphasisTags : null };
+    if (inputMode === 'url') body.jd_url = url;
+    else body.jd_text = text;
+
+    const result = await apiFetch('/api/generate-resume', { method: 'POST', body: JSON.stringify(body) });
+
+    // Clear timers and mark all done
+    stepTimers.forEach(t => clearTimeout(t));
+    steps.forEach(s => setStep(s, 'done'));
+
+    // Show result
+    setTimeout(() => showResult(result), 300);
+    showToast('Resume generated successfully!', 'success');
+
+  } catch (err) {
+    stepTimers.forEach(t => clearTimeout(t));
+    setStep(stepSeq[stepIdx], 'error');
+    showToast(err.message || 'Generation failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Generate Resume';
+  }
+}
+
+function showResult(r) {
+  const s = r.ats_score || 0;
+  const bd = r.ats_breakdown || {};
+  const cls = scoreClass(s);
+
+  document.getElementById('score-big').textContent = s.toFixed(1);
+  document.getElementById('score-big').className = `score-big ${cls}`;
+  document.getElementById('result-meta').textContent = `${r.job_title || ''} @ ${r.company || ''}`;
+  document.getElementById('download-btn').href = r.download_url;
+
+  const setBar = (barId, valId, val) => {
+    const c = scoreClass(val);
+    document.getElementById(barId).style.width = val + '%';
+    document.getElementById(barId).className = `score-bar-fill ${c}`;
+    document.getElementById(valId).textContent = val.toFixed(0);
+  };
+  setBar('bar-kw', 'val-kw', bd.keyword_score || 0);
+  setBar('bar-sk', 'val-sk', bd.skills_score || 0);
+  setBar('bar-av', 'val-av', bd.action_verb_score || 0);
+  setBar('bar-fm', 'val-fm', bd.format_score || 0);
+
+  const missing = bd.missing_keywords || [];
+  const matched = bd.matched_keywords || [];
+  const sugg    = bd.suggestions || [];
+
+  if (missing.length) {
+    document.getElementById('missing-kw-wrap').style.display = '';
+    document.getElementById('missing-kw').innerHTML = missing.slice(0,15).map(k=>`<span class="chip miss">${k}</span>`).join('');
+  }
+  if (matched.length) {
+    document.getElementById('matched-kw-wrap').style.display = '';
+    document.getElementById('matched-kw').innerHTML = matched.slice(0,15).map(k=>`<span class="chip hit">${k}</span>`).join('');
+  }
+  if (sugg.length) {
+    document.getElementById('suggestions-wrap').style.display = '';
+    document.getElementById('suggestions').innerHTML = sugg.map(s=>`<div class="text-sm" style="color:var(--text-2)">• ${s}</div>`).join('');
+  }
+
+  document.getElementById('result-card').style.display = '';
+  document.getElementById('result-card').scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+</script>
+{% endblock %}

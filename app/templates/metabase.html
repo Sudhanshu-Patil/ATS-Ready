@@ -1,0 +1,432 @@
+{% extends "base.html" %}
+{% block title %}Metabase{% endblock %}
+{% block page_title %}Metabase{% endblock %}
+{% block page_subtitle %}Manage your skills, experience, projects, and personal info{% endblock %}
+
+{% block content %}
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('skills')">Skills</button>
+  <button class="tab-btn" onclick="switchTab('experience')">Work Experience</button>
+  <button class="tab-btn" onclick="switchTab('projects')">Projects</button>
+  <button class="tab-btn" onclick="switchTab('personal')">Personal Info</button>
+</div>
+
+<!-- ── Skills Tab ──────────────────────────────────────────────────────────── -->
+<div class="tab-pane active" id="tab-skills">
+  <div class="meta-layout">
+    <!-- List -->
+    <div>
+      <div class="flex-between mb-3">
+        <span style="font-size:13px;color:var(--text-2)" id="skills-count">Loading…</span>
+        <input class="search-input" placeholder="Filter skills…" oninput="filterSkills(this.value)" style="width:200px">
+      </div>
+      <div class="skill-list" id="skills-list">
+        <div class="text-muted text-sm">Loading skills…</div>
+      </div>
+    </div>
+
+    <!-- Add Skill Form -->
+    <div class="card" style="position:sticky;top:24px">
+      <div class="card-title">Add Skill</div>
+      <div class="form-group">
+        <label class="form-label">Skill Name <span class="required">*</span></label>
+        <input id="skill-name" class="form-input" placeholder="e.g. FastAPI">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Category <span class="required">*</span></label>
+        <input id="skill-cat" class="form-input" placeholder="e.g. Backend Frameworks">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Proficiency</label>
+          <select id="skill-prof" class="form-select">
+            <option value="Beginner">Beginner</option>
+            <option value="Intermediate" selected>Intermediate</option>
+            <option value="Advanced">Advanced</option>
+            <option value="Expert">Expert</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Years</label>
+          <input id="skill-yrs" class="form-input" type="number" min="0" max="30" step="0.5" value="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Keyword Aliases</label>
+        <input id="skill-kw" class="form-input" placeholder="e.g. fastapi, fast-api, async python">
+        <div class="form-hint">Comma-separated. Helps AI match JD keywords.</div>
+      </div>
+      <button class="btn btn-primary w-full" onclick="addSkill()" style="justify-content:center">Add Skill</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Experience Tab ──────────────────────────────────────────────────────── -->
+<div class="tab-pane" id="tab-experience">
+  <div class="meta-layout">
+    <!-- List -->
+    <div>
+      <div id="exp-list" class="gap-3">
+        <div class="text-muted text-sm">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Add Experience Form -->
+    <div class="card" style="position:sticky;top:24px">
+      <div class="card-title">Add Work Experience</div>
+      <div class="form-group">
+        <label class="form-label">Company <span class="required">*</span></label>
+        <input id="exp-company" class="form-input" placeholder="Acme Corp">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Role / Title <span class="required">*</span></label>
+        <input id="exp-role" class="form-input" placeholder="Senior Software Engineer">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input id="exp-loc" class="form-input" placeholder="Bangalore, India">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Start <span class="required">*</span></label>
+          <input id="exp-start" class="form-input" placeholder="Jan 2022">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End</label>
+          <input id="exp-end" class="form-input" placeholder="Present (leave blank)">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tech Stack</label>
+        <input id="exp-stack" class="form-input" placeholder="Python, FastAPI, AWS (comma-separated)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Bullet Points</label>
+        <textarea id="exp-bullets" class="form-textarea" style="min-height:130px"
+          placeholder="One bullet per line. Be specific and quantify impact.&#10;e.g. Reduced API latency by 40% through Redis caching"></textarea>
+        <div class="form-hint">One bullet per line. Quantify impact wherever possible.</div>
+      </div>
+      <button class="btn btn-primary w-full" onclick="addExperience()" style="justify-content:center">Add Experience</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Projects Tab ────────────────────────────────────────────────────────── -->
+<div class="tab-pane" id="tab-projects">
+  <div class="meta-layout">
+    <!-- List -->
+    <div>
+      <div id="proj-list" class="gap-3">
+        <div class="text-muted text-sm">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Add Project Form -->
+    <div class="card" style="position:sticky;top:24px">
+      <div class="card-title">Add Project</div>
+      <div class="form-group">
+        <label class="form-label">Project Title <span class="required">*</span></label>
+        <input id="proj-title" class="form-input" placeholder="AI Resume Agent">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description <span class="required">*</span></label>
+        <textarea id="proj-desc" class="form-textarea" style="min-height:70px" placeholder="Brief description of what you built and why"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tech Stack</label>
+        <input id="proj-stack" class="form-input" placeholder="Python, FastAPI, React (comma-separated)">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Impact / Results</label>
+        <input id="proj-impact" class="form-input" placeholder="e.g. 10K users, 85% ATS scores">
+      </div>
+      <div class="form-group">
+        <label class="form-label">GitHub URL</label>
+        <input id="proj-github" class="form-input" type="url" placeholder="https://github.com/...">
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input id="proj-start" class="form-input" placeholder="Oct 2024">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input id="proj-end" class="form-input" placeholder="Present">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Bullet Points</label>
+        <textarea id="proj-bullets" class="form-textarea" style="min-height:100px"
+          placeholder="One bullet per line.&#10;e.g. Built multi-stage AI pipeline using OpenAI API"></textarea>
+      </div>
+      <button class="btn btn-primary w-full" onclick="addProject()" style="justify-content:center">Add Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Personal Info Tab ───────────────────────────────────────────────────── -->
+<div class="tab-pane" id="tab-personal">
+  <div style="max-width:640px">
+    <div class="card">
+      <div class="card-title">Personal Information</div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Full Name <span class="required">*</span></label>
+          <input id="p-name" class="form-input" placeholder="Sudhanshu Patil">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email <span class="required">*</span></label>
+          <input id="p-email" class="form-input" type="email" placeholder="you@example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input id="p-phone" class="form-input" placeholder="+91 98765 43210">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input id="p-loc" class="form-input" placeholder="Nagpur, Maharashtra">
+        </div>
+        <div class="form-group">
+          <label class="form-label">LinkedIn URL</label>
+          <input id="p-linkedin" class="form-input" type="url" placeholder="https://linkedin.com/in/username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">GitHub URL</label>
+          <input id="p-github" class="form-input" type="url" placeholder="https://github.com/username">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Portfolio URL</label>
+        <input id="p-portfolio" class="form-input" type="url" placeholder="https://yourportfolio.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Professional Summary</label>
+        <textarea id="p-summary" class="form-textarea" style="min-height:100px"
+          placeholder="Base summary (AI will tailor this for each JD)"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="savePersonal()">Save Personal Info</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    const tabs = ['skills','experience','projects','personal'];
+    b.classList.toggle('active', tabs[i] === name);
+  });
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'skills') loadSkills();
+  if (name === 'experience') loadExperience();
+  if (name === 'projects') loadProjects();
+  if (name === 'personal') loadPersonal();
+}
+
+// ── Skills ─────────────────────────────────────────────────────────────────
+let allSkills = [];
+async function loadSkills() {
+  allSkills = await apiFetch('/api/metabase/skills') || [];
+  renderSkills(allSkills);
+}
+
+function profPips(level) {
+  const map = { 'Beginner':1, 'Intermediate':2, 'Advanced':3, 'Expert':4 };
+  const n = map[level] || 2;
+  const cls = level.toLowerCase().slice(0,5);
+  return Array.from({length:4}, (_,i) =>
+    `<span class="pip ${i < n ? 'filled '+cls : ''}"></span>`).join('');
+}
+
+function renderSkills(list) {
+  document.getElementById('skills-count').textContent = `${list.length} skill${list.length!==1?'s':''}`;
+  if (!list.length) {
+    document.getElementById('skills-list').innerHTML = `<div class="empty-state"><div class="empty-icon">🛠</div><div class="empty-title">No skills yet</div><div class="empty-sub">Add your first skill using the form</div></div>`;
+    return;
+  }
+  // Group by category
+  const grouped = {};
+  list.forEach(s => { (grouped[s.category] = grouped[s.category] || []).push(s); });
+  document.getElementById('skills-list').innerHTML = Object.entries(grouped).map(([cat, skills]) => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:11.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">${cat}</div>
+      ${skills.map(s => `
+        <div class="skill-row">
+          <span class="skill-name">${s.name}</span>
+          <span class="prof-pip">${profPips(s.proficiency)}</span>
+          <span class="skill-cat">${s.proficiency}</span>
+          <span class="skill-yrs" style="color:var(--text-3)">${s.years_experience}y</span>
+          <button class="btn btn-danger btn-sm" onclick="deleteSkill(${s.id},'${s.name}')">✕</button>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+function filterSkills(q) {
+  const f = allSkills.filter(s =>
+    s.name.toLowerCase().includes(q.toLowerCase()) ||
+    s.category.toLowerCase().includes(q.toLowerCase())
+  );
+  renderSkills(f);
+}
+
+async function addSkill() {
+  const name = document.getElementById('skill-name').value.trim();
+  const cat  = document.getElementById('skill-cat').value.trim();
+  if (!name || !cat) { showToast('Name and category are required', 'error'); return; }
+
+  const kw = document.getElementById('skill-kw').value.split(',').map(s=>s.trim()).filter(Boolean);
+  await apiFetch('/api/metabase/skills', {
+    method: 'POST',
+    body: JSON.stringify({
+      name, category: cat,
+      proficiency: document.getElementById('skill-prof').value,
+      years_experience: parseFloat(document.getElementById('skill-yrs').value) || 0,
+      keywords: kw,
+    })
+  });
+  showToast(`Skill "${name}" added`);
+  ['skill-name','skill-cat','skill-kw'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('skill-yrs').value = '1';
+  loadSkills();
+}
+
+async function deleteSkill(id, name) {
+  if (!confirm(`Delete skill "${name}"?`)) return;
+  await apiFetch(`/api/metabase/skills/${id}`, { method: 'DELETE' });
+  showToast(`Skill "${name}" deleted`);
+  loadSkills();
+}
+
+// ── Experience ─────────────────────────────────────────────────────────────
+async function loadExperience() {
+  const list = await apiFetch('/api/metabase/experience') || [];
+  if (!list.length) {
+    document.getElementById('exp-list').innerHTML = `<div class="empty-state"><div class="empty-icon">💼</div><div class="empty-title">No experience yet</div><div class="empty-sub">Add your work history using the form</div></div>`;
+    return;
+  }
+  document.getElementById('exp-list').innerHTML = list.map(e => `
+    <div class="exp-card">
+      <div class="flex-between">
+        <div>
+          <div class="exp-title">${e.role}</div>
+          <div class="exp-sub">${e.company}${e.location ? ' · ' + e.location : ''}</div>
+          <div class="exp-meta">${e.start_date} – ${e.end_date || 'Present'} ${e.is_current ? '<span class="badge badge-green" style="font-size:10px">Current</span>' : ''}</div>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function addExperience() {
+  const company = document.getElementById('exp-company').value.trim();
+  const role    = document.getElementById('exp-role').value.trim();
+  const start   = document.getElementById('exp-start').value.trim();
+  if (!company || !role || !start) { showToast('Company, role, and start date are required', 'error'); return; }
+
+  const stack   = document.getElementById('exp-stack').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const rawBullets = document.getElementById('exp-bullets').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const bullets = rawBullets.map(b => ({ bullet: b, keywords: [], impact_score: 5.0 }));
+  const endVal  = document.getElementById('exp-end').value.trim();
+
+  await apiFetch('/api/metabase/experience', {
+    method: 'POST',
+    body: JSON.stringify({
+      company, role, start_date: start,
+      end_date: endVal || null,
+      is_current: !endVal,
+      location: document.getElementById('exp-loc').value.trim() || null,
+      tech_stack: stack, bullets,
+    })
+  });
+  showToast('Experience added');
+  ['exp-company','exp-role','exp-loc','exp-start','exp-end','exp-stack','exp-bullets'].forEach(id => document.getElementById(id).value = '');
+  loadExperience();
+}
+
+// ── Projects ───────────────────────────────────────────────────────────────
+async function loadProjects() {
+  const list = await apiFetch('/api/metabase/projects') || [];
+  if (!list.length) {
+    document.getElementById('proj-list').innerHTML = `<div class="empty-state"><div class="empty-icon">🚀</div><div class="empty-title">No projects yet</div><div class="empty-sub">Add your projects using the form</div></div>`;
+    return;
+  }
+  document.getElementById('proj-list').innerHTML = list.map(p => `
+    <div class="proj-card">
+      <div class="flex-between">
+        <div class="exp-title">${p.title}</div>
+        ${p.is_featured ? '<span class="badge badge-blue">Featured</span>' : ''}
+      </div>
+      <div class="exp-sub mt-1">${(p.tech_stack||[]).join(', ')}</div>
+      <div class="exp-meta mt-1">${p.bullets_count} bullet${p.bullets_count!==1?'s':''}</div>
+    </div>`).join('');
+}
+
+async function addProject() {
+  const title = document.getElementById('proj-title').value.trim();
+  const desc  = document.getElementById('proj-desc').value.trim();
+  if (!title || !desc) { showToast('Title and description are required', 'error'); return; }
+
+  const stack = document.getElementById('proj-stack').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const rawB  = document.getElementById('proj-bullets').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const bullets = rawB.map(b => ({ bullet: b, keywords: [] }));
+
+  await apiFetch('/api/metabase/projects', {
+    method: 'POST',
+    body: JSON.stringify({
+      title, description: desc,
+      tech_stack: stack,
+      impact: document.getElementById('proj-impact').value.trim() || null,
+      github_url: document.getElementById('proj-github').value.trim() || null,
+      start_date: document.getElementById('proj-start').value.trim() || null,
+      end_date:   document.getElementById('proj-end').value.trim() || null,
+      is_featured: true, bullets,
+    })
+  });
+  showToast('Project added');
+  ['proj-title','proj-desc','proj-stack','proj-impact','proj-github','proj-start','proj-end','proj-bullets'].forEach(id => document.getElementById(id).value = '');
+  loadProjects();
+}
+
+// ── Personal ───────────────────────────────────────────────────────────────
+async function loadPersonal() {
+  const p = await apiFetch('/api/metabase/personal').catch(() => null);
+  if (!p) return;
+  document.getElementById('p-name').value      = p.full_name || '';
+  document.getElementById('p-email').value     = p.email || '';
+  document.getElementById('p-phone').value     = p.phone || '';
+  document.getElementById('p-loc').value       = p.location || '';
+  document.getElementById('p-linkedin').value  = p.linkedin || '';
+  document.getElementById('p-github').value    = p.github || '';
+  document.getElementById('p-portfolio').value = p.portfolio || '';
+  document.getElementById('p-summary').value   = p.professional_summary || '';
+}
+
+async function savePersonal() {
+  const name  = document.getElementById('p-name').value.trim();
+  const email = document.getElementById('p-email').value.trim();
+  if (!name || !email) { showToast('Name and email are required', 'error'); return; }
+
+  await apiFetch('/api/metabase/personal', {
+    method: 'POST',
+    body: JSON.stringify({
+      full_name: name, email,
+      phone:     document.getElementById('p-phone').value.trim() || null,
+      location:  document.getElementById('p-loc').value.trim() || null,
+      linkedin:  document.getElementById('p-linkedin').value.trim() || null,
+      github:    document.getElementById('p-github').value.trim() || null,
+      portfolio: document.getElementById('p-portfolio').value.trim() || null,
+      professional_summary: document.getElementById('p-summary').value.trim() || null,
+    })
+  });
+  showToast('Personal info saved', 'success');
+}
+
+// Load skills on page load
+loadSkills();
+</script>
+{% endblock %}
