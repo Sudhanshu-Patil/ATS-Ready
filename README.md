@@ -21,6 +21,11 @@ resume_agent/
 │   │   ├── metabase_service.py  # Fetches candidate profile from DB
 │   │   ├── resume_builder.py    # Generates ATS-optimized .docx
 │   │   └── scraper.py           # JD URL scraper (robots.txt aware)
+|   ├── static/
+│   │   ├── css
+│   │   │   └──app.css    
+│   │   ├── js
+│   │   │   └──app.js   
 │   └── config.py                # Settings from .env
 ├── scripts/
 │   └── seed_metabase.py         # One-time: populate YOUR data
@@ -30,6 +35,8 @@ resume_agent/
 ├── requirements.txt
 ├── .env.example
 └── .env                         # Your secrets (gitignored)
+└── .gitignore
+└── README.md
 ```
 
 ---
@@ -46,7 +53,7 @@ pip install -r requirements.txt
 
 ```bash
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY
+# Edit .env and add your LLM_API_KEY
 ```
 
 ### 3. Seed Your Personal Data
@@ -193,8 +200,9 @@ For JS-heavy sites, paste the JD text directly for best results.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GEMINI_API_KEY` | required | Your Gemini API key |
-| `MODEL` | `gemini-2.0-flash` | Gemini model (`gemini-2.0-flash`) |
+| `LLM_API_KEY` | required | API key for your LLM provider |
+| `MODEL` | `openai/gpt-oss-120b` | Model ID (any OpenAI-compatible provider) |
+| `LLM_BASE_URL` | `https://api.groq.com/openai/v1` | LLM provider's OpenAI-compatible endpoint |
 | `DATABASE_URL` | `sqlite:///./metabase.db` | Database connection string |
 | `MAX_SKILLS_IN_RESUME` | `12` | Max skills shown in resume |
 | `MAX_PROJECTS_IN_RESUME` | `4` | Max projects shown |

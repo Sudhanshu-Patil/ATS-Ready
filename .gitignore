@@ -82,3 +82,17 @@ target/
 # IPython
 profile_default/
 ipython_config.py
+
+# Files static
+outputs/
+
+# Local SQLite databases
+*.db
+metabase.db
+
+# Debug / scratch scripts — never commit
+scratch_password.py
+
+# Node
+node_modules/
+frontend/dist/

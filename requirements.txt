@@ -1,20 +1,57 @@
-fastapi==0.115.0
-uvicorn==0.30.6
+# ── Core Framework ────────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
 jinja2==3.1.4
-openai==1.51.0
-httpx==0.27.2
-beautifulsoup4==4.12.3
-requests==2.32.3
-lxml==5.3.0
-pydantic==2.9.0
-pydantic-settings==2.5.2
-python-docx==1.1.2
 python-multipart==0.0.12
 aiofiles==24.1.0
-sqlalchemy==2.0.35
-alembic==1.13.3
-tenacity==9.0.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
 python-dotenv==1.0.1
+
+# ── Caching ───────────────────────────────────────────────────────────────────
+redis[hiredis]==5.2.1
+
+# ── Background Jobs ───────────────────────────────────────────────────────────
+arq==0.26.1
+
+# ── File Storage ──────────────────────────────────────────────────────────────
+boto3==1.35.72
+botocore==1.35.72
+
+# ── Settings ─────────────────────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# ── HTTP / Scraping ───────────────────────────────────────────────────────────
+httpx==0.28.1
+requests==2.32.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+fake-useragent==1.5.1
+
+# ── AI ────────────────────────────────────────────────────────────────────────
+openai==1.57.4
+
+# ── Document Generation ───────────────────────────────────────────────────────
+python-docx==1.1.2
+
+# ── Auth (Step 2 — install now so it's ready) ────────────────────────────────
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+# passlib 1.7.4 detects the bcrypt backend via bcrypt.__about__.__version__,
+# which bcrypt>=4.1 removed — pin below that or password hashing breaks.
+bcrypt==4.0.1
+
+# ── Logging & Observability ───────────────────────────────────────────────────
+structlog==24.4.0
+sentry-sdk[fastapi]==2.19.2
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+tenacity==9.0.0
 rich==13.9.1
 typer==0.12.5
-fake-useragent==1.5.1

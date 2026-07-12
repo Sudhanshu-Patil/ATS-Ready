@@ -1,332 +1,431 @@
-"""
-API Routes
-----------
-All endpoints for the Resume AI Agent.
-"""
 import logging
+import uuid
 from pathlib import Path
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from arq import create_pool
+from arq.connections import RedisSettings
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.db.database import get_db
 from app.db.models import (
-    get_db, JobApplication, Skill, Project, ProjectBullet,
-    WorkExperience, ExperienceBullet, Education, PersonalInfo
+    Education, ExperienceBullet, JobApplication, PersonalInfo,
+    Project, ProjectBullet, Skill, User, WorkExperience,
 )
 from app.models.schemas import (
-    GenerateResumeRequest, GenerateResumeResponse, ATSBreakdown,
-    SkillCreate, SkillOut, ProjectCreate, ProjectOut,
-    WorkExperienceCreate, WorkExperienceOut, PersonalInfoUpdate,
-    JobApplicationOut,
+    ATSBreakdown, GenerateResumeRequest, GenerateResumeResponse,
+    JobStatusResponse, PersonalInfoUpdate, ProjectCreate, SkillCreate,
+    SkillOut, WorkExperienceCreate,
 )
-from app.services.scraper import scraper_service, ScraperError, RobotsBlocked
-from app.services.metabase_service import metabase_service
-from app.services.resume_builder import resume_builder
-from app.agents.ai_agent import ai_agent
+from app.services.cache_service import cache_service
+from app.services.storage_service import storage_service
+from app.api.dependencies import get_current_user
+from app.api.plan_limits import check_resume_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ARQ Pool helper
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ─── Resume Generation (Main Endpoint) ─────────────────────────────────────────
+async def _get_arq_pool():
+    """Create a one-shot ARQ connection to enqueue a job."""
+    return await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
 
-@router.post("/generate-resume", response_model=GenerateResumeResponse)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resume Generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/generate-resume", response_model=GenerateResumeResponse, status_code=202)
 async def generate_resume(
     request: GenerateResumeRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_resume_limit),
 ):
     """
-    Main endpoint. Provide a JD URL or text → get an ATS-optimized resume.
-    
-    Flow:
-      1. Scrape JD URL (if provided) or use JD text
-      2. AI parses JD into structured format
-      3. Fetch candidate profile from metabase
-      4. AI tailors resume content
-      5. Score resume for ATS
-      6. Generate .docx file
-      7. Return download link + ATS report
+    Enqueue a resume generation job.
+
+    Returns HTTP 202 Accepted immediately with a job_id.
+    Poll GET /api/jobs/{job_id}/status to track progress.
+    When status == "done", the full result including download_url is returned.
     """
-    scrape_warning = ""
+    # Validate: must have URL or text
+    if not request.jd_url and not request.jd_text:
+        raise HTTPException(status_code=422, detail="Either jd_url or jd_text is required.")
 
-    # ── Step 1: Get JD Text ────────────────────────────────────────────────────
-    if request.jd_url:
-        try:
-            jd_text, scrape_warning = await scraper_service.scrape(request.jd_url)
-        except RobotsBlocked as e:
-            raise HTTPException(status_code=403, detail=str(e))
-        except ScraperError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-    else:
-        jd_text = request.jd_text
-
-    if not jd_text or len(jd_text.strip()) < 100:
-        raise HTTPException(status_code=422, detail="Job description too short or empty.")
-
-    # ── Step 2: AI Parse JD ────────────────────────────────────────────────────
-    logger.info("Parsing JD with AI...")
-    try:
-        parsed_jd = ai_agent.parse_jd(jd_text)
-    except Exception as e:
-        logger.error(f"JD parsing failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI JD parsing failed: {str(e)}")
-
-    # ── Step 3: Fetch Candidate Profile ───────────────────────────────────────
-    logger.info("Fetching candidate profile from metabase...")
-    profile = metabase_service.get_full_profile(db)
-
-    if not profile.get("personal"):
-        raise HTTPException(
-            status_code=400,
-            detail="No personal info found. Run `python scripts/seed_metabase.py` first."
-        )
-
-    # ── Step 4: AI Tailor Resume ───────────────────────────────────────────────
-    logger.info("Tailoring resume with AI...")
-    try:
-        tailored = ai_agent.tailor_resume(parsed_jd, profile, request.emphasis)
-    except Exception as e:
-        logger.error(f"Resume tailoring failed: {e}")
-        raise HTTPException(status_code=500, detail=f"AI tailoring failed: {str(e)}")
-
-    # ── Step 5: ATS Scoring ────────────────────────────────────────────────────
-    logger.info("Scoring resume against JD...")
-    try:
-        score_data = ai_agent.score_resume(parsed_jd, tailored)
-    except Exception as e:
-        logger.warning(f"ATS scoring failed (non-fatal): {e}")
-        score_data = {
-            "total_score": 0,
-            "keyword_score": 0,
-            "skills_score": 0,
-            "action_verb_score": 0,
-            "format_score": 0,
-            "matched_keywords": [],
-            "missing_keywords": [],
-            "matched_skills": [],
-            "missing_skills": [],
-            "suggestions": [],
-        }
-
-    # ── Step 6: Build DOCX ────────────────────────────────────────────────────
-    logger.info("Building .docx resume...")
-    company_slug = (parsed_jd.company or "company").lower().replace(" ", "_")[:20]
-    title_slug = (parsed_jd.job_title or "role").lower().replace(" ", "_")[:20]
-    filename = f"resume_{title_slug}_{company_slug}.docx"
-
-    try:
-        resume_path = resume_builder.build(
-            personal=profile["personal"],
-            tailored=tailored,
-            education=profile.get("education", []),
-            filename=filename,
-        )
-    except Exception as e:
-        logger.error(f"DOCX build failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Resume generation failed: {str(e)}")
-
-    # ── Step 7: Save to DB ────────────────────────────────────────────────────
+    # Create the JobApplication row in "pending" state NOW so we have an ID
     job_app = JobApplication(
-        job_title=parsed_jd.job_title,
-        company=parsed_jd.company,
-        jd_url=request.jd_url,
-        jd_text=jd_text[:5000],
-        jd_parsed=parsed_jd.model_dump(),
-        resume_path=str(resume_path),
-        ats_score=score_data.get("total_score", 0),
-        ats_breakdown=score_data,
-        skills_matched=score_data.get("matched_skills", []),
-        skills_missing=score_data.get("missing_skills", []),
+        user_id=user.id,
+        jd_url=str(request.jd_url) if request.jd_url else None,
+        status="pending",
     )
     db.add(job_app)
-    db.commit()
-    db.refresh(job_app)
+    await db.commit()
+    await db.refresh(job_app)
 
-    # ── Build Response ─────────────────────────────────────────────────────────
-    message = f"✅ Resume generated!"
-    if scrape_warning:
-        message += f"\n{scrape_warning}"
-
-    ats_breakdown = ATSBreakdown(
-        total_score=score_data.get("total_score", 0),
-        keyword_score=score_data.get("keyword_score", 0),
-        skills_score=score_data.get("skills_score", 0),
-        action_verb_score=score_data.get("action_verb_score", 0),
-        format_score=score_data.get("format_score", 0),
-        matched_keywords=score_data.get("matched_keywords", []),
-        missing_keywords=score_data.get("missing_keywords", []),
-        matched_skills=score_data.get("matched_skills", []),
-        missing_skills=score_data.get("missing_skills", []),
-        suggestions=score_data.get("suggestions", []),
+    # Enqueue the background task
+    arq_pool = await _get_arq_pool()
+    arq_job = await arq_pool.enqueue_job(
+        "generate_resume",
+        job_app_id=str(job_app.id),
+        user_id=str(user.id),
+        jd_url=str(request.jd_url) if request.jd_url else None,
+        jd_text=request.jd_text,
+        emphasis=request.emphasis,
+        _job_id=f"resume:{job_app.id}",   # deterministic ARQ job ID for dedup
     )
+    await arq_pool.aclose()
+
+    # Persist the ARQ job ID so we can look up status later
+    job_app.arq_job_id = arq_job.job_id
+    await db.commit()
+
+    logger.info("Enqueued generation job %d (arq=%s) for user %d",
+                job_app.id, arq_job.job_id, user.id)
 
     return GenerateResumeResponse(
-        job_id=job_app.id,
-        job_title=parsed_jd.job_title,
-        company=parsed_jd.company,
-        ats_score=score_data.get("total_score", 0),
-        ats_breakdown=ats_breakdown,
-        resume_path=str(resume_path),
-        download_url=f"/api/download/{job_app.id}",
-        skills_matched=score_data.get("matched_skills", []),
-        skills_missing=score_data.get("missing_skills", []),
-        message=message,
+        job_id=str(job_app.id),
+        status="pending",
+        message="Resume generation started. Poll /api/jobs/{job_id}/status for updates.",
     )
+
+
+@router.get("/jobs/{job_id}/status", response_model=JobStatusResponse)
+async def get_job_status(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Poll this endpoint every 2 seconds to track generation progress.
+
+    Response shape:
+      { status: "pending"|"running"|"done"|"failed",
+        result: { ... full resume result when done ... },
+        error:  "error message when failed" }
+    """
+    result = await db.execute(
+        select(JobApplication).where(
+            JobApplication.id == job_id,
+            JobApplication.user_id == user.id,  # ownership check
+        )
+    )
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    response: Dict[str, Any] = {
+        "job_id":  str(job.id),
+        "status":  job.status,
+        "error":   job.error_message,
+        "result":  None,
+    }
+
+    if job.status == "done" and job.resume_s3_key:
+        download_url = storage_service.get_download_url(
+            job.resume_s3_key,
+            job.resume_filename or "resume.docx",
+        )
+        ats = job.ats_breakdown or {}
+        response["result"] = {
+            "job_id":         str(job.id),
+            "job_title":      job.job_title,
+            "company":        job.company,
+            "ats_score":      job.ats_score,
+            "ats_breakdown":  ats,
+            "skills_matched": job.skills_matched or [],
+            "skills_missing": job.skills_missing or [],
+            "download_url":   download_url,
+        }
+
+    return response
 
 
 @router.get("/download/{job_id}")
-async def download_resume(job_id: int, db: Session = Depends(get_db)):
-    """Download the generated .docx resume."""
-    job = db.query(JobApplication).filter(JobApplication.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job application not found")
-    path = Path(job.resume_path)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Resume file not found on disk")
-    return FileResponse(
-        path=str(path),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=path.name,
+async def download_resume(
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Redirect to a pre-signed S3 URL (or serve local file in dev mode).
+    The signed URL is valid for DOWNLOAD_URL_EXPIRY seconds (default 1 hour).
+    """
+    result = await db.execute(
+        select(JobApplication).where(
+            JobApplication.id == job_id,
+            JobApplication.user_id == user.id,
+        )
     )
-
-
-@router.get("/ats-score/{job_id}")
-async def get_ats_score(job_id: int, db: Session = Depends(get_db)):
-    """Get detailed ATS score breakdown for a previously generated resume."""
-    job = db.query(JobApplication).filter(JobApplication.id == job_id).first()
+    job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return {
-        "job_id": job.id,
-        "job_title": job.job_title,
-        "company": job.company,
-        "ats_score": job.ats_score,
-        "breakdown": job.ats_breakdown,
-        "skills_matched": job.skills_matched,
-        "skills_missing": job.skills_missing,
-    }
+    if not job.resume_s3_key:
+        raise HTTPException(status_code=404, detail="Resume file not yet available")
+
+    url = storage_service.get_download_url(
+        job.resume_s3_key,
+        job.resume_filename or "resume.docx",
+    )
+
+    # If it's a local path (dev mode), serve it directly
+    if url.startswith("/outputs/"):
+        from fastapi.responses import FileResponse
+        local = settings.OUTPUT_DIR / Path(url).name
+        if not local.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        return FileResponse(str(local), media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ), filename=job.resume_filename or "resume.docx")
+
+    # S3/R2 pre-signed URL — redirect
+    return RedirectResponse(url=url, status_code=302)
 
 
-# ─── Job Applications History ──────────────────────────────────────────────────
+# @router.get("/ats-score/{job_id}")
+# async def get_ats_score(
+#     job_id: str,
+#     db: AsyncSession = Depends(get_db),
+#     user: User = Depends(get_current_user),
+# ):
+#     result = await db.execute(
+#         select(JobApplication).where(
+#             JobApplication.id == job_id,
+#             JobApplication.user_id == user.id,
+#         )
+#     )
+#     job = result.scalar_one_or_none()
+#     if not job:
+#         raise HTTPException(status_code=404, detail="Job not found")
+#     return {
+#         "job_id":         str(job.id),
+#         "job_title":      job.job_title,
+#         "company":        job.company,
+#         "ats_score":      job.ats_score,
+#         "breakdown":      job.ats_breakdown,
+#         "skills_matched": job.skills_matched,
+#         "skills_missing": job.skills_missing,
+#     }
 
-@router.get("/jobs", response_model=List[dict])
-async def list_jobs(db: Session = Depends(get_db)):
-    """List all previously generated resumes."""
-    jobs = db.query(JobApplication).order_by(JobApplication.created_at.desc()).all()
-    return [
-        {
-            "id": j.id,
-            "job_title": j.job_title,
-            "company": j.company,
-            "ats_score": j.ats_score,
-            "created_at": str(j.created_at),
-            "download_url": f"/api/download/{j.id}",
-        }
-        for j in jobs
-    ]
+
+# # ─────────────────────────────────────────────────────────────────────────────
+# # Job Applications History
+# # ─────────────────────────────────────────────────────────────────────────────
+
+# @router.get("/jobs")
+# async def list_jobs(
+#     db: AsyncSession = Depends(get_db),
+#     user: User = Depends(get_current_user),
+#     limit: int = 50,
+#     offset: int = 0,
+# ):
+#     result = await db.execute(
+#         select(JobApplication)
+#         .where(JobApplication.user_id == user.id)
+#         .order_by(JobApplication.created_at.desc())
+#         .limit(limit)
+#         .offset(offset)
+#     )
+#     jobs = result.scalars().all()
+#     return [
+#         {
+#             "id":           str(j.id),
+#             "job_title":    j.job_title,
+#             "company":      j.company,
+#             "ats_score":    j.ats_score,
+#             "status":       j.status,
+#             "created_at":   str(j.created_at),
+#             "download_url": f"/api/download/{j.id}",
+#         }
+#         for j in jobs
+#     ]
 
 
-# ─── Metabase CRUD: Personal Info ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Metabase: Personal Info
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/metabase/personal")
-async def get_personal_info(db: Session = Depends(get_db)):
-    info = db.query(PersonalInfo).first()
+async def get_personal_info(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PersonalInfo).where(PersonalInfo.user_id == user.id)
+    )
+    info = result.scalar_one_or_none()
     if not info:
         raise HTTPException(status_code=404, detail="No personal info found")
     return info
 
 
 @router.post("/metabase/personal")
-async def upsert_personal_info(data: PersonalInfoUpdate, db: Session = Depends(get_db)):
-    info = db.query(PersonalInfo).first()
+async def upsert_personal_info(
+    data: PersonalInfoUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(PersonalInfo).where(PersonalInfo.user_id == user.id)
+    )
+    info = result.scalar_one_or_none()
     if info:
         for k, v in data.model_dump().items():
             setattr(info, k, v)
     else:
-        info = PersonalInfo(**data.model_dump())
+        info = PersonalInfo(user_id=user.id, **data.model_dump())
         db.add(info)
-    db.commit()
+    await db.commit()
+    await cache_service.invalidate_profile(user.id)
     return {"message": "Personal info saved"}
 
 
-# ─── Metabase CRUD: Skills ────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Metabase: Skills
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/metabase/skills", response_model=List[SkillOut])
-async def get_skills(db: Session = Depends(get_db)):
-    return db.query(Skill).all()
+async def get_skills(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Skill)
+        .where(Skill.user_id == user.id)
+        .order_by(Skill.is_primary.desc(), Skill.years_experience.desc())
+    )
+    return result.scalars().all()
 
 
 @router.post("/metabase/skills", response_model=SkillOut)
-async def add_skill(data: SkillCreate, db: Session = Depends(get_db)):
-    # Check duplicate
-    existing = db.query(Skill).filter(Skill.name == data.name).first()
-    if existing:
+async def add_skill(
+    data: SkillCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    existing = await db.execute(
+        select(Skill).where(Skill.user_id == user.id, Skill.name == data.name)
+    )
+    if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"Skill '{data.name}' already exists")
-    skill = Skill(**data.model_dump())
+    skill = Skill(user_id=user.id, **data.model_dump())
     db.add(skill)
-    db.commit()
-    db.refresh(skill)
+    await db.commit()
+    await db.refresh(skill)
+    await cache_service.invalidate_profile(user.id)
     return skill
 
 
 @router.delete("/metabase/skills/{skill_id}")
-async def delete_skill(skill_id: int, db: Session = Depends(get_db)):
-    skill = db.query(Skill).filter(Skill.id == skill_id).first()
+async def delete_skill(
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Skill).where(Skill.id == skill_id, Skill.user_id == user.id)
+    )
+    skill = result.scalar_one_or_none()
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
-    db.delete(skill)
-    db.commit()
+    await db.delete(skill)
+    await db.commit()
+    await cache_service.invalidate_profile(user.id)
     return {"message": f"Skill '{skill.name}' deleted"}
 
 
-# ─── Metabase CRUD: Projects ──────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Metabase: Projects
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/metabase/projects")
-async def get_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).all()
+async def get_projects(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Project)
+        .where(Project.user_id == user.id)
+        .order_by(Project.is_featured.desc())
+    )
+    projects = result.scalars().all()
     return [
         {
-            "id": p.id,
-            "title": p.title,
-            "tech_stack": p.tech_stack,
-            "is_featured": p.is_featured,
-            "bullets_count": db.query(ProjectBullet).filter(ProjectBullet.project_id == p.id).count(),
+            "id":           str(p.id),
+            "title":        p.title,
+            "tech_stack":   p.tech_stack,
+            "is_featured":  p.is_featured,
+            "bullets_count": len(p.bullets),
         }
         for p in projects
     ]
 
 
 @router.post("/metabase/projects")
-async def add_project(data: ProjectCreate, db: Session = Depends(get_db)):
+async def add_project(
+    data: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     bullets = data.bullets
     project_data = data.model_dump(exclude={"bullets"})
-    project = Project(**project_data)
+    project = Project(user_id=user.id, **project_data)
     db.add(project)
-    db.flush()
-
+    await db.flush()  # get project.id before adding bullets
     for b in bullets:
-        bullet = ProjectBullet(project_id=project.id, **b.model_dump())
-        db.add(bullet)
+        db.add(ProjectBullet(project_id=project.id, **b.model_dump()))
+    await db.commit()
+    await db.refresh(project)
+    await cache_service.invalidate_profile(user.id)
+    return {"message": "Project added", "id": str(project.id)}
 
-    db.commit()
-    db.refresh(project)
-    return {"message": "Project added", "id": project.id}
+
+@router.delete("/metabase/projects/{project_id}")
+async def delete_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    await db.delete(project)
+    await db.commit()
+    await cache_service.invalidate_profile(user.id)
+    return {"message": "Project deleted"}
 
 
-# ─── Metabase CRUD: Work Experience ──────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Metabase: Work Experience
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.get("/metabase/experience")
-async def get_experience(db: Session = Depends(get_db)):
-    exps = db.query(WorkExperience).all()
+async def get_experience(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(WorkExperience)
+        .where(WorkExperience.user_id == user.id)
+        .order_by(WorkExperience.is_current.desc(), WorkExperience.start_date.desc())
+    )
+    exps = result.scalars().all()
     return [
         {
-            "id": e.id,
-            "company": e.company,
-            "role": e.role,
+            "id":         str(e.id),
+            "company":    e.company,
+            "role":       e.role,
             "start_date": e.start_date,
-            "end_date": e.end_date,
+            "end_date":   e.end_date,
             "is_current": e.is_current,
         }
         for e in exps
@@ -334,17 +433,93 @@ async def get_experience(db: Session = Depends(get_db)):
 
 
 @router.post("/metabase/experience")
-async def add_experience(data: WorkExperienceCreate, db: Session = Depends(get_db)):
+async def add_experience(
+    data: WorkExperienceCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     bullets = data.bullets
     exp_data = data.model_dump(exclude={"bullets"})
-    exp = WorkExperience(**exp_data)
+    exp = WorkExperience(user_id=user.id, **exp_data)
     db.add(exp)
-    db.flush()
-
+    await db.flush()
     for b in bullets:
-        bullet = ExperienceBullet(experience_id=exp.id, **b.model_dump())
-        db.add(bullet)
+        db.add(ExperienceBullet(experience_id=exp.id, **b.model_dump()))
+    await db.commit()
+    await db.refresh(exp)
+    await cache_service.invalidate_profile(user.id)
+    return {"message": "Experience added", "id": str(exp.id)}
 
-    db.commit()
-    db.refresh(exp)
-    return {"message": "Experience added", "id": exp.id}
+
+@router.delete("/metabase/experience/{exp_id}")
+async def delete_experience(
+    exp_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(WorkExperience).where(
+            WorkExperience.id == exp_id,
+            WorkExperience.user_id == user.id,
+        )
+    )
+    exp = result.scalar_one_or_none()
+    if not exp:
+        raise HTTPException(status_code=404, detail="Experience not found")
+    await db.delete(exp)
+    await db.commit()
+    await cache_service.invalidate_profile(user.id)
+    return {"message": "Experience deleted"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job Recommendations
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/recommendations")
+async def get_recommendations(
+    refresh: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Return personalised job recommendations scored against the user's skills.
+
+    Results are cached in Redis for 2 hours. Pass ?refresh=true to bust the
+    cache and fetch fresh listings from all sources.
+
+    Response: list of jobs sorted by match_score descending (only ≥60% matches).
+    """
+    from app.services.job_recommendations import get_recommendations_for_user
+    jobs = await get_recommendations_for_user(user.id, db, refresh=refresh)
+    return {
+        "jobs":    jobs,
+        "total":   len(jobs),
+        "cached":  not refresh,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Health & Diagnostics
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/health/detailed")
+async def detailed_health(db: AsyncSession = Depends(get_db)):
+    """Extended health check — checks DB, Redis, and storage connectivity."""
+    checks: Dict[str, Any] = {}
+
+    # Database
+    try:
+        await db.execute(select(func.now()))
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+
+    # Redis / Cache
+    checks["redis"] = "ok" if await cache_service.ping() else "unavailable"
+
+    # Storage
+    checks["storage"] = "s3" if settings.storage_use_s3 else "local"
+
+    overall = "ok" if all(v == "ok" or v in ("s3", "local", "unavailable") for v in checks.values()) else "degraded"
+    return {"status": overall, "checks": checks}

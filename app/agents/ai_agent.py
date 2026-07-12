@@ -1,15 +1,13 @@
 """
 AI Agent Orchestration
 -----------------------
-Stage 1: JD Analyzer  — parse JD into structured format
-Stage 2: Resume Tailor — select & rewrite content for max ATS score
-Stage 3: ATS Scorer   — deterministic string matching (no LLM guessing)
+Two-stage AI pipeline:
+  Stage 1: JD Analyzer — parse JD into structured format
+  Stage 2: Resume Tailor — select & rewrite content for max ATS score
 """
 import json
 import logging
-import re
-import string
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
@@ -19,100 +17,42 @@ from app.models.schemas import ParsedJD
 logger = logging.getLogger(__name__)
 
 
-# ── Deterministic keyword matching helpers ────────────────────────────────────
-
-def _normalise(text: str) -> str:
-    """Lowercase, strip punctuation, collapse whitespace."""
-    text = text.lower()
-    text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
-    return ' '.join(text.split())
-
-
-def _resume_blob(tailored: Dict[str, Any]) -> str:
-    """Flatten entire tailored resume dict into one searchable string."""
-    parts = []
-    if tailored.get("professional_summary"):
-        parts.append(tailored["professional_summary"])
-    for sg in tailored.get("skills", []):
-        parts.extend(sg.get("items", []))
-        parts.append(sg.get("category", ""))
-    for exp in tailored.get("work_experience", []):
-        parts.append(exp.get("role", ""))
-        parts.append(exp.get("company", ""))
-        parts.extend(exp.get("bullets", []))
-    for proj in tailored.get("projects", []):
-        parts.append(proj.get("title", ""))
-        parts.extend(proj.get("tech_stack", []))
-        parts.extend(proj.get("bullets", []))
-    return _normalise(" ".join(parts))
-
-
-def _keyword_in_blob(kw: str, blob: str) -> bool:
-    """
-    Check if a keyword (or any of its tokens) appear in the resume blob.
-    Uses word-boundary matching so 'DAX' doesn't match 'index'.
-    For multi-word keywords like 'data modeling', ALL words must appear
-    within a 6-word sliding window.
-    """
-    kw_norm = _normalise(kw)
-    if not kw_norm:
-        return False
-
-    tokens = kw_norm.split()
-
-    if len(tokens) == 1:
-        # Single token — whole-word match
-        pattern = r'\b' + re.escape(tokens[0]) + r'\b'
-        return bool(re.search(pattern, blob))
-    else:
-        # Multi-token — all tokens must appear in blob
-        # (relaxed: we just check all tokens exist, order-independent)
-        return all(re.search(r'\b' + re.escape(t) + r'\b', blob) for t in tokens)
-
-
-def _score_keywords(
-    keywords: List[str], blob: str
-) -> Tuple[float, List[str], List[str]]:
-    """Returns (score_0_100, matched_list, missing_list)."""
-    if not keywords:
-        return 100.0, [], []
-    matched, missing = [], []
-    for kw in keywords:
-        (matched if _keyword_in_blob(kw, blob) else missing).append(kw)
-    score = (len(matched) / len(keywords)) * 100
-    return round(score, 1), matched, missing
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-
 class AIAgent:
     def __init__(self):
-        self.client = OpenAI(
-            api_key=settings.GEMINI_API_KEY,
-            base_url=settings.GEMINI_BASE_URL,
-        )
+        # base_url must be passed explicitly — without it the OpenAI SDK talks
+        # to api.openai.com regardless of which key/model is configured.
+        self.client = OpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
     def _call(self, system: str, user: str, max_tokens: int = 4096) -> str:
+        """Single call to the configured LLM. Every caller prompts for JSON-only
+        output, so JSON Object Mode is requested directly rather than relying
+        purely on prompt instructions — reasoning models can otherwise leak
+        chain-of-thought text into the response body."""
+        extra_body = {}
+        if settings.LLM_REASONING_EFFORT:
+            extra_body["reasoning_effort"] = settings.LLM_REASONING_EFFORT
+
         response = self.client.chat.completions.create(
             model=settings.MODEL,
             max_tokens=max_tokens,
+            response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user",   "content": user},
+                {"role": "user", "content": user},
             ],
+            extra_body=extra_body,
         )
         return response.choices[0].message.content
 
     # ─── Stage 1: JD Analysis ─────────────────────────────────────────────────
 
-    SYSTEM_JD_PARSER = (
-        "You are an expert ATS analyst and recruiter. "
-        "Parse job descriptions into precise structured JSON. "
-        "Extract ALL keywords, skills, and requirements including implicit ones. "
-        "Always respond with valid JSON only — no markdown, no explanation."
-    )
+    SYSTEM_JD_PARSER = """You are an expert ATS (Applicant Tracking System) analyst and recruiter.
+Your job is to parse a job description into a precise structured format.
+Extract ALL keywords, skills, and requirements — including implicit ones.
+Always respond with valid JSON only, no markdown, no explanation."""
 
     def parse_jd(self, jd_text: str) -> ParsedJD:
+        """Parse raw JD text into a structured ParsedJD object."""
         prompt = f"""Parse this job description into JSON with EXACTLY this structure:
 {{
   "job_title": "exact job title",
@@ -121,45 +61,46 @@ class AIAgent:
   "job_type": "Full-time|Part-time|Contract|Remote or null",
   "seniority": "Junior|Mid|Senior|Lead|Principal|Staff or null",
   "industry": "industry domain",
-  "required_skills": ["must-have technical skills"],
-  "preferred_skills": ["nice-to-have skills"],
+  "required_skills": ["list of must-have technical skills"],
+  "preferred_skills": ["list of nice-to-have skills"],
   "responsibilities": ["key responsibilities as short phrases"],
   "qualifications": ["education/certification requirements"],
-  "keywords": ["ALL ATS keywords — tools, frameworks, methodologies, soft skills, domain terms — extract 25-40 keywords"]
+  "keywords": ["ALL important ATS keywords including: tools, frameworks, methodologies, soft skills, domain terms — extract 25-40 keywords"]
 }}
-
-Rules:
-- Include BOTH spelled-out and abbreviated forms: "Machine Learning" AND "ML"
-- Include action-based terms from responsibilities
-- Return ONLY the JSON object
 
 Job Description:
 ---
 {jd_text[:8000]}
----"""
+---
+
+Rules:
+- keywords must include EVERY technical term, tool, framework, methodology, certification, domain term
+- Include both spelled-out and abbreviated forms: "Machine Learning" and "ML"
+- Include action-based keywords from responsibilities: "distributed systems", "cross-functional teams"
+- Return ONLY the JSON object"""
 
         response = self._call(self.SYSTEM_JD_PARSER, prompt)
         try:
             data = json.loads(response.strip())
         except json.JSONDecodeError:
+            # Try to extract JSON from response
+            import re
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
                 data = json.loads(match.group())
             else:
                 raise ValueError(f"AI returned invalid JSON: {response[:200]}")
+
         data["raw_text"] = jd_text
         return ParsedJD(**data)
 
     # ─── Stage 2: Resume Tailoring ────────────────────────────────────────────
 
-    SYSTEM_RESUME_TAILOR = (
-        "You are an elite resume coach and ATS optimisation expert. "
-        "Tailor resumes to maximise ATS keyword scores while staying 100% truthful. "
-        "Mirror the JD's exact language. Use strong action verbs. Quantify everything. "
-        "CRITICAL: Every keyword listed in MANDATORY_KEYWORDS must appear verbatim "
-        "somewhere in the output — in skills, bullets, or summary. No exceptions. "
-        "Respond with valid JSON only."
-    )
+    SYSTEM_RESUME_TAILOR = """You are an elite resume coach and ATS optimization expert.
+You help candidates tailor their resumes to maximize ATS scores and pass recruiter screening.
+You ONLY use skills and experiences the candidate actually has — never fabricate.
+You mirror the JD's language naturally while keeping content honest.
+Always respond with valid JSON only."""
 
     def tailor_resume(
         self,
@@ -167,88 +108,91 @@ Job Description:
         candidate_data: Dict[str, Any],
         emphasis: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        # Merge JD keywords + user emphasis into one mandatory set
-        all_target_keywords = list(parsed_jd.keywords)
-        mandatory_keywords  = list(emphasis) if emphasis else []
-        # De-dupe while preserving order
-        seen: Set[str] = set()
-        combined = []
-        for kw in (mandatory_keywords + all_target_keywords):
-            kl = kw.lower()
-            if kl not in seen:
-                seen.add(kl)
-                combined.append(kw)
+        """
+        Select and rewrite resume content to match JD.
+        Returns a structured dict ready for the DOCX builder.
+        """
+        emphasis_str = ""
+        if emphasis:
+            emphasis_str = f"\nUser wants to especially emphasize: {', '.join(emphasis)}"
 
-        mandatory_str = (
-            f"\n\nMANDATORY_KEYWORDS — every single one MUST appear verbatim in your output:\n"
-            f"{json.dumps(mandatory_keywords)}\n"
-            f"Weave them naturally into skills list, bullet points, or summary. "
-            f"Do NOT leave any of these out."
-        ) if mandatory_keywords else ""
-
-        prompt = f"""Create an ATS-optimised resume given the JD analysis and candidate profile.
+        prompt = f"""Given the job description analysis and candidate's full profile, create an optimized resume.
 
 === JOB DESCRIPTION ===
-Title:             {parsed_jd.job_title}
-Company:           {parsed_jd.company}
-Seniority:         {parsed_jd.seniority}
-Required Skills:   {', '.join(parsed_jd.required_skills)}
-Preferred Skills:  {', '.join(parsed_jd.preferred_skills)}
-Responsibilities:  {json.dumps(parsed_jd.responsibilities)}
-All ATS Keywords:  {', '.join(combined[:40])}
-{mandatory_str}
+Title: {parsed_jd.job_title}
+Company: {parsed_jd.company}
+Seniority: {parsed_jd.seniority}
+Required Skills: {', '.join(parsed_jd.required_skills)}
+Preferred Skills: {', '.join(parsed_jd.preferred_skills)}
+Key Responsibilities: {json.dumps(parsed_jd.responsibilities)}
+ATS Keywords to target: {', '.join(parsed_jd.keywords)}
+{emphasis_str}
 
 === CANDIDATE PROFILE ===
-{json.dumps(candidate_data, indent=2, default=str)}
+{json.dumps(candidate_data, default=str)}
 
 === INSTRUCTIONS ===
-1. SUMMARY (3-4 sentences):
-   - Open with the EXACT job title from the JD
-   - Weave in 6-8 ATS keywords naturally
-   - Include at least 2 quantified achievements
+1. PROFESSIONAL SUMMARY: Write a 3-4 sentence summary that:
+   - Opens with the exact job title from the JD
+   - Naturally incorporates 5-8 ATS keywords
+   - Highlights most relevant experience/skills
+   - Is specific and quantified
 
-2. SKILLS (top {settings.MAX_SKILLS_IN_RESUME}, max 3 groups):
-   - Prioritise JD-matched skills
-   - Include all MANDATORY_KEYWORDS that are skills/tools
-   - Use exact JD phrasing where applicable
+2. SKILLS SELECTION: Pick the {settings.MAX_SKILLS_IN_RESUME} most relevant skills from candidate's metabase.
+   Group them into max 3 categories. Put closest JD matches first.
 
-3. WORK EXPERIENCE (top {settings.MAX_EXPERIENCE_BULLETS} bullets per role):
-   - Strong action verbs: Architected, Engineered, Slashed, Delivered, Automated
-   - Mirror JD terminology exactly
-   - Quantify every bullet possible (%, $, x faster, N users)
-   - Inject MANDATORY_KEYWORDS naturally into bullets
+3. WORK EXPERIENCE: For each role, select and REWRITE the {settings.MAX_EXPERIENCE_BULLETS} most relevant bullets.
+   - Start with strong action verbs
+   - Mirror JD terminology naturally
+   - Quantify impact where data exists
+   - Include relevant ATS keywords
 
-4. PROJECTS (top {settings.MAX_PROJECTS_IN_RESUME}):
-   - Rewrite bullets around skills the JD values
-   - Include MANDATORY_KEYWORDS where relevant
+4. PROJECTS: Select the {settings.MAX_PROJECTS_IN_RESUME} most relevant projects.
+   Rewrite bullets to highlight skills/tech the JD cares about.
 
-5. After building the resume, list which keywords you successfully included
-   and which ones genuinely cannot be included (candidate has no evidence for them).
+5. KEYWORD INJECTION: Naturally inject missing JD keywords where truthfully applicable.
 
-Return JSON:
+Return this JSON structure:
 {{
-  "professional_summary": "...",
-  "skills": [{{"category": "...", "items": ["..."]}}],
-  "work_experience": [{{
-    "company": "...", "role": "...", "location": "...",
-    "start_date": "...", "end_date": "...",
-    "bullets": ["..."]
-  }}],
-  "projects": [{{
-    "title": "...", "tech_stack": ["..."],
-    "date_range": "...", "github_url": null,
-    "bullets": ["..."]
-  }}],
-  "keywords_injected": ["keywords actually present in output"],
-  "keywords_missing":  ["JD keywords candidate genuinely lacks — keep this list honest and short"]
+  "professional_summary": "3-4 sentence tailored summary",
+  "skills": [
+    {{"category": "Category Name", "items": ["skill1", "skill2", ...]}}
+  ],
+  "work_experience": [
+    {{
+      "company": "Company Name",
+      "role": "Job Title (mirror JD language if same role)",
+      "location": "City, State",
+      "start_date": "Month Year",
+      "end_date": "Month Year or Present",
+      "bullets": ["rewritten bullet 1", "rewritten bullet 2", ...]
+    }}
+  ],
+  "projects": [
+    {{
+      "title": "Project Title",
+      "tech_stack": ["tech1", "tech2"],
+      "date_range": "Month Year - Month Year",
+      "github_url": "url or null",
+      "bullets": ["rewritten bullet 1", "bullet 2"]
+    }}
+  ],
+  "keywords_injected": ["list of JD keywords successfully incorporated"],
+  "keywords_missing": ["JD keywords the candidate doesn't have"]
 }}
 
-CRITICAL: Only use information from the candidate's actual profile. Never fabricate."""
+CRITICAL: Only use information from the candidate's actual profile. Never invent experiences."""
 
-        response = self._call(self.SYSTEM_RESUME_TAILOR, prompt, max_tokens=6000)
+        # 6000 was reserved here previously — combined with a rich candidate
+        # profile (many skills/bullets), prompt + reservation regularly
+        # exceeded free-tier TPM ceilings on providers like Groq (8K/min).
+        # The requested JSON structure (summary + skills + bullets) doesn't
+        # need that much; 3500 leaves comfortable headroom.
+        response = self._call(self.SYSTEM_RESUME_TAILOR, prompt, max_tokens=3500)
         try:
             data = json.loads(response.strip())
         except json.JSONDecodeError:
+            import re
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
                 data = json.loads(match.group())
@@ -256,128 +200,246 @@ CRITICAL: Only use information from the candidate's actual profile. Never fabric
                 raise ValueError(f"AI tailor returned invalid JSON: {response[:200]}")
         return data
 
-    # ─── Stage 3: ATS Scoring — DETERMINISTIC ─────────────────────────────────
-    # keyword_score and skills_score use real string matching, NOT LLM judgement.
-    # action_verb_score and format_score still use LLM (qualitative judgements).
+    # ─── Stage 3: ATS Scoring ─────────────────────────────────────────────────
 
-    STRONG_ACTION_VERBS = {
-        "architected","engineered","designed","built","developed","created","launched",
-        "deployed","shipped","delivered","led","spearheaded","drove","accelerated",
-        "automated","optimised","optimized","reduced","improved","increased","scaled",
-        "slashed","cut","eliminated","streamlined","migrated","refactored","integrated",
-        "implemented","established","mentored","collaborated","contributed","awarded",
-        "achieved","generated","boosted","transformed","pioneered","innovated",
-    }
+    SYSTEM_ATS_SCORER = """You are an ATS system simulator. Score resumes objectively based on 
+keyword matching, skills alignment, and formatting quality. Return precise scores. JSON only."""
 
     def score_resume(
         self, parsed_jd: ParsedJD, tailored_resume: Dict[str, Any]
     ) -> Dict[str, Any]:
-        blob = _resume_blob(tailored_resume)
+        """Simulate ATS scoring of the tailored resume."""
+        resume_text = json.dumps(tailored_resume)
 
-        # ── Keyword score: deterministic ──────────────────────────────────────
-        kw_score, kw_matched, kw_missing = _score_keywords(parsed_jd.keywords, blob)
+        prompt = f"""Score this resume against the job description using ATS criteria.
 
-        # ── Skills score: deterministic ───────────────────────────────────────
-        sk_score, sk_matched, sk_missing = _score_keywords(parsed_jd.required_skills, blob)
+JD Required Skills: {parsed_jd.required_skills}
+JD Keywords: {parsed_jd.keywords}
+JD Qualifications: {parsed_jd.qualifications}
 
-        # ── Action verb score: count strong verbs at bullet starts ────────────
-        bullets_text = " ".join(
-            b for exp in tailored_resume.get("work_experience", [])
-            for b in exp.get("bullets", [])
-        ) + " ".join(
-            b for proj in tailored_resume.get("projects", [])
-            for b in proj.get("bullets", [])
-        )
-        bullet_starts = [
-            _normalise(b).split()[0]
-            for exp in tailored_resume.get("work_experience", [])
-            for b in exp.get("bullets", []) if b.strip()
-        ] + [
-            _normalise(b).split()[0]
-            for proj in tailored_resume.get("projects", [])
-            for b in proj.get("bullets", []) if b.strip()
-        ]
+Resume Content:
+{resume_text[:5000]}
 
-        total_bullets = len(bullet_starts)
-        strong_starts = sum(1 for w in bullet_starts if w in self.STRONG_ACTION_VERBS)
-        av_score = round((strong_starts / max(total_bullets, 1)) * 100, 1)
-        av_score = min(av_score * 1.2, 100)  # slight boost — partial credit for good verbs
+Calculate scores (0-100 for each):
+1. keyword_score (40% weight): What % of JD keywords appear in resume?
+2. skills_score (30% weight): What % of required skills are in resume?
+3. action_verb_score (15% weight): Quality of action verbs used?
+4. format_score (15% weight): ATS-friendly formatting signals?
 
-        # ── Format score: heuristic checks ───────────────────────────────────
-        format_checks = {
-            "has_summary":    bool(tailored_resume.get("professional_summary")),
-            "has_skills":     bool(tailored_resume.get("skills")),
-            "has_experience": bool(tailored_resume.get("work_experience")),
-            "has_projects":   bool(tailored_resume.get("projects")),
-            "bullets_quantified": any(
-                re.search(r'\d+', b)
-                for exp in tailored_resume.get("work_experience", [])
-                for b in exp.get("bullets", [])
-            ),
-            "no_pronouns": not re.search(
-                r'\b(i |my |we |our )\b',
-                blob
-            ),
-        }
-        fmt_score = round((sum(format_checks.values()) / len(format_checks)) * 100, 1)
+Return JSON:
+{{
+  "keyword_score": 0-100,
+  "skills_score": 0-100,
+  "action_verb_score": 0-100,
+  "format_score": 0-100,
+  "total_score": weighted_average,
+  "matched_keywords": ["keywords found"],
+  "missing_keywords": ["important keywords not found"],
+  "matched_skills": ["required skills found"],
+  "missing_skills": ["required skills not found"],
+  "suggestions": ["2-3 specific improvement suggestions"]
+}}"""
 
-        # ── Weighted total ────────────────────────────────────────────────────
-        total = round(
-            kw_score * settings.ATS_KEYWORD_WEIGHT +
-            sk_score * settings.ATS_SKILLS_WEIGHT  +
-            av_score * settings.ATS_ACTION_VERB_WEIGHT +
-            fmt_score * settings.ATS_FORMAT_WEIGHT,
-            1,
-        )
-
-        # ── Suggestions based on actual gaps ─────────────────────────────────
-        suggestions = []
-        if kw_missing[:5]:
-            suggestions.append(
-                f"Add these missing keywords to your metabase or emphasis list: "
-                f"{', '.join(kw_missing[:5])}"
-            )
-        if sk_missing:
-            suggestions.append(
-                f"Missing required skills: {', '.join(sk_missing[:4])}. "
-                f"Add to metabase if you have experience with them."
-            )
-        if av_score < 70:
-            suggestions.append(
-                "Start more bullets with strong verbs: Architected, Engineered, "
-                "Slashed, Delivered, Automated, Spearheaded."
-            )
-        if not format_checks["bullets_quantified"]:
-            suggestions.append(
-                "Quantify more bullets with numbers (%, ms, $, x faster, N users)."
-            )
-
-        logger.info(
-            f"ATS Score: {total} | KW: {kw_score} ({len(kw_matched)}/{len(parsed_jd.keywords)}) | "
-            f"SK: {sk_score} ({len(sk_matched)}/{len(parsed_jd.required_skills)}) | "
-            f"AV: {av_score} | FMT: {fmt_score}"
-        )
-
-        return {
-            "keyword_score":     kw_score,
-            "skills_score":      sk_score,
-            "action_verb_score": av_score,
-            "format_score":      fmt_score,
-            "total_score":       total,
-            "matched_keywords":  kw_matched,
-            "missing_keywords":  kw_missing,
-            "matched_skills":    sk_matched,
-            "missing_skills":    sk_missing,
-            "suggestions":       suggestions[:4],
-            "debug": {
-                "total_jd_keywords":       len(parsed_jd.keywords),
-                "keywords_matched_count":  len(kw_matched),
-                "total_required_skills":   len(parsed_jd.required_skills),
-                "skills_matched_count":    len(sk_matched),
-                "bullets_with_strong_verb": f"{strong_starts}/{total_bullets}",
-                "format_checks":           format_checks,
+        response = self._call(self.SYSTEM_ATS_SCORER, prompt, max_tokens=2000)
+        try:
+            return json.loads(response.strip())
+        except json.JSONDecodeError:
+            # Return baseline if scoring fails
+            return {
+                "keyword_score": 75.0,
+                "skills_score": 70.0,
+                "action_verb_score": 80.0,
+                "format_score": 85.0,
+                "total_score": 75.0,
+                "matched_keywords": tailored_resume.get("keywords_injected", []),
+                "missing_keywords": tailored_resume.get("keywords_missing", []),
+                "matched_skills": [],
+                "missing_skills": [],
+                "suggestions": [],
             }
-        }
+
+    # ─── Stage 4: Cover Letter ────────────────────────────────────────────────
+
+    SYSTEM_COVER_LETTER = """You are an expert career coach and professional writer.
+Write compelling, personalized cover letters that feel human — not templated.
+Mirror the company's tone, highlight the most relevant experience, and show genuine enthusiasm.
+Always respond with valid JSON only."""
+
+    def generate_cover_letter(
+        self,
+        parsed_jd: ParsedJD,
+        candidate_data: Dict[str, Any],
+        tailored_resume: Dict[str, Any],
+        tone: str = "professional",  # professional | conversational | enthusiastic
+    ) -> Dict[str, Any]:
+        """
+        Generate a personalized cover letter.
+
+        Args:
+            parsed_jd       — structured JD from parse_jd()
+            candidate_data  — full profile from metabase
+            tailored_resume — output from tailor_resume() (for aligned content)
+            tone            — writing tone preference
+
+        Returns:
+            {subject, body, word_count, highlights}
+        """
+        personal = candidate_data.get("personal", {})
+
+        prompt = f"""Write a personalized cover letter for this job application.
+
+=== JOB DETAILS ===
+Title: {parsed_jd.job_title}
+Company: {parsed_jd.company or "the company"}
+Seniority: {parsed_jd.seniority}
+Industry: {parsed_jd.industry}
+Key Requirements: {", ".join(parsed_jd.required_skills[:8])}
+Responsibilities: {json.dumps(parsed_jd.responsibilities[:4])}
+
+=== CANDIDATE ===
+Name: {personal.get("full_name", "Candidate")}
+Current Role Summary: {tailored_resume.get("professional_summary", "")}
+Top Skills: {", ".join([s["items"][0] if s.get("items") else "" for s in tailored_resume.get("skills", [])[:3]])}
+Most Relevant Experience: {json.dumps([
+    {{"role": e["role"], "company": e["company"], "highlight": e["bullets"][0] if e.get("bullets") else ""}}
+    for e in tailored_resume.get("work_experience", [])[:2]
+], default=str)}
+
+=== INSTRUCTIONS ===
+Tone: {tone}
+Length: 250-320 words (3-4 paragraphs)
+
+Paragraph 1: Hook — why this specific role at this specific company excites the candidate.
+Paragraph 2: Most relevant achievement (quantified) that directly maps to a key requirement.
+Paragraph 3: Second achievement or skill that addresses another key requirement.
+Paragraph 4: Brief close — enthusiasm, call to action, professional sign-off.
+
+Rules:
+- Never use generic phrases like "I am writing to apply" or "Please find attached"
+- Reference the company by name at least twice
+- Include at least one quantified achievement
+- Sound like a real human wrote it, not AI
+- Do NOT fabricate experiences not in the candidate's profile
+
+Return JSON:
+{{
+  "subject": "email subject line for the application",
+  "body": "full cover letter text with \n for line breaks",
+  "word_count": approximate_word_count,
+  "highlights": ["3 key selling points used in the letter"]
+}}"""
+
+        response = self._call(self.SYSTEM_COVER_LETTER, prompt, max_tokens=2000)
+        try:
+            return json.loads(response.strip())
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r'\{.*\}', response, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+            return {
+                "subject": f"Application for {parsed_jd.job_title}",
+                "body": response,
+                "word_count": len(response.split()),
+                "highlights": [],
+            }
+
+    # ─── Stage 5: Interview Prep ──────────────────────────────────────────────
+
+    SYSTEM_INTERVIEW_PREP = """You are a senior technical recruiter and interview coach with 15+ years experience.
+Generate realistic, role-specific interview questions with detailed model answers.
+Questions should reflect what top companies actually ask — behavioral, technical, and situational.
+Always respond with valid JSON only."""
+
+    def generate_interview_prep(
+        self,
+        parsed_jd: ParsedJD,
+        candidate_data: Dict[str, Any],
+        tailored_resume: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Generate tailored interview questions + model answers.
+
+        Returns:
+            {
+              questions: [
+                {
+                  category: "behavioral|technical|situational|cultural",
+                  question: "...",
+                  why_asked: "what the interviewer is evaluating",
+                  model_answer: "STAR-format answer using candidate's real experience",
+                  tips: ["specific tip 1", "specific tip 2"],
+                  difficulty: "easy|medium|hard"
+                }
+              ],
+              quick_tips: ["5 role-specific tips for this interview"],
+              red_flags_to_avoid: ["common mistakes for this role"],
+              questions_to_ask: ["3 smart questions candidate should ask the interviewer"]
+            }
+        """
+        personal = candidate_data.get("personal", {})
+        skills_missing = tailored_resume.get("keywords_missing", [])
+
+        prompt = f"""Generate comprehensive interview preparation for this job application.
+
+=== ROLE ===
+Title: {parsed_jd.job_title}
+Company: {parsed_jd.company or "the company"}
+Seniority: {parsed_jd.seniority}
+Required Skills: {", ".join(parsed_jd.required_skills)}
+Responsibilities: {json.dumps(parsed_jd.responsibilities[:5])}
+
+=== CANDIDATE PROFILE ===
+Name: {personal.get("full_name", "Candidate")}
+Summary: {tailored_resume.get("professional_summary", "")}
+Experience: {json.dumps([
+    {{"role": e["role"], "company": e["company"], "bullets": e["bullets"][:2]}}
+    for e in tailored_resume.get("work_experience", [])[:3]
+], default=str)}
+Skills: {json.dumps([
+    {{"category": s["category"], "items": s["items"][:4]}}
+    for s in tailored_resume.get("skills", [])[:4]
+], default=str)}
+Skill gaps (prepare for): {", ".join(skills_missing[:5]) if skills_missing else "none identified"}
+
+=== GENERATE ===
+Create exactly 10 questions across these categories:
+- 3 behavioral (STAR format, use candidate's actual experience)
+- 3 technical (specific to required skills, realistic difficulty)
+- 2 situational (role-specific scenarios)
+- 1 cultural fit
+- 1 about the skill gaps (how to address honestly)
+
+For model answers: use the candidate's REAL experience from their profile. Reference actual companies, projects, and metrics they have.
+
+Return JSON:
+{{
+  "questions": [
+    {{
+      "category": "behavioral|technical|situational|cultural|skill_gap",
+      "question": "exact question text",
+      "why_asked": "what the interviewer is evaluating (1 sentence)",
+      "model_answer": "detailed STAR answer using candidate's real experience (150-200 words)",
+      "tips": ["actionable tip 1", "actionable tip 2"],
+      "difficulty": "easy|medium|hard"
+    }}
+  ],
+  "quick_tips": ["5 specific tips for this exact role/company"],
+  "red_flags_to_avoid": ["3 common mistakes candidates make for this role"],
+  "questions_to_ask": [
+    {{"question": "smart question to ask interviewer", "why": "what it signals about you"}}
+  ]
+}}"""
+
+        response = self._call(self.SYSTEM_INTERVIEW_PREP, prompt, max_tokens=6000)
+        try:
+            return json.loads(response.strip())
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r'\{.*\}', response, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+            return {"questions": [], "quick_tips": [], "red_flags_to_avoid": [], "questions_to_ask": []}
 
 
 ai_agent = AIAgent()

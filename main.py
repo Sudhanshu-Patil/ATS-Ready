@@ -1,62 +1,129 @@
 """
-Resume AI Agent — FastAPI Application
+main.py — Step 6 update
+────────────────────────
+Adds content_router for cover letters and interview prep.
 """
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.db.models import init_db
-from app.api.routes import router
-from app.ui.routes import ui_router
 from app.config import settings
+from app.db.database import close_db, init_db
+from app.services.cache_service import cache_service
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+structlog.configure(
+    processors=[
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.dev.ConsoleRenderer() if settings.is_development
+        else structlog.processors.JSONRenderer(),
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
 )
-logger = logging.getLogger(__name__)
-BASE_DIR = Path(__file__).parent
+logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
+logger = structlog.get_logger(__name__)
+
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        release=settings.APP_VERSION,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        integrations=[FastApiIntegration()],
+        send_default_pii=False,
+    )
+
+DIST_DIR = Path(__file__).parent / "app" / "static" / "dist"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Resume AI Agent...")
-    init_db()
-    logger.info("Database initialized")
+    logger.info("Starting ATS-Ready", version=settings.APP_VERSION, env=settings.ENVIRONMENT)
+    if settings.is_development:
+        await init_db()
+        logger.info("Database tables created/verified (dev mode)")
+    else:
+        from sqlalchemy import text
+        from app.db.database import engine
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        logger.info("Database connection verified")
+    if await cache_service.ping():
+        logger.info("Redis connected and responsive")
+    else:
+        logger.warning("Redis unavailable — caching disabled")
     yield
-    logger.info("Shutting down")
+    await cache_service.close()
+    await close_db()
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(
-    title="Resume AI Agent",
-    description="Automatically tailors your resume to any JD using GPT-4, maximizing ATS scores.",
-    version="1.0.0",
+    title="ATS-Ready API",
+    description="AI-powered resume tailoring, cover letters, and interview prep.",
+    version=settings.APP_VERSION,
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/docs" if settings.is_development else None,
+    redoc_url="/redoc" if settings.is_development else None,
 )
+
+ALLOWED_ORIGINS = [settings.FRONTEND_URL]
+if settings.is_development:
+    ALLOWED_ORIGINS += ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:8000"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# Static files (CSS/JS)
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
+if settings.is_development:
+    app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
 
-# Download outputs
-app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
+# ── API Routes ────────────────────────────────────────────────────────────────
+from app.api.routes import router
+from app.api.auth_routes import auth_router
+from app.api.sse_routes import sse_router
+from app.api.job_routes import job_router
+from app.api.billing_routes import billing_router
+from app.api.content_routes import content_router
 
-# JSON API
-app.include_router(router, prefix="/api")
+app.include_router(auth_router,    prefix="/api")
+app.include_router(router,         prefix="/api")
+app.include_router(sse_router,     prefix="/api")
+app.include_router(job_router,     prefix="/api")
+app.include_router(billing_router, prefix="/api")
+app.include_router(content_router, prefix="/api")
 
-# HTML UI pages
-app.include_router(ui_router)
+
+@app.get("/health", tags=["System"])
+async def health():
+    return {"status": "ok", "version": settings.APP_VERSION}
+
+
+# ── Serve React SPA ───────────────────────────────────────────────────────────
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        index = DIST_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"error": "Frontend not built. Run: cd frontend && npm run build"}
+else:
+    @app.get("/", include_in_schema=False)
+    async def root():
+        return {"message": "ATS-Ready API", "docs": "/docs"}

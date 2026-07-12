@@ -1,17 +1,18 @@
 """
-Metabase Service
------------------
-Fetches and structures the candidate's full profile from SQLite.
-Ranks skills/projects/experience by relevance for the AI tailoring stage.
+app/services/metabase_service.py
+──────────────────────────────────
+Async version of the metabase service.
+Fetches the candidate's full profile from PostgreSQL, scoped to a user_id.
 """
 import logging
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    PersonalInfo, Skill, Project, ProjectBullet,
-    WorkExperience, ExperienceBullet, Education
+    Education, ExperienceBullet, PersonalInfo, Project,
+    ProjectBullet, Skill, WorkExperience,
 )
 
 logger = logging.getLogger(__name__)
@@ -19,29 +20,34 @@ logger = logging.getLogger(__name__)
 
 class MetabaseService:
 
-    def get_full_profile(self, db: Session) -> Dict[str, Any]:
+    async def get_full_profile_async(
+        self, db: AsyncSession, user_id: int
+    ) -> Dict[str, Any]:
         """
-        Build and return the complete candidate profile dict.
-        Used by the AI agent as context for tailoring.
+        Build and return the complete candidate profile dict for a given user.
+        Used by the ARQ worker task as context for AI tailoring.
         """
         profile = {
-            "personal":   self._get_personal(db),
-            "skills":     self._get_skills(db),
-            "experience": self._get_experience(db),
-            "projects":   self._get_projects(db),
-            "education":  self._get_education(db),
+            "personal":   await self._get_personal(db, user_id),
+            "skills":     await self._get_skills(db, user_id),
+            "experience": await self._get_experience(db, user_id),
+            "projects":   await self._get_projects(db, user_id),
+            "education":  await self._get_education(db, user_id),
         }
         logger.info(
-            f"Profile loaded — {len(profile['skills'])} skills, "
-            f"{len(profile['experience'])} roles, "
-            f"{len(profile['projects'])} projects"
+            "Profile loaded for user %d — %d skills, %d roles, %d projects",
+            user_id,
+            len(profile["skills"]),
+            len(profile["experience"]),
+            len(profile["projects"]),
         )
         return profile
 
-    # ── Personal Info ──────────────────────────────────────────────────────────
-
-    def _get_personal(self, db: Session) -> Optional[Dict]:
-        info = db.query(PersonalInfo).first()
+    async def _get_personal(self, db: AsyncSession, user_id: int) -> Optional[Dict]:
+        result = await db.execute(
+            select(PersonalInfo).where(PersonalInfo.user_id == user_id)
+        )
+        info = result.scalar_one_or_none()
         if not info:
             return None
         return {
@@ -55,13 +61,12 @@ class MetabaseService:
             "professional_summary": info.professional_summary,
         }
 
-    # ── Skills ─────────────────────────────────────────────────────────────────
-
-    def _get_skills(self, db: Session) -> List[Dict]:
-        skills = db.query(Skill).order_by(
-            Skill.is_primary.desc(),
-            Skill.years_experience.desc()
-        ).all()
+    async def _get_skills(self, db: AsyncSession, user_id: int) -> List[Dict]:
+        result = await db.execute(
+            select(Skill)
+            .where(Skill.user_id == user_id)
+            .order_by(Skill.is_primary.desc(), Skill.years_experience.desc())
+        )
         return [
             {
                 "name":             s.name,
@@ -71,27 +76,23 @@ class MetabaseService:
                 "keywords":         s.keywords or [],
                 "is_primary":       s.is_primary,
             }
-            for s in skills
+            for s in result.scalars().all()
         ]
 
-    # ── Work Experience ────────────────────────────────────────────────────────
-
-    def _get_experience(self, db: Session) -> List[Dict]:
-        exps = db.query(WorkExperience).order_by(
-            WorkExperience.is_current.desc(),
-            WorkExperience.start_date.desc()
-        ).all()
-
-        result = []
+    async def _get_experience(self, db: AsyncSession, user_id: int) -> List[Dict]:
+        result = await db.execute(
+            select(WorkExperience)
+            .where(WorkExperience.user_id == user_id)
+            .order_by(WorkExperience.is_current.desc(), WorkExperience.start_date.desc())
+        )
+        exps = result.scalars().all()
+        output = []
         for exp in exps:
-            # Sort bullets by impact score descending
-            bullets = (
-                db.query(ExperienceBullet)
-                .filter(ExperienceBullet.experience_id == exp.id)
-                .order_by(ExperienceBullet.impact_score.desc())
-                .all()
+            # Bullets are loaded eagerly (lazy="selectin" in model)
+            bullets_sorted = sorted(
+                exp.bullets, key=lambda b: b.impact_score, reverse=True
             )
-            result.append({
+            output.append({
                 "company":    exp.company,
                 "role":       exp.role,
                 "location":   exp.location,
@@ -99,32 +100,26 @@ class MetabaseService:
                 "end_date":   exp.end_date or "Present",
                 "is_current": exp.is_current,
                 "tech_stack": exp.tech_stack or [],
-                "bullets":    [
+                "bullets": [
                     {
                         "text":         b.bullet,
                         "keywords":     b.keywords or [],
                         "impact_score": b.impact_score,
                     }
-                    for b in bullets
+                    for b in bullets_sorted
                 ],
             })
-        return result
+        return output
 
-    # ── Projects ───────────────────────────────────────────────────────────────
-
-    def _get_projects(self, db: Session) -> List[Dict]:
-        projects = db.query(Project).order_by(
-            Project.is_featured.desc()
-        ).all()
-
-        result = []
-        for proj in projects:
-            bullets = (
-                db.query(ProjectBullet)
-                .filter(ProjectBullet.project_id == proj.id)
-                .all()
-            )
-            result.append({
+    async def _get_projects(self, db: AsyncSession, user_id: int) -> List[Dict]:
+        result = await db.execute(
+            select(Project)
+            .where(Project.user_id == user_id)
+            .order_by(Project.is_featured.desc())
+        )
+        output = []
+        for proj in result.scalars().all():
+            output.append({
                 "title":             proj.title,
                 "description":       proj.description,
                 "short_description": proj.short_description,
@@ -135,20 +130,17 @@ class MetabaseService:
                 "start_date":        proj.start_date,
                 "end_date":          proj.end_date,
                 "is_featured":       proj.is_featured,
-                "bullets":           [
-                    {
-                        "text":     b.bullet,
-                        "keywords": b.keywords or [],
-                    }
-                    for b in bullets
+                "bullets": [
+                    {"text": b.bullet, "keywords": b.keywords or []}
+                    for b in proj.bullets
                 ],
             })
-        return result
+        return output
 
-    # ── Education ──────────────────────────────────────────────────────────────
-
-    def _get_education(self, db: Session) -> List[Dict]:
-        edus = db.query(Education).all()
+    async def _get_education(self, db: AsyncSession, user_id: int) -> List[Dict]:
+        result = await db.execute(
+            select(Education).where(Education.user_id == user_id)
+        )
         return [
             {
                 "institution":         e.institution,
@@ -160,7 +152,7 @@ class MetabaseService:
                 "honors":              e.honors,
                 "relevant_coursework": e.relevant_coursework or [],
             }
-            for e in edus
+            for e in result.scalars().all()
         ]
 
 

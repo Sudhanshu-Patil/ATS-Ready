@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark background -->
+  <rect width="32" height="32" rx="8" fill="#0A0A0F"/>
+  <!-- Ember gradient background square -->
+  <rect width="32" height="32" rx="8" fill="url(#grad)"/>
+  <!-- Zap bolt -->
+  <polygon points="18,4 10,18 15,18 14,28 22,14 17,14" fill="white" opacity="0.95"/>
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FF6B35"/>
+      <stop offset="100%" stop-color="#FF8555"/>
+    </linearGradient>
+  </defs>
+</svg>

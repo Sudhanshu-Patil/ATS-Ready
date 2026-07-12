@@ -1,39 +1,156 @@
-from pydantic_settings import BaseSettings
+"""
+app/config.py
+─────────────
+Central settings loaded from environment variables / .env file.
+All sub-systems import `settings` from here — never read os.environ directly.
+"""
 from pathlib import Path
+from typing import Optional
 
-BASE_DIR = Path(__file__).parent.parent  # points to resume_agent/
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).parent.parent  # project root
 
 
 class Settings(BaseSettings):
-    GEMINI_API_KEY: str = ""
-    MODEL: str = "gemini-2.0-flash"
-    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",           # silently ignore unknown env vars
+        case_sensitive=False,
+    )
 
-    # Database
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR}/metabase.db"
+    # ── App ───────────────────────────────────────────────────────────────────
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+    APP_VERSION: str = "1.0.0"
 
-    # Resume generation
+    # ── LLM (any OpenAI-compatible endpoint — currently Groq) ──────────────────
+    LLM_API_KEY: str = ""
+    MODEL: str = "openai/gpt-oss-120b"
+    LLM_BASE_URL: str = "https://api.groq.com/openai/v1"
+    # low/medium/high — gpt-oss reasoning depth. This app's tasks (structured
+    # extraction, professional rewriting) don't need deep multi-step reasoning,
+    # so "low" trades reasoning depth for speed/cost. Empty string omits the
+    # param entirely (needed for providers/models that don't support it).
+    LLM_REASONING_EFFORT: str = "low"
+
+    # ── Database ──────────────────────────────────────────────────────────────
+    # Async URL used by the app (asyncpg driver)
+    DATABASE_URL: str = f"postgresql+asyncpg://atsready:secret@127.0.0.1:5432/atsready"
+
+    # Sync URL used ONLY by Alembic CLI (psycopg2 driver).
+    # Alembic cannot use asyncpg; this is kept separate intentionally.
+    SYNC_DATABASE_URL: str = f"postgresql+psycopg2://atsready:secret@127.0.0.1:5432/atsready"
+
+    # SQLAlchemy async pool settings
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_TIMEOUT: int = 30      # seconds to wait for a connection
+    DB_POOL_RECYCLE: int = 1800    # recycle connections every 30 min
+
+    # ── Redis ─────────────────────────────────────────────────────────────────
+    REDIS_URL: str = "redis://:secret@127.0.0.1:6379/0"
+
+    # ── Apify (job recommendations — LinkedIn source) ───────────────────────────
+    # Account-level token, works for any actor. Only genuinely free actors are
+    # used (no pay-per-result/rental fee) — cost is limited to Apify's own
+    # platform compute, covered by the free plan's $5/month credit.
+    APIFY_API_TOKEN: str = ""
+
+    # Cache TTLs (seconds)
+    CACHE_JD_PARSE_TTL: int = 86_400       # 24 hours — same JD text = same parse
+    CACHE_SCRAPED_URL_TTL: int = 21_600    # 6 hours  — scraped job pages
+    CACHE_PROFILE_TTL: int = 300           # 5 min    — candidate profile
+
+    # ── File Storage ─────────────────────────────────────────────────────────
+    S3_ENDPOINT_URL: str = ""              # empty = use real AWS S3
+    S3_ACCESS_KEY_ID: str = ""
+    S3_SECRET_ACCESS_KEY: str = ""
+    S3_BUCKET_NAME: str = "ats-ready-resumes"
+    S3_REGION: str = "auto"               # "auto" for R2, "us-east-1" for S3
+    CDN_BASE_URL: str = ""                # base URL for public downloads
+
+    # Signed URL expiry for private downloads (seconds)
+    DOWNLOAD_URL_EXPIRY: int = 3_600      # 1 hour
+
+    # Local temp dir — files are written here, uploaded to S3, then deleted.
+    OUTPUT_DIR: Path = BASE_DIR / "outputs"
+
+    # ── Background Jobs ───────────────────────────────────────────────────────
+    JOB_TIMEOUT: int = 120          # max seconds a resume job can run
+    WORKER_CONCURRENCY: int = 5     # simultaneous ARQ jobs per worker process
+
+    # ── Resume Generation ─────────────────────────────────────────────────────
     MAX_SKILLS_IN_RESUME: int = 12
     MAX_PROJECTS_IN_RESUME: int = 4
-    MAX_EXPERIENCE_BULLETS: int = 5  # per role
+    MAX_EXPERIENCE_BULLETS: int = 5
 
-    # ATS weights (must sum to 1.0)
+    # ── ATS Scoring Weights ───────────────────────────────────────────────────
     ATS_KEYWORD_WEIGHT: float = 0.40
     ATS_SKILLS_WEIGHT: float = 0.30
     ATS_ACTION_VERB_WEIGHT: float = 0.15
     ATS_FORMAT_WEIGHT: float = 0.15
 
-    # Output
-    OUTPUT_DIR: Path = BASE_DIR / "outputs"
-
-    # Scraper
+    # ── Scraper ───────────────────────────────────────────────────────────────
     SCRAPE_TIMEOUT: int = 15
     RESPECT_ROBOTS_TXT: bool = True
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # ── Auth (Step 2 — defined here so routes can import settings cleanly) ────
+    JWT_SECRET: str = "change-me-use-openssl-rand-hex-32"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_EXPIRE_MINUTES: int = 60
+    JWT_REFRESH_EXPIRE_DAYS: int = 30
+    FRONTEND_URL: str = "http://localhost:5173"
+
+    # ── Observability ─────────────────────────────────────────────────────────
+    SENTRY_DSN: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+    
+    # ── Billing ───────────────────────────────────────────────────────────────
+    
+    BILLING_ENABLED: bool = False
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_PRICE_PRO: str = ""
+    STRIPE_PRICE_TEAM: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+
+    # ── Derived helpers ───────────────────────────────────────────────────────
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT == "production"
+
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT == "development"
+
+    @property
+    def storage_use_s3(self) -> bool:
+        """True when S3/R2 credentials are configured."""
+        return bool(self.S3_ACCESS_KEY_ID and self.S3_SECRET_ACCESS_KEY)
+
+    # ── Validators ────────────────────────────────────────────────────────────
+    @field_validator("OUTPUT_DIR", mode="before")
+    @classmethod
+    def ensure_output_dir(cls, v) -> Path:
+        p = Path(v)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @model_validator(mode="after")
+    def validate_ats_weights(self) -> "Settings":
+        total = (
+            self.ATS_KEYWORD_WEIGHT
+            + self.ATS_SKILLS_WEIGHT
+            + self.ATS_ACTION_VERB_WEIGHT
+            + self.ATS_FORMAT_WEIGHT
+        )
+        if abs(total - 1.0) > 0.001:
+            raise ValueError(f"ATS weights must sum to 1.0, got {total:.3f}")
+        return self
 
 
+# ── Singleton — import this everywhere ────────────────────────────────────────
 settings = Settings()
-settings.OUTPUT_DIR.mkdir(exist_ok=True)

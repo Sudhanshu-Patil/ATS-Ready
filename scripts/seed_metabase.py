@@ -1,270 +1,299 @@
-#!/usr/bin/env python3
 """
-Seed Metabase — Sudhanshu Patil
-Run once (or re-run to refresh):
-    python scripts/seed_metabase.py
+scripts/seed_metabase.py
+─────────────────────────
+One-time script: populates the metabase with YOUR personal data.
+
+Edit the data sections below with your actual information, then run:
+
+  # With docker-compose:
+  docker compose exec api python scripts/seed_metabase.py
+
+  # Or locally (with DATABASE_URL set):
+  python scripts/seed_metabase.py
+
+The script is IDEMPOTENT — safe to run multiple times.
+Existing skills/projects/experience are NOT duplicated (checked by name/company).
+
+IMPORTANT: Replace all placeholder data below with your real information.
 """
+import asyncio
 import sys
 from pathlib import Path
+
+# Add project root to path so we can import app.*
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.database import AsyncSessionLocal, init_db
 from app.db.models import (
-    init_db, SessionLocal, PersonalInfo, Skill, Project,
-    ProjectBullet, WorkExperience, ExperienceBullet, Education
+    Education, ExperienceBullet, PersonalInfo, Project,
+    ProjectBullet, Skill, User, WorkExperience,
 )
-from rich.console import Console
-from rich.panel import Panel
-
-console = Console()
 
 
-def seed():
-    init_db()
-    db = SessionLocal()
+# ─────────────────────────────────────────────────────────────────────────────
+# ✏️  EDIT THIS SECTION WITH YOUR REAL DATA
+# ─────────────────────────────────────────────────────────────────────────────
 
-    try:
-        console.print("[yellow]Clearing existing data...[/yellow]")
-        for model in [ProjectBullet, ExperienceBullet, Project,
-                      WorkExperience, Skill, Education, PersonalInfo]:
-            db.query(model).delete()
-        db.commit()
+PERSONAL = {
+    "full_name":            "Sudhanshu Patil",
+    "email":                "sudhanshupatil588@gmail.com",
+    "phone":                "+91-7248913660",
+    "location":             "Nagpur, Maharashtra - 440022",
+    "linkedin":             "",  # not extractable from the source PDF's text layer — fill in manually
+    "github":               "",  # same — fill in manually
+    "portfolio":            "",
+    "professional_summary": (
+        "AI Engineer with 1+ year of experience specializing in Python, Agentic AI and "
+        "Retrieval-Augmented Generation (RAG). Proven track record building and deploying "
+        "production-grade automation tools and LLM-driven applications for enterprise clients. "
+        "Skilled at translating emerging technologies into user-centric solutions across cloud "
+        "platforms to streamline enterprise operations and data aggregation."
+    ),
+}
 
-        # ── PERSONAL ──────────────────────────────────────────────────────
-        personal = PersonalInfo(
-            full_name="Sudhanshu Patil",
-            email="sudhanshupatil588@gmail.com",
-            phone="+91 7248913660",
-            location="Nagpur, Maharashtra, India",
-            linkedin="https://linkedin.com/in/sudhpatil",
-            github="https://github.com/Sudhanshu-Patil",
-            portfolio="https://portfolio-831cd.web.app",
-            professional_summary=(
-                "AI/ML Engineer specializing in Agentic AI systems and LLM infrastructure. "
-                "Built production MCP servers handling 1M+ records/query for BFSI clients, "
-                "cut PII redaction time by 94% using BERT, and shipped 8,000+ lines of "
-                "enterprise-grade AI code at SimpleWorks. Ex-Novartis Data Scientist (PPO). "
-                "BITS Pilani ECE + Minor in Computing & Intelligence."
-            ),
+SKILLS = [
+    # (name, category, proficiency, years, keywords, is_primary)
+    ("Python",             "Engineering & Automation", "Advanced",     1.5, ["py", "python3"],                          True),
+    ("FastAPI",            "Engineering & Automation", "Advanced",     1.5, ["fast-api", "async python"],               True),
+    ("SQL",                "Engineering & Automation", "Intermediate", 1.5, ["structured query language"],              False),
+    ("MySQL",               "Engineering & Automation", "Intermediate", 1.0, ["mysql db"],                               False),
+    ("PostgreSQL",         "Engineering & Automation", "Intermediate", 1.0, ["postgres", "psql"],                       True),
+    ("Redis",              "Engineering & Automation", "Intermediate", 1.0, ["redis cache", "redis/arq"],               True),
+    ("ChromaDB",           "Engineering & Automation", "Intermediate", 1.0, ["vector store", "chroma"],                 True),
+    ("REST APIs",          "Engineering & Automation", "Advanced",     1.5, ["restful", "rest", "http apis"],           True),
+    ("VBA",                "Engineering & Automation", "Intermediate", 0.5, ["visual basic for applications"],          False),
+
+    ("RAG",                    "AI & Machine Learning", "Advanced",     1.5, ["retrieval-augmented generation", "agentic rag"], True),
+    ("Agentic AI",              "AI & Machine Learning", "Advanced",     1.0, ["ai agents", "agentic workflows"],        True),
+    ("LLMs",                   "AI & Machine Learning", "Advanced",     1.5, ["large language models", "llm apis", "llm pipelines"], True),
+    ("BERT",                   "AI & Machine Learning", "Intermediate", 1.0, ["bert-based models", "transformers"],     True),
+    ("Applied NLP",            "AI & Machine Learning", "Intermediate", 1.0, ["natural language processing", "nlp"],    True),
+    ("Vector Databases",       "AI & Machine Learning", "Advanced",     1.0, ["vector db", "embeddings", "similarity search"], True),
+    ("LangChain",              "AI & Machine Learning", "Advanced",     1.0, ["langchain framework"],                   True),
+    ("LlamaIndex",             "AI & Machine Learning", "Advanced",     1.0, ["llama index"],                           True),
+    ("CrewAI",                 "AI & Machine Learning", "Intermediate", 0.5, ["crew ai", "multi-agent"],                False),
+    ("PyTorch",                "AI & Machine Learning", "Intermediate", 1.0, ["torch"],                                 False),
+    ("TensorFlow",             "AI & Machine Learning", "Intermediate", 1.0, ["tf"],                                    False),
+    ("Keras",                  "AI & Machine Learning", "Intermediate", 1.0, [],                                        False),
+    ("NumPy",                  "AI & Machine Learning", "Intermediate", 1.5, ["numerical python"],                      False),
+    ("Pandas",                 "AI & Machine Learning", "Intermediate", 1.5, ["dataframes"],                            False),
+    ("CNNs",                   "AI & Machine Learning", "Intermediate", 0.5, ["convolutional neural networks"],         False),
+    ("Reinforcement Learning", "AI & Machine Learning", "Intermediate", 0.5, ["rl"],                                    False),
+    ("Hugging Face",           "AI & Machine Learning", "Intermediate", 1.0, ["huggingface", "transformers hub"],       False),
+    ("MCP",                    "AI & Machine Learning", "Advanced",     0.5, ["model context protocol", "mcp servers"], True),
+
+    ("AWS",             "Cloud & Platforms", "Intermediate", 1.0, ["amazon web services", "ec2", "aws ec2"], True),
+    ("Google Cloud Platform", "Cloud & Platforms", "Intermediate", 1.0, ["gcp"],                             True),
+    ("Docker",          "Cloud & Platforms", "Advanced",     1.0, ["containerization", "containers"],        True),
+    ("CI/CD",           "Cloud & Platforms", "Intermediate", 1.0, ["continuous integration", "continuous deployment"], True),
+    ("Git",             "Cloud & Platforms", "Advanced",     2.0, ["github", "version control"],             True),
+    ("Linux",           "Cloud & Platforms", "Advanced",     2.0, ["ubuntu", "bash", "shell scripting"],     True),
+    ("Nginx",           "Cloud & Platforms", "Intermediate", 0.5, ["reverse proxy", "web server"],           False),
+    ("LangFuse",        "Cloud & Platforms", "Intermediate", 0.5, ["llm tracing", "observability"],          True),
+    ("Ollama",          "Cloud & Platforms", "Intermediate", 0.5, ["local llm inference"],                   False),
+    ("VLLM",            "Cloud & Platforms", "Intermediate", 0.5, ["vllm inference server"],                 False),
+
+    ("Enterprise BFSI Solutions",       "Applied Domains", "Advanced",     1.0, ["banking", "financial services", "bfsi"], True),
+    ("Data Aggregation",                "Applied Domains", "Advanced",     1.0, ["data pipelines", "etl"],               True),
+    ("Human-in-the-Loop (HITL)",        "Applied Domains", "Intermediate", 0.5, ["hitl systems"],                        False),
+    ("PII Redaction & Guardrails",      "Applied Domains", "Intermediate", 1.0, ["pii redaction", "guardrails", "data privacy"], True),
+]
+
+EXPERIENCE = [
+    {
+        "company":    "SimpleWorks",
+        "role":       "AI Solutions Developer",
+        "location":   "Nagpur, India",
+        "start_date": "Aug 2025",
+        "end_date":   None,
+        "is_current": True,
+        "tech_stack": ["Python", "FastAPI", "MCP", "RAG", "LlamaIndex", "BERT", "Vector Databases", "LangFuse"],
+        "bullets": [
+            ("Architect high-performance MCP servers across cloud platforms to manage sub-second retrieval across 1M+ records via FastAPI async endpoints and vector databases.", ["MCP", "FastAPI", "vector databases", "cloud", "async"], 9.0),
+            ("Design and implement an Agentic RAG framework featuring intent recognition, dynamic library switching, and BERT-based guardrails to optimize data analysis for enterprise banking operations.", ["Agentic RAG", "BERT", "guardrails", "BFSI", "enterprise"], 9.3),
+            ("Deploy critical infrastructure upgrades and manage LlamaIndex integration to support advanced LLM APIs, maintaining zero downtime across all live production environments.", ["LlamaIndex", "LLM APIs", "production", "zero downtime"], 8.5),
+            ("Translate complex stakeholder requirements into an MVP architecture for an internal AI platform, incorporating multi-DB connectors, LangFuse-based tracing, and robust audit logging.", ["MVP architecture", "LangFuse", "multi-DB", "audit logging"], 8.2),
+        ],
+    },
+    {
+        "company":    "Novartis",
+        "role":       "Associate Data Scientist Intern",
+        "location":   "Hyderabad, India",
+        "start_date": "Jan 2025",
+        "end_date":   "Jul 2025",
+        "is_current": False,
+        "tech_stack": ["Python", "VBA", "RShiny", "LLM"],
+        "bullets": [
+            ("Developed an interactive RShiny dashboard for automated clinical data visualization and aggregation, modernizing reporting for non-technical stakeholders.", ["RShiny", "dashboard", "data visualization", "clinical data"], 8.0),
+            ("Trained and implemented an LLM-powered coding assistant and automated clinical onboarding workflows using Python and VBA, cutting manual turnaround time by over 120% for 60+ Data Managers.", ["LLM", "Python", "VBA", "automation", "clinical onboarding"], 8.7),
+        ],
+    },
+]
+
+PROJECTS = [
+    {
+        "title":       "Smart Resume — AI Resume Tailoring Platform",
+        "description": "Built an async FastAPI platform that parses job descriptions and generates ATS-optimized .docx resumes via LLM pipelines, with Redis/ARQ workers, PostgreSQL/SQLAlchemy models, and weighted ATS scoring.",
+        "short_description": "Async FastAPI platform generating ATS-optimized resumes via LLM pipelines.",
+        "tech_stack":  ["Python", "FastAPI", "Gemini", "OpenAI", "PostgreSQL", "Redis", "ARQ", "Docker"],
+        "impact":      "",
+        "github_url":  "",
+        "start_date":  "",
+        "end_date":    "",
+        "is_featured": True,
+        "bullets": [],
+    },
+    {
+        "title":       "Git-Msg — AI Commit Message Generator",
+        "description": "Built and published a VS Code extension analysing staged diffs to generate Conventional Commit messages, live on the VS Code Marketplace with support for 5+ LLM providers.",
+        "short_description": "VS Code extension generating Conventional Commit messages from staged diffs.",
+        "tech_stack":  ["VS Code Extension API", "LLM Providers", "Conventional Commits"],
+        "impact":      "Published and live on the VS Code Marketplace with support for 5+ LLM providers.",
+        "github_url":  "",
+        "start_date":  "",
+        "end_date":    "",
+        "is_featured": True,
+        "bullets": [],
+    },
+]
+
+EDUCATION = [
+    {
+        "institution":         "BITS Pilani, Hyderabad Campus",
+        "degree":              "B.E. (Hons.)",
+        "field":               "Electronics & Communication Engineering",
+        "start_year":          2021,
+        "end_year":            2025,
+        "gpa":                 None,
+        "honors":              None,
+        "relevant_coursework": [],
+    },
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Seed logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def seed(db: AsyncSession) -> None:
+    # ── Get or create the dev user ────────────────────────────────────────────
+    result = await db.execute(select(User).where(User.email == PERSONAL["email"]))
+    user = result.scalar_one_or_none()
+    if not user:
+        user = User(
+            email=PERSONAL["email"],
+            full_name=PERSONAL["full_name"],
+            is_active=True,
+            is_verified=True,
+            plan="pro",
         )
-        db.add(personal)
+        db.add(user)
+        await db.flush()
+        print(f"✓ Created user id={user.id}")
+    else:
+        print(f"✓ Using existing user id={user.id}")
 
-        # ── SKILLS ────────────────────────────────────────────────────────
-        skills_data = [
-            dict(name="Agentic AI", category="AI & LLM", proficiency="Expert",
-                 years_experience=1.5, keywords=["ai agents","multi-agent","agentic workflows","autonomous agents"]),
-            dict(name="LLM Integration", category="AI & LLM", proficiency="Expert",
-                 years_experience=1.5, keywords=["llm","openai","claude","gemini","gpt-4o","large language models"]),
-            dict(name="MCP (Model Context Protocol)", category="AI & LLM", proficiency="Expert",
-                 years_experience=0.7, keywords=["mcp","model context protocol","fastmcp","mcp server","tool use"]),
-            dict(name="LangGraph", category="AI & LLM", proficiency="Advanced",
-                 years_experience=1.0, keywords=["langgraph","langchain","stateful agents","graph agents"]),
-            dict(name="CrewAI", category="AI & LLM", proficiency="Advanced",
-                 years_experience=1.0, keywords=["crewai","multi-agent systems"]),
-            dict(name="BERT / Transformers", category="AI & LLM", proficiency="Advanced",
-                 years_experience=1.0, keywords=["bert","transformers","huggingface","nlp","ner"]),
-            dict(name="LangFuse", category="AI & LLM", proficiency="Intermediate",
-                 years_experience=0.7, keywords=["langfuse","llm observability","tracing","monitoring"]),
-            dict(name="Python", category="Engineering", proficiency="Expert",
-                 years_experience=3.0, keywords=["python3","asyncio","scripting","automation"]),
-            dict(name="FastAPI", category="Engineering", proficiency="Expert",
-                 years_experience=2.0, keywords=["fastapi","rest api","async api","pydantic","uvicorn"]),
-            dict(name="Redis", category="Engineering", proficiency="Advanced",
-                 years_experience=1.5, keywords=["redis","caching","pub/sub","in-memory"]),
-            dict(name="SQL / PostgreSQL", category="Engineering", proficiency="Advanced",
-                 years_experience=2.5, keywords=["sql","postgresql","postgres","database"]),
-            dict(name="AWS", category="Engineering", proficiency="Intermediate",
-                 years_experience=1.0, keywords=["aws","cloud","amazon web services","ec2","s3"]),
-            dict(name="R / RShiny", category="Data Science", proficiency="Advanced",
-                 years_experience=1.0, keywords=["r","rshiny","ggplot2","tidyverse","sas alternative"]),
-            dict(name="Data Visualisation", category="Data Science", proficiency="Advanced",
-                 years_experience=2.0, keywords=["plotly","dashboards","data viz","clinical visualisation"]),
-            dict(name="ETL / Data Pipelines", category="Data Science", proficiency="Intermediate",
-                 years_experience=1.0, keywords=["etl","data pipeline","data engineering","workflow automation"]),
-            dict(name="JavaScript / React", category="Frontend", proficiency="Advanced",
-                 years_experience=2.0, keywords=["javascript","react","reactjs","frontend","ui/ux"]),
-        ]
-        for s in skills_data:
-            db.add(Skill(**s))
+    # ── Personal Info ─────────────────────────────────────────────────────────
+    result = await db.execute(
+        select(PersonalInfo).where(PersonalInfo.user_id == user.id)
+    )
+    info = result.scalar_one_or_none()
+    if not info:
+        info = PersonalInfo(user_id=user.id, **PERSONAL)
+        db.add(info)
+        print("✓ Personal info created")
+    else:
+        for k, v in PERSONAL.items():
+            setattr(info, k, v)
+        print("✓ Personal info updated")
 
-        # ── EXPERIENCE: SimpleWorks ────────────────────────────────────────
-        sw = WorkExperience(
-            company="SimpleWorks Solutions",
-            role="AI Solutions Developer",
-            location="Nagpur, Maharashtra (Remote)",
-            start_date="Aug 2025",
-            end_date=None,
-            is_current=True,
-            tech_stack=["Python","MCP","FastMCP","FastAPI","LangGraph","CrewAI","BERT","LangFuse","AWS","Redis","Plotly"],
+    # ── Skills ────────────────────────────────────────────────────────────────
+    skill_count = 0
+    for name, category, proficiency, years, keywords, is_primary in SKILLS:
+        result = await db.execute(
+            select(Skill).where(Skill.user_id == user.id, Skill.name == name)
         )
-        db.add(sw)
-        db.flush()
+        if not result.scalar_one_or_none():
+            db.add(Skill(
+                user_id=user.id, name=name, category=category,
+                proficiency=proficiency, years_experience=years,
+                keywords=keywords, is_primary=is_primary,
+            ))
+            skill_count += 1
+    print(f"✓ Added {skill_count} new skills")
 
-        for b in [
-            dict(bullet="Architected and deployed a cloud-hosted MCP server (FastMCP) from scratch, exposing 15+ tools across Claude, Gemini CLI, and internal apps — enabling unified multi-model AI orchestration for BFSI clients.",
-                 keywords=["mcp","fastmcp","multi-model","agentic","bfsi","cloud","orchestration"], impact_score=10.0),
-            dict(bullet="Engineered high-throughput CRM integration via MCP, retrieving and analysing 1M+ records per query within seconds using FastAPI async endpoints and Redis caching — replacing entire manual analyst workflows.",
-                 keywords=["crm","fastapi","redis","async","scalability","1m records","performance"], impact_score=9.8),
-            dict(bullet="Slashed PII redaction latency by 94% (8s → 0.5s) for a banking client by designing a multi-step BERT-powered NLP pipeline — directly reducing compliance processing overhead at scale.",
-                 keywords=["bert","pii","nlp","latency","banking","compliance","bfsi"], impact_score=9.8),
-            dict(bullet="Shipped 8,000+ lines of production-grade AI code across agentic pipelines, MCP tooling, and chatbot integrations within 7 months.",
-                 keywords=["production","agentic","chatbot","code","delivery"], impact_score=9.0),
-            dict(bullet="Built an in-house agentic response layer that converts raw JSON-RPC MCP outputs into structured, human-readable insights using LLM post-processing chains.",
-                 keywords=["agentic","json-rpc","llm","response generation","mcp"], impact_score=8.8),
-            dict(bullet="Accelerated marketing CRM account creation from minutes to a single click by integrating Apollo API into the chatbot, eliminating manual contact enrichment.",
-                 keywords=["apollo api","crm","automation","chatbot","marketing automation"], impact_score=8.2),
-            dict(bullet="Delivered automated audit logging and conversation-history reporting for the chatbot platform, improving observability and reducing incident debug time.",
-                 keywords=["audit logging","reporting","observability","chatbot"], impact_score=7.5),
-        ]:
-            db.add(ExperienceBullet(experience_id=sw.id, **b))
-
-        # ── EXPERIENCE: Novartis ───────────────────────────────────────────
-        nov = WorkExperience(
-            company="Novartis",
-            role="Associate Data Scientist",
-            location="Hyderabad, Telangana",
-            start_date="Jan 2025",
-            end_date="Jul 2025",
-            is_current=False,
-            tech_stack=["Python","R","RShiny","VBA","Office Scripts","SQL"],
+    # ── Work Experience ───────────────────────────────────────────────────────
+    exp_count = 0
+    for exp_data in EXPERIENCE:
+        result = await db.execute(
+            select(WorkExperience).where(
+                WorkExperience.user_id == user.id,
+                WorkExperience.company == exp_data["company"],
+                WorkExperience.role == exp_data["role"],
+            )
         )
-        db.add(nov)
-        db.flush()
+        if result.scalar_one_or_none():
+            continue
+        bullets = exp_data.pop("bullets")
+        exp = WorkExperience(user_id=user.id, **exp_data)
+        db.add(exp)
+        await db.flush()
+        for text, keywords, impact in bullets:
+            db.add(ExperienceBullet(
+                experience_id=exp.id, bullet=text,
+                keywords=keywords, impact_score=impact,
+            ))
+        exp_count += 1
+        exp_data["bullets"] = bullets  # restore for idempotent runs
+    print(f"✓ Added {exp_count} new work experience roles")
 
-        for b in [
-            dict(bullet="Awarded Pre-Placement Offer (PPO) — among select interns recognised for high-impact delivery on global clinical data systems at Novartis.",
-                 keywords=["ppo","pre-placement offer","recognition","clinical data","global"], impact_score=9.5),
-            dict(bullet="Developed an interactive RShiny dashboard as a SAS alternative for the clinical data visualisation team, eliminating dependency on licensed SAS tooling for reporting workflows.",
-                 keywords=["rshiny","r","sas alternative","clinical visualisation","dashboard"], impact_score=8.8),
-            dict(bullet="Trained and deployed an internal LLM-powered coding assistant for R programmers, reducing query-resolution time across the clinical data team.",
-                 keywords=["llm","chatbot","nlp","internal tool","r programming","assistant"], impact_score=8.5),
-            dict(bullet="Automated clinical onboarding workflows using Python, Office Scripts, and VBA — eliminating repetitive manual steps across cross-functional data pipelines.",
-                 keywords=["automation","python","vba","office scripts","workflow","clinical onboarding"], impact_score=8.2),
-            dict(bullet="Contributed to an enterprise-scale ETL evolution project supporting Novartis's next-generation clinical data infrastructure migration.",
-                 keywords=["etl","data engineering","pipeline","enterprise","data infrastructure"], impact_score=7.8),
-        ]:
-            db.add(ExperienceBullet(experience_id=nov.id, **b))
-
-        # ── PROJECTS ──────────────────────────────────────────────────────
-        proj1 = Project(
-            title="BFSI MCP Server — Multi-Model AI Orchestration",
-            description="Production MCP server on AWS enabling Claude, Gemini CLI, and internal apps to query live CRM data, run DB analytics, and render Plotly dashboards via a unified tool-calling interface.",
-            short_description="Cloud MCP server: 1M+ record queries, 94% PII latency cut, BFSI production",
-            tech_stack=["Python","FastMCP","FastAPI","AWS","Plotly","Claude API","Gemini CLI","Redis","BERT"],
-            impact="1M+ records/query in seconds; PII redaction 8s→0.5s (94% faster); live in BFSI production",
-            github_url=None,
-            start_date="Aug 2025",
-            end_date="Present",
-            is_featured=True,
+    # ── Projects ──────────────────────────────────────────────────────────────
+    proj_count = 0
+    for proj_data in PROJECTS:
+        result = await db.execute(
+            select(Project).where(
+                Project.user_id == user.id,
+                Project.title == proj_data["title"],
+            )
         )
-        db.add(proj1)
-        db.flush()
-        for b in [
-            dict(bullet="Designed 15+ MCP tools spanning CRM queries, DB analytics, and real-time Plotly chart generation — consumed by Claude and Gemini CLI via JSON-RPC over cloud-hosted FastMCP.",
-                 keywords=["mcp","tool use","json-rpc","multi-model","claude","gemini","cloud"]),
-            dict(bullet="Achieved sub-second retrieval of 1M+ CRM records by combining FastAPI async endpoints with Redis caching, replacing full analyst workflows end-to-end.",
-                 keywords=["fastapi","redis","async","scalability","crm","1m records","performance"]),
-            dict(bullet="Reduced PII redaction from 8s to 0.5s (94% faster) via a multi-step BERT NLP pipeline meeting BFSI compliance SLAs at production scale.",
-                 keywords=["bert","pii","compliance","bfsi","nlp","latency","production"]),
-        ]:
-            db.add(ProjectBullet(project_id=proj1.id, **b))
+        if result.scalar_one_or_none():
+            continue
+        bullets = proj_data.pop("bullets")
+        proj = Project(user_id=user.id, **proj_data)
+        db.add(proj)
+        await db.flush()
+        for text, keywords in bullets:
+            db.add(ProjectBullet(project_id=proj.id, bullet=text, keywords=keywords))
+        proj_count += 1
+        proj_data["bullets"] = bullets
+    print(f"✓ Added {proj_count} new projects")
 
-        proj2 = Project(
-            title="AI Resume Agent — GPT-4o ATS Optimiser",
-            description="End-to-end FastAPI system running a 3-stage GPT-4o pipeline (JD parsing → resume tailoring → ATS scoring) that generates ATS-optimised .docx resumes with a full Jinja2 UI and CLI.",
-            short_description="GPT-4o agent auto-tailoring resumes; targets 85%+ ATS scores",
-            tech_stack=["Python","FastAPI","GPT-4o","SQLite","SQLAlchemy","python-docx","BeautifulSoup","Jinja2"],
-            impact="85%+ ATS scores; supports 10+ job boards; full UI + CLI; production-ready",
-            github_url="https://github.com/Sudhanshu-Patil",
-            start_date="Feb 2026",
-            end_date="Feb 2026",
-            is_featured=True,
+    # ── Education ─────────────────────────────────────────────────────────────
+    edu_count = 0
+    for edu_data in EDUCATION:
+        result = await db.execute(
+            select(Education).where(
+                Education.user_id == user.id,
+                Education.institution == edu_data["institution"],
+            )
         )
-        db.add(proj2)
-        db.flush()
-        for b in [
-            dict(bullet="Built a 3-stage GPT-4o pipeline (JD analyzer → resume tailor → ATS scorer) achieving 85%+ keyword match on any job description via structured JSON LLM calls.",
-                 keywords=["gpt-4o","llm","ats","pipeline","openai","resume","keyword match"]),
-            dict(bullet="Engineered ATS-safe DOCX generation with python-docx and a multi-selector web scraper supporting 10+ job boards including Greenhouse, Lever, Indeed, and Naukri.",
-                 keywords=["python-docx","web scraping","ats","beautifulsoup","job boards"]),
-            dict(bullet="Delivered a full Jinja2 + FastAPI UI (dashboard, generator, metabase editor, history) with zero separate frontend build — pure Python backend serving HTML.",
-                 keywords=["fastapi","jinja2","full stack","ui","dashboard","python"]),
-        ]:
-            db.add(ProjectBullet(project_id=proj2.id, **b))
+        if not result.scalar_one_or_none():
+            db.add(Education(user_id=user.id, **edu_data))
+            edu_count += 1
+    print(f"✓ Added {edu_count} new education records")
 
-        # ── EDUCATION ─────────────────────────────────────────────────────
-        db.add(Education(
-            institution="BITS Pilani, Hyderabad Campus",
-            degree="B.E. (Hons.)",
-            field="Electronics & Communication Engineering",
-            start_year=2021, end_year=2025,
-            honors="INSPIRE-SHE Scholar | District Merit | Regional Merit",
-            relevant_coursework=["Machine Learning","Data Structures & Algorithms",
-                                  "Neural Networks","Database Systems","Computer Networks"],
-        ))
-        db.add(Education(
-            institution="BITS Pilani — Minor Programme",
-            degree="Minor",
-            field="Computing & Intelligence",
-            start_year=2023, end_year=2024,
-            relevant_coursework=["Foundations of AI","Statistical Learning",
-                                  "NLP","Deep Learning"],
-        ))
+    await db.commit()
+    print("\n🎉 Seed complete! Your metabase is ready.")
 
-        db.commit()
 
-        console.print(Panel.fit(
-            "[bold green]✅ Seeded — Sudhanshu Patil[/bold green]\n\n"
-            "  • 1 personal profile\n"
-            f"  • {len(skills_data)} skills\n"
-            "  • 2 roles: SimpleWorks (MCP) + Novartis\n"
-            "  • 2 projects: BFSI MCP Server + AI Resume Agent\n"
-            "  • 2 education: BITS ECE + Minor CI\n\n"
-            "[cyan]Run: uvicorn main:app --reload → localhost:8000[/cyan]",
-            title="Resume AI Agent",
-        ))
-
-    except Exception as e:
-        db.rollback()
-        console.print(f"[red]Seed failed: {e}[/red]")
-        raise
-    finally:
-        db.close()
+async def main():
+    await init_db()
+    async with AsyncSessionLocal() as db:
+        await seed(db)
 
 
 if __name__ == "__main__":
-    seed()
-
-    print("""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                    COVER LETTER — Sudhanshu Patil                          ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-Dear Hiring Manager,
-
-I build AI systems that go to production — not demos.
-
-In the past 7 months at SimpleWorks Solutions, I architected a cloud-hosted
-MCP server from scratch that connects Claude, Gemini CLI, and internal BFSI
-apps to live CRM data — retrieving 1M+ records per query in seconds. I cut a
-banking client's PII processing time by 94% (8s → 0.5s) using a custom BERT
-pipeline, and shipped 8,000+ lines of enterprise agentic AI code across MCP
-tooling, LLM orchestration layers, and chatbot integrations.
-
-Before that, at Novartis (Hyderabad), I earned a Pre-Placement Offer by
-delivering an RShiny clinical dashboard, training an internal LLM coding
-assistant for the clinical data team, and automating onboarding workflows
-that eliminated manual steps across cross-functional pipelines.
-
-I hold a B.E. (Hons.) in ECE from BITS Pilani with a Minor in Computing &
-Intelligence — and I've sharpened my fundamentals through 800+ DSA problems.
-I work across the full AI stack: LLM pipelines, agentic frameworks (LangGraph,
-CrewAI), MCP tooling, FastAPI backends, and cloud deployments.
-
-I'm looking to bring this Agentic AI + LLM engineering depth to a product
-company where I can own AI systems from architecture to production. If you're
-building something ambitious, I'd love to talk.
-
-Sudhanshu Patil
-+91 7248913660 | sudhanshupatil588@gmail.com
-linkedin.com/in/sudhpatil | portfolio-831cd.web.app
-""")
+    asyncio.run(main())

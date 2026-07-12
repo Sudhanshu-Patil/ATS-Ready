@@ -1,0 +1,149 @@
+import { useOutlet, useLocation, NavLink, useNavigate, Link } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import {
+  LayoutDashboard, FileText, History, Database,
+  Settings, LogOut, Zap, ChevronRight,
+  BrainCircuit, Mail
+} from 'lucide-react'
+import { useAuthStore } from '../store/auth'
+import { authAPI } from '../api/client'
+import ThemeToggle from './ThemeToggle'
+import toast from 'react-hot-toast'
+import clsx from 'clsx'
+
+const NAV = [
+  { to: '/dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/generate',       icon: Zap,             label: 'Generate Resume' },
+  { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
+  { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
+  { to: '/history',        icon: History,         label: 'History' },
+  { to: '/metabase',       icon: Database,        label: 'Metabase' },
+  { to: '/settings',       icon: Settings,        label: 'Settings' },
+]
+
+function NavItem({ to, icon: Icon, label }) {
+  return (
+    <NavLink to={to} className="nav-item">
+      {({ isActive }) => (
+        <>
+          {isActive && (
+            <motion.div
+              layoutId="nav-pill"
+              className="absolute inset-0 bg-brand-muted border border-brand/20 rounded-lg"
+              transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+            />
+          )}
+          <Icon size={17} className={clsx('relative z-10', isActive ? 'text-brand' : '')} />
+          <span className={clsx('relative z-10 text-sm font-medium', isActive ? 'text-brand' : '')}>
+            {label}
+          </span>
+        </>
+      )}
+    </NavLink>
+  )
+}
+
+export default function Layout() {
+  const { user, logout } = useAuthStore()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const element = useOutlet()
+
+  const handleLogout = async () => {
+    try { await authAPI.logout() } catch {}
+    logout()
+    navigate('/login')
+    toast.success('Logged out')
+  }
+
+  const planColor = {
+    free: 'text-text-muted',
+    pro:  'text-brand',
+    team: 'text-score',
+  }[user?.plan || 'free']
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar — glass panel over the aurora, one of the few backdrop-blur
+          surfaces (persistent, singular — not a repeated list, so the perf
+          tradeoff that keeps .card solid elsewhere doesn't apply here). */}
+      <aside className="w-60 flex-shrink-0 card-glass rounded-none border-y-0 border-l-0 p-0 flex flex-col">
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-white/10">
+          <div className="flex items-center justify-between gap-2.5">
+            <Link to="/dashboard" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+              <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center shadow-[0_0_16px_-2px_rgba(255,107,53,0.6)]">
+                <Zap size={16} className="text-white" />
+              </div>
+              <span className="font-display font-bold text-text-primary text-lg tracking-tight">ATS-Ready</span>
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Tools</p>
+          {NAV.slice(0, 4).map((item) => <NavItem key={item.to} {...item} />)}
+
+          <div className="py-2">
+            <div className="border-t border-white/10" />
+          </div>
+
+          <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Manage</p>
+          {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} />)}
+        </nav>
+
+        {/* User block */}
+        <div className="px-3 py-4 border-t border-white/10">
+          <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] mb-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-text-secondary">Plan</span>
+              <span className={clsx('text-xs font-semibold capitalize', planColor)}>
+                {user?.plan || 'free'}
+              </span>
+            </div>
+            {user?.plan === 'free' && (
+              <NavLink to="/settings"
+                className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover transition-colors">
+                Upgrade to Pro <ChevronRight size={12} />
+              </NavLink>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-brand/20 border border-brand/30 flex items-center justify-center text-brand text-sm font-semibold">
+              {user?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">{user?.full_name || 'User'}</p>
+              <p className="text-xs text-text-muted truncate">{user?.email}</p>
+            </div>
+            <button onClick={handleLogout}
+              className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+              title="Log out">
+              <LogOut size={15} />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main content — route transitions scoped here via useOutlet(), so the
+          sidebar above (and its nav pill) never remounts on navigation. */}
+      <main className="flex-1 overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2 }}
+            className="h-full overflow-y-auto"
+          >
+            {element}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+    </div>
+  )
+}

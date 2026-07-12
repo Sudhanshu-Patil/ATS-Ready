@@ -361,6 +361,7 @@ class ResumeBuilder:
             filename = f"resume_{ts}_{uid}.docx"
 
         out = settings.OUTPUT_DIR / filename
+        out.parent.mkdir(parents=True, exist_ok=True)
         self.doc.save(str(out))
         return out
 

@@ -1,0 +1,154 @@
+##############################################################################
+# docker-compose.yml  — ATS-Ready full development stack
+#
+# Services:
+#   api      — FastAPI application (hot-reload in dev)
+#   worker   — ARQ background job worker
+#   frontend — React/Vite dev server (hot-reload in dev)
+#   db       — PostgreSQL 16
+#   redis    — Redis 7
+#   adminer  — lightweight DB GUI (localhost:8080)
+#
+# This replaces running `uvicorn`, `arq`, and `npm run dev` in three
+# separate terminals — `docker compose up` starts the whole stack.
+#
+# Usage:
+#   First run:
+#     cp .env.example .env          # fill in LLM_API_KEY at minimum
+#     docker compose up -d --build  # start everything
+#     docker compose logs -f api    # watch API logs
+#
+#   Run Alembic migrations (first time only, or after schema changes):
+#     docker compose exec api alembic upgrade head
+#
+#   Seed test data:
+#     docker compose exec api python scripts/seed_metabase.py
+#
+#   Stop everything:
+#     docker compose down
+#
+#   Nuke everything (including database volume):
+#     docker compose down -v
+##############################################################################
+
+services:
+
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       atsready
+      POSTGRES_USER:     atsready
+      POSTGRES_PASSWORD: secret
+      # POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"          # expose for local DB clients (TablePlus, DBeaver)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atsready -d atsready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --requirepass secret --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"          # expose for Redis GUI (RedisInsight)
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "secret", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── FastAPI App ─────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development          # multi-stage: uses dev stage with hot-reload
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL:      postgresql+asyncpg://atsready:secret@db:5432/atsready
+      SYNC_DATABASE_URL: postgresql+psycopg2://atsready:secret@db:5432/atsready
+      REDIS_URL:         redis://:secret@redis:6379/0
+      ENVIRONMENT:       development
+      DEBUG:             "true"
+    volumes:
+      - .:/app                     # mount source for hot-reload
+      - ./outputs:/app/outputs     # persist generated files
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
+
+  # ── ARQ Worker ──────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL:      postgresql+asyncpg://atsready:secret@db:5432/atsready
+      SYNC_DATABASE_URL: postgresql+psycopg2://atsready:secret@db:5432/atsready
+      REDIS_URL:         redis://:secret@redis:6379/0
+      ENVIRONMENT:       development
+    volumes:
+      - .:/app
+      - ./outputs:/app/outputs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: arq app.worker.tasks.WorkerSettings
+
+  # ── React Frontend (Vite dev server) ────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      # Container-network hostname for the API — overrides the 127.0.0.1
+      # default in vite.config.js so the proxy reaches the `api` service.
+      VITE_API_PROXY_TARGET: http://api:8000
+    volumes:
+      - ./frontend:/app                    # mount source for hot-reload
+      - frontend_node_modules:/app/node_modules  # keep container's own deps
+    depends_on:
+      - api
+
+  # ── Adminer (DB GUI) ────────────────────────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+      ADMINER_DESIGN: dracula      # dark theme
+    profiles:
+      - tools                      # only starts with: docker compose --profile tools up
+
+volumes:
+  pgdata:
+    driver: local
+  frontend_node_modules:
+    driver: local

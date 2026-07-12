@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Dark theme (default) — RGB triples so Tailwind's opacity modifiers
+       (bg-bg/60 etc.) keep working; see tailwind.config.js withOpacity(). */
+    --color-bg:             10 10 15;
+    --color-bg-card:        19 19 26;
+    --color-bg-hover:       28 28 36;
+    --color-bg-border:      38 38 47;
+    --color-text-primary:   243 241 236;
+    --color-text-secondary: 156 160 172;
+    --color-text-muted:     86 90 102;
+    /* score shifts hue between themes (vivid mint reads fine on dark, but
+       fails contrast as text on a light bg) — muted variant carries its own
+       baked-in alpha since it's never used with a Tailwind opacity suffix. */
+    --color-score:       52 211 153;
+    --color-score-muted: rgba(52, 211, 153, 0.125);
+
+    /* Glass surfaces need to lift in the OPPOSITE direction per theme: white
+       tint above a dark page, dark tint above a light page. */
+    --glass-bg:     rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.10);
+  }
+
+  :root[data-theme='light'] {
+    --color-bg:             250 249 246;
+    --color-bg-card:        255 255 255;
+    --color-bg-hover:       242 240 235;
+    --color-bg-border:      228 225 217;
+    --color-text-primary:   28 25 23;
+    --color-text-secondary: 87 83 78;
+    --color-text-muted:     138 130 122;
+    --color-score:          5 150 105;
+    --color-score-muted:    rgba(5, 150, 105, 0.10);
+
+    --glass-bg:     rgba(10, 10, 15, 0.035);
+    --glass-border: rgba(10, 10, 15, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text-primary));
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: rgb(var(--color-bg)); }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--color-bg-border)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(255 107 53 / 40%); }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────────────── */
+  .btn-primary {
+    @apply bg-brand hover:bg-brand-hover text-white font-semibold px-4 py-2 rounded-lg
+           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
+           shadow-[0_0_0_0_rgba(255,107,53,0)] hover:shadow-[0_0_24px_-4px_rgba(255,107,53,0.5)];
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-bg-hover text-text-secondary hover:text-text-primary
+           border border-bg-border hover:border-brand/30 px-4 py-2 rounded-lg
+           transition-all duration-200;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────────── */
+  /* Solid, opaque — default. Use for repeated list rows (History, skill chips,
+     job cards): stacking many simultaneous backdrop-filter elements over a
+     moving background is real, measurable jank, so lists stay solid. */
+  .card {
+    @apply bg-bg-card border border-bg-border rounded-xl p-6;
+  }
+
+  /* Glass — reserve for a SMALL number of hero surfaces per view (sidebar,
+     stat tiles, primary panels), not for anything that repeats in a list.
+     Uses --glass-bg/--glass-border directly (not Tailwind color utilities)
+     since the tint direction flips per theme rather than just its hue. */
+  .card-glass {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    @apply rounded-xl p-6;
+  }
+
+  .input {
+    @apply bg-bg-hover border border-bg-border text-text-primary rounded-lg px-4 py-2.5 w-full
+           focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand
+           placeholder:text-text-muted transition-colors duration-150;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  /* position: relative is required — the layoutId nav pill in Layout.jsx is
+     absolutely positioned against this element. Without it, the pill escapes
+     to the nearest positioned ancestor (or <body>) instead of the nav item. */
+  .nav-item {
+    @apply relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-text-secondary
+           hover:text-text-primary transition-colors duration-150 cursor-pointer;
+  }
+
+  .nav-item.active {
+    @apply text-brand;
+  }
+
+  /* ── ATS score ring color stops ─────────────────────────────────────────── */
+  .score-excellent { @apply text-score; }
+  .score-good      { @apply text-yellow-400; }
+  .score-poor      { @apply text-red-400; }
+
+  /* ── Skeleton shimmer ────────────────────────────────────────────────────── */
+  .skeleton {
+    @apply bg-bg-hover rounded-lg relative overflow-hidden;
+    background-image: linear-gradient(
+      90deg,
+      rgb(var(--color-bg-hover)) 0%,
+      rgb(var(--color-bg-border)) 50%,
+      rgb(var(--color-bg-hover)) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+  }
+
+  /* ── Grain texture overlay ───────────────────────────────────────────────── */
+  /* Subtle tactile noise — inline SVG feTurbulence, ~3% opacity, very cheap
+     (static image, not animated). Apply on top of AuroraBackground. */
+  .grain {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+/* Aurora blobs read as vivid glow against a dark base but muddy/harsh against
+   a light one — dim them globally in light mode rather than re-tuning each
+   blob's individual opacity in AuroraBackground.jsx. */
+:root[data-theme='light'] .aurora-blob {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* MotionConfig reducedMotion="user" (main.jsx) handles every Framer Motion
+     component automatically. This covers the one animation that ISN'T
+     Framer-driven — the aurora's CSS keyframe drift. */
+  .aurora-blob {
+    animation: none !important;
+  }
+}
