@@ -61,6 +61,12 @@ export const authAPI = {
   logout:   () => api.post('/auth/logout'),
   me:       () => api.get('/auth/me'),
   refresh:  () => api.post('/auth/refresh'),
+  updateMe: (data) => api.patch('/auth/me', data),
+  changePassword: (currentPassword, newPassword) =>
+    api.post('/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
 }
 
 export const resumeAPI = {

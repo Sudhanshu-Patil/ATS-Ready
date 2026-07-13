@@ -89,7 +89,10 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-if settings.is_development:
+# Serve generated resumes whenever local storage is in use (no S3/R2
+# configured) — production without object storage still needs downloads
+# to work, not just development.
+if not settings.storage_use_s3:
     app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
 
 # ── API Routes ────────────────────────────────────────────────────────────────
@@ -119,6 +122,13 @@ if DIST_DIR.exists():
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
+        # Real files in dist (favicon.svg, robots.txt, …) are served as-is;
+        # anything else falls through to index.html for client-side routing.
+        # resolve() + prefix check guards against ../ path traversal.
+        if full_path:
+            candidate = (DIST_DIR / full_path).resolve()
+            if candidate.is_file() and str(candidate).startswith(str(DIST_DIR.resolve())):
+                return FileResponse(str(candidate))
         index = DIST_DIR / "index.html"
         if index.exists():
             return FileResponse(str(index))

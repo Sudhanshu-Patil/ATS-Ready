@@ -9,7 +9,14 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.config import settings
 from app.models.schemas import ParsedJD
@@ -23,6 +30,17 @@ class AIAgent:
         # to api.openai.com regardless of which key/model is configured.
         self.client = OpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
+    # Free-tier providers rate-limit tokens per MINUTE (Groq: 8K TPM) — a 429
+    # mid-pipeline usually clears in seconds once the window rolls, so retry
+    # with backoff instead of failing the whole job. Deliberately NOT retrying
+    # 413 "request too large": that's a prompt-size problem no wait can fix.
+    @retry(
+        retry=retry_if_exception_type(RateLimitError),
+        wait=wait_exponential(multiplier=2, min=6, max=30),
+        stop=stop_after_attempt(4),
+        reraise=True,
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     def _call(self, system: str, user: str, max_tokens: int = 4096) -> str:
         """Single call to the configured LLM. Every caller prompts for JSON-only
         output, so JSON Object Mode is requested directly rather than relying

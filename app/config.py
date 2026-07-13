@@ -79,8 +79,15 @@ class Settings(BaseSettings):
     OUTPUT_DIR: Path = BASE_DIR / "outputs"
 
     # ── Background Jobs ───────────────────────────────────────────────────────
-    JOB_TIMEOUT: int = 120          # max seconds a resume job can run
-    WORKER_CONCURRENCY: int = 5     # simultaneous ARQ jobs per worker process
+    JOB_TIMEOUT: int = 180          # max seconds a resume job can run (headroom
+                                    # for LLM 429 retries with backoff)
+    WORKER_CONCURRENCY: int = 1     # simultaneous ARQ jobs per worker process.
+                                    # 1 on purpose: each job makes 3 sequential
+                                    # LLM calls, and free-tier providers (Groq:
+                                    # 8K tokens/MINUTE) rate-limit per account —
+                                    # concurrent jobs starve each other's token
+                                    # bucket and both fail. Jobs queue instead.
+                                    # Raise only on a paid LLM tier.
 
     # ── Resume Generation ─────────────────────────────────────────────────────
     MAX_SKILLS_IN_RESUME: int = 12
@@ -138,6 +145,27 @@ class Settings(BaseSettings):
         p = Path(v)
         p.mkdir(parents=True, exist_ok=True)
         return p
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> "Settings":
+        """Fail fast at startup rather than run production with dev secrets."""
+        if self.is_production:
+            weak_jwt = (
+                not self.JWT_SECRET
+                or len(self.JWT_SECRET) < 32
+                or self.JWT_SECRET == "change-me-use-openssl-rand-hex-32"
+            )
+            if weak_jwt:
+                raise ValueError(
+                    "ENVIRONMENT=production requires a strong JWT_SECRET "
+                    "(>=32 chars). Generate one: openssl rand -hex 32"
+                )
+            if ":secret@" in self.DATABASE_URL or ":secret@" in self.REDIS_URL:
+                raise ValueError(
+                    "ENVIRONMENT=production requires non-default DB/Redis "
+                    "passwords (found the dev password 'secret' in a URL)."
+                )
+        return self
 
     @model_validator(mode="after")
     def validate_ats_weights(self) -> "Settings":

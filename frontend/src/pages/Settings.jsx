@@ -83,11 +83,12 @@ function AccountSection({ user, login, accessToken }) {
   const save = async () => {
     setSaving(true)
     try {
-      await authAPI.me.patch?.({ full_name: name }) // future — add PATCH /auth/me
+      await authAPI.updateMe({ full_name: name })
       login(accessToken, { ...user, full_name: name })
       toast.success('Name updated')
-    } catch { toast.error('Update failed') }
-    finally { setSaving(false) }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Update failed')
+    } finally { setSaving(false) }
   }
 
   return (
@@ -121,7 +122,7 @@ function SecuritySection() {
     if (form.new_password.length < 8)       { toast.error('Min 8 characters'); return }
     setSaving(true)
     try {
-      await authAPI.changePassword?.(form.current_password, form.new_password)
+      await authAPI.changePassword(form.current_password, form.new_password)
       toast.success('Password changed')
       setForm({ current_password: '', new_password: '', confirm: '' })
     } catch (err) {

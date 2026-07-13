@@ -48,11 +48,25 @@ EXPOSE 8000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 
+# ── Frontend build (assets baked into the production image) ──────────────────
+FROM node:20-alpine AS frontend-build
+WORKDIR /fe
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+# vite.config.js outDir is ../app/static/dist → lands at /app/static/dist
+RUN npm run build
+
+
 # ── Production ────────────────────────────────────────────────────────────────
 FROM base AS production
 
 # Copy source code
 COPY . .
+
+# Built SPA — copied AFTER `COPY . .` so it wins over any stale local dist.
+# main.py serves it (static mount + client-side-routing fallback).
+COPY --from=frontend-build /app/static/dist ./app/static/dist
 
 # Run as non-root for security
 RUN addgroup --system appgroup \
