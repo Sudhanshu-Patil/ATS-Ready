@@ -74,11 +74,13 @@ class User(Base):
     is_active              = Column(Boolean, default=True, nullable=False)
     is_verified            = Column(Boolean, default=False, nullable=False)
 
-    # subscription (Step 4)
-    plan                   = Column(String(20), default="free", nullable=False)
-    stripe_customer_id     = Column(String(100), nullable=True)
-    stripe_subscription_id = Column(String(100), nullable=True)
-    plan_expires_at        = Column(DateTime, nullable=True)
+    # subscription — provider-neutral names (currently Razorpay):
+    # payment_customer_id     = the provider's customer reference
+    # payment_subscription_id = the active subscription reference
+    plan                    = Column(String(20), default="free", nullable=False)
+    payment_customer_id     = Column(String(100), nullable=True)
+    payment_subscription_id = Column(String(100), nullable=True)
+    plan_expires_at         = Column(DateTime, nullable=True)
 
     created_at             = Column(DateTime, default=_now, nullable=False)
     updated_at             = Column(DateTime, default=_now, onupdate=_now, nullable=False)

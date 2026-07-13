@@ -79,6 +79,12 @@ export default function Settings() {
 function AccountSection({ user, login, accessToken }) {
   const [name, setName]   = useState(user?.full_name || '')
   const [saving, setSaving] = useState(false)
+  const [verified, setVerified] = useState(null)   // null = loading
+  const [sendingVerify, setSendingVerify] = useState(false)
+
+  useEffect(() => {
+    authAPI.me().then(r => setVerified(r.data.is_verified)).catch(() => {})
+  }, [])
 
   const save = async () => {
     setSaving(true)
@@ -91,6 +97,16 @@ function AccountSection({ user, login, accessToken }) {
     } finally { setSaving(false) }
   }
 
+  const resendVerification = async () => {
+    setSendingVerify(true)
+    try {
+      const r = await authAPI.sendVerification()
+      if (r.data.already_verified) setVerified(true)
+      else toast.success('Verification email sent — check your inbox')
+    } catch { toast.error('Could not send verification email') }
+    finally { setSendingVerify(false) }
+  }
+
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card space-y-4">
       <h2 className="font-semibold text-text-primary">Account</h2>
@@ -101,7 +117,24 @@ function AccountSection({ user, login, accessToken }) {
       <div>
         <label className="block text-sm font-medium text-text-secondary mb-1.5">Email</label>
         <input className="input opacity-60" value={user?.email || ''} disabled />
-        <p className="text-xs text-text-muted mt-1">Email cannot be changed.</p>
+        <div className="flex items-center gap-2 mt-1.5">
+          {verified === true && (
+            <span className="badge bg-score-muted text-score">✓ Verified</span>
+          )}
+          {verified === false && (
+            <>
+              <span className="badge bg-yellow-400/10 text-yellow-400">Unverified</span>
+              <button
+                onClick={resendVerification}
+                disabled={sendingVerify}
+                className="text-xs text-brand hover:text-brand-hover transition-colors disabled:opacity-50"
+              >
+                {sendingVerify ? 'Sending…' : 'Resend verification email'}
+              </button>
+            </>
+          )}
+          <p className="text-xs text-text-muted">Email cannot be changed.</p>
+        </div>
       </div>
       <div className="pt-2">
         <button onClick={save} disabled={saving} className="btn-primary text-sm flex items-center gap-2">
@@ -154,18 +187,55 @@ function SecuritySection() {
   )
 }
 
+// Razorpay Checkout is a modal (checkout.js), not a redirect — load the
+// script on demand, open the modal with the subscription created by our
+// backend, then hit /billing/sync so the plan applies even on localhost
+// where Razorpay's webhooks can't reach us.
+function loadRazorpayScript() {
+  return new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true)
+    const s = document.createElement('script')
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js'
+    s.onload = () => resolve(true)
+    s.onerror = () => resolve(false)
+    document.body.appendChild(s)
+  })
+}
+
 function PlanSection({ user }) {
+  const { accessToken, login } = useAuthStore()
   const [loading, setLoading] = useState(false)
 
   const handleUpgrade = async (plan) => {
     setLoading(true)
     try {
       const res = await billingAPI.checkout(plan)
-      if (res.data.checkout_url) {
-        window.location.href = res.data.checkout_url
-      } else {
+      if (!res.data.billing_enabled || !res.data.subscription_id) {
         toast(res.data.message || 'Billing not enabled yet.', { icon: 'ℹ️' })
+        return
       }
+
+      const scriptOk = await loadRazorpayScript()
+      if (!scriptOk) { toast.error('Could not load the payment gateway'); return }
+
+      const rzp = new window.Razorpay({
+        key:             res.data.key_id,
+        subscription_id: res.data.subscription_id,
+        name:            'ATS-Ready',
+        description:     `${res.data.plan} plan — monthly subscription`,
+        prefill:         { email: res.data.user_email, name: res.data.user_name },
+        theme:           { color: '#FF6B35' },
+        handler: async () => {
+          try {
+            const sync = await billingAPI.sync()
+            toast.success(`You're on the ${sync.data.plan} plan!`)
+            login(accessToken, { ...user, plan: sync.data.plan })
+          } catch {
+            toast('Payment received — your plan will update shortly.', { icon: '⏳' })
+          }
+        },
+      })
+      rzp.open()
     } catch { toast.error('Could not start checkout') }
     finally { setLoading(false) }
   }

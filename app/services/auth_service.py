@@ -90,3 +90,55 @@ def verify_refresh_token(token: str) -> Optional[str]:
     if payload.get("type") != "refresh":
         return None
     return payload.get("sub")
+
+
+# ── Password-reset / email-verification tokens ───────────────────────────────
+# Stateless JWTs — no schema changes, nothing stored server-side.
+#
+# Single-use enforcement for reset tokens: the token embeds a fingerprint of
+# the CURRENT password hash. Once the password changes, the fingerprint no
+# longer matches and the token is dead — even inside its expiry window. This
+# is the standard trick for stateless single-use reset links.
+
+def _pw_fingerprint(hashed_password: Optional[str]) -> str:
+    return (hashed_password or "")[-12:]
+
+
+def create_reset_token(user_id, hashed_password: Optional[str]) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=settings.RESET_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "type": "reset",
+        "fp": _pw_fingerprint(hashed_password),
+        "exp": expire,
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def verify_reset_token(token: str, hashed_password: Optional[str]) -> Optional[str]:
+    """Return the user_id if valid AND the password hasn't changed since issue."""
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "reset":
+        return None
+    if payload.get("fp") != _pw_fingerprint(hashed_password):
+        return None  # already used (password changed) — single-use guarantee
+    return payload.get("sub")
+
+
+def create_email_verify_token(user_id) -> str:
+    expire = datetime.utcnow() + timedelta(days=7)
+    payload = {
+        "sub": str(user_id),
+        "type": "verify",
+        "exp": expire,
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def verify_email_verify_token(token: str) -> Optional[str]:
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "verify":
+        return None
+    return payload.get("sub")

@@ -67,6 +67,11 @@ export const authAPI = {
       current_password: currentPassword,
       new_password: newPassword,
     }),
+  forgotPassword:   (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword:    (token, newPassword) =>
+    api.post('/auth/reset-password', { token, new_password: newPassword }),
+  verifyEmail:      (token) => api.post('/auth/verify-email', { token }),
+  sendVerification: () => api.post('/auth/send-verification'),
 }
 
 export const resumeAPI = {
@@ -103,7 +108,8 @@ export const billingAPI = {
   plans:    ()     => api.get('/billing/plans'),
   status:   ()     => api.get('/billing/status'),
   checkout: (plan) => api.post('/billing/checkout', { plan }),
-  portal:   ()     => api.post('/billing/portal'),
+  sync:     ()     => api.post('/billing/sync'),
+  cancel:   ()     => api.post('/billing/cancel'),
 }
 
 export const contentAPI = {

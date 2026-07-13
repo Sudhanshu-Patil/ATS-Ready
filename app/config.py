@@ -111,18 +111,36 @@ class Settings(BaseSettings):
     JWT_REFRESH_EXPIRE_DAYS: int = 30
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # ── Email (password reset / verification) ─────────────────────────────────
+    # Dev default targets the Mailpit container (docker-compose) — a local
+    # SMTP catcher with a web UI at :8025. For production, point at any free
+    # SMTP provider (Gmail app password, Brevo 300/day, …). If SMTP_HOST is
+    # empty, emails are logged instead of sent — nothing breaks.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 1025
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_TLS: bool = False          # STARTTLS — true for real providers (587)
+    EMAIL_FROM: str = "ATS-Ready <no-reply@ats-ready.local>"
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # ── Razorpay billing ──────────────────────────────────────────────────────
+    # Integration is free: no setup/monthly fee, per-transaction cut only.
+    # Test Mode keys work immediately after signup (KYC only for Live Mode).
+    # Create two subscription Plans in the dashboard and put their IDs here.
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+    RAZORPAY_PLAN_PRO: str = ""
+    RAZORPAY_PLAN_TEAM: str = ""
+
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
     
     # ── Billing ───────────────────────────────────────────────────────────────
-    
+    # Master switch — Razorpay settings live in the Razorpay section above.
     BILLING_ENABLED: bool = False
-    STRIPE_SECRET_KEY: str = ""
-    STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_PRICE_PRO: str = ""
-    STRIPE_PRICE_TEAM: str = ""
-    STRIPE_PUBLISHABLE_KEY: str = ""
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

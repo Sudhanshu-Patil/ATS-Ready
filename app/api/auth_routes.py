@@ -11,12 +11,18 @@ from app.db.database import get_db
 from app.db.models import User
 from app.services.auth_service import (
     create_access_token,
+    create_email_verify_token,
     create_refresh_token,
+    create_reset_token,
+    decode_token,
     hash_password,
     verify_access_token,
+    verify_email_verify_token,
     verify_password,
     verify_refresh_token,
+    verify_reset_token,
 )
+from app.services.email_service import send_password_reset_email, send_verification_email
 from app.config import settings
 
 auth_router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -110,6 +116,10 @@ async def register(
     await db.refresh(user)
 
     access_token = _set_auth_cookies(response, user.id)
+
+    # Best-effort verification email — registration must succeed even when
+    # SMTP is down/unconfigured (send_email never raises).
+    await send_verification_email(user.email, create_email_verify_token(user.id))
 
     return TokenResponse(
         access_token=access_token,
@@ -260,3 +270,105 @@ async def change_password(
     user.updated_at = datetime.utcnow()
     await db.commit()
     return {"message": "Password changed successfully"}
+
+
+# ── Password reset (forgot password) ──────────────────────────────────────────
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+@auth_router.post("/forgot-password")
+async def forgot_password(
+    data: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Send a password-reset link if the account exists.
+
+    ALWAYS returns the same 200 response — revealing whether an email is
+    registered would let attackers enumerate accounts.
+    """
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+
+    if user and user.is_active:
+        token = create_reset_token(user.id, user.hashed_password)
+        await send_password_reset_email(user.email, token)
+
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+
+@auth_router.post("/reset-password")
+async def reset_password(
+    data: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Set a new password using a reset token from the email link.
+
+    Tokens are single-use: they embed a fingerprint of the password hash
+    they were issued against, so completing a reset invalidates the token.
+    """
+    payload = decode_token(data.token)
+    if not payload or payload.get("type") != "reset":
+        raise HTTPException(status_code=400, detail="Reset link is invalid or has expired")
+
+    result = await db.execute(select(User).where(User.id == payload.get("sub")))
+    user = result.scalar_one_or_none()
+    if not user or not verify_reset_token(data.token, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Reset link is invalid or has expired")
+
+    user.hashed_password = hash_password(data.new_password)
+    user.updated_at = datetime.utcnow()
+    await db.commit()
+    return {"message": "Password reset successfully. You can now log in."}
+
+
+# ── Email verification ────────────────────────────────────────────────────────
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+@auth_router.post("/send-verification")
+async def send_verification(user: User = Depends(get_current_user)):
+    """Resend the verification email for the logged-in user."""
+    if user.is_verified:
+        return {"message": "Email is already verified", "already_verified": True}
+    await send_verification_email(user.email, create_email_verify_token(user.id))
+    return {"message": "Verification email sent", "already_verified": False}
+
+
+@auth_router.post("/verify-email")
+async def verify_email(
+    data: VerifyEmailRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm an email address from the link in the verification email."""
+    user_id = verify_email_verify_token(data.token)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Verification link is invalid or has expired")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=400, detail="Verification link is invalid or has expired")
+
+    if not user.is_verified:
+        user.is_verified = True
+        user.updated_at = datetime.utcnow()
+        await db.commit()
+    return {"message": "Email verified successfully"}
