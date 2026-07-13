@@ -53,14 +53,31 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── Caddy (TLS reverse proxy — free auto-HTTPS) ─────────────────────────────
+  # SITE_ADDRESS=":80" (default) serves plain HTTP on the server IP.
+  # SITE_ADDRESS="yourapp.duckdns.org" turns on automatic Let's Encrypt TLS.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
       target: production
     restart: unless-stopped
-    ports:
-      - "8000:8000"
+    # No host port — all traffic flows through Caddy on 80/443.
     env_file: .env
     environment:
       ENVIRONMENT:       production
@@ -110,4 +127,8 @@ volumes:
   pgdata_prod:
     driver: local
   outputs:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
     driver: local

@@ -1,0 +1,12 @@
+# Caddy reverse proxy — fronts the api container in production.
+#
+# SITE_ADDRESS values:
+#   ":80"                → plain HTTP on the server's IP (works immediately,
+#                          no domain needed — the default)
+#   "yourapp.duckdns.org" → Caddy automatically provisions and renews a free
+#                          Let's Encrypt certificate. HTTPS just works.
+{$SITE_ADDRESS}
+
+encode gzip
+
+reverse_proxy api:8000
