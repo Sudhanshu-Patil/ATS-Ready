@@ -68,12 +68,30 @@ export default {
           '0%':   { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' },
         },
+        // Landing-page idle motion (hero core, feature-card vignettes)
+        float: {
+          '0%, 100%': { transform: 'translateY(0) rotate(-2deg)' },
+          '50%':      { transform: 'translateY(-14px) rotate(2deg)' },
+        },
+        orbit: {
+          '0%':   { transform: 'rotate(0deg) translateX(70px) rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg) translateX(70px) rotate(-360deg)' },
+        },
+        'fall-loop': {
+          '0%':   { transform: 'translateY(-60px)', opacity: '0' },
+          '15%':  { opacity: '1' },
+          '85%':  { opacity: '1' },
+          '100%': { transform: 'translateY(60px)', opacity: '0' },
+        },
       },
       animation: {
         'pulse-slow':   'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'spin-slow':    'spin 2s linear infinite',
         'aurora-drift': 'aurora-drift 22s ease-in-out infinite',
         shimmer:        'shimmer 1.6s ease-in-out infinite',
+        float:          'float 7s ease-in-out infinite',
+        orbit:          'orbit 12s linear infinite',
+        'fall-loop':    'fall-loop 3s ease-in infinite',
       },
     },
   },

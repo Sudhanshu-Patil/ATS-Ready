@@ -104,10 +104,10 @@ export default function Layout() {
               </span>
             </div>
             {user?.plan === 'free' && (
-              <NavLink to="/settings"
+              <Link to="/settings?section=plan"
                 className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover transition-colors">
                 Upgrade to Pro <ChevronRight size={12} />
-              </NavLink>
+              </Link>
             )}
           </div>
 

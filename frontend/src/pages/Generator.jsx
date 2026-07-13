@@ -120,6 +120,7 @@ export default function Generator() {
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
+        <p className="eyebrow !text-brand mb-2">Pipeline</p>
         <h1 className="font-display text-2xl font-bold text-text-primary">Generate Resume</h1>
         <p className="text-text-secondary mt-1">Paste a job description and get an ATS-optimized .docx in ~30 seconds.</p>
       </motion.div>
@@ -167,9 +168,27 @@ export default function Generator() {
         {loading && (
           <motion.div
             initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="card mb-6 overflow-hidden"
+            className="card-glass mb-6 overflow-hidden"
           >
-            <p className="text-sm font-medium text-text-primary mb-4">Pipeline progress</p>
+            {/* Phase-caption treatment shared with the landing page's journey */}
+            <div className="flex items-center justify-between mb-1">
+              <p className="eyebrow !text-brand">Pipeline — Active Phase</p>
+              <span className="text-xs font-mono text-text-muted">{step + 1} / {STEPS.length}</span>
+            </div>
+            <div className="h-8 relative overflow-hidden mb-4">
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={step}
+                  initial={{ y: 12, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: -12, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute inset-0 text-base font-semibold text-text-primary"
+                >
+                  {STEPS[step]}
+                </motion.p>
+              </AnimatePresence>
+            </div>
             <div className="space-y-2">
               {STEPS.map((s, i) => (
                 <div key={i} className="flex items-center gap-3">

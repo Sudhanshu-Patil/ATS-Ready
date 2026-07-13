@@ -112,6 +112,13 @@
     @apply text-brand;
   }
 
+  /* ── Eyebrow label ───────────────────────────────────────────────────────── */
+  /* Small uppercase section label — landing phase captions + app section
+     headers ("OVERVIEW", "PIPELINE — ACTIVE PHASE"). */
+  .eyebrow {
+    @apply text-[11px] font-mono font-medium uppercase tracking-[0.18em] text-text-muted;
+  }
+
   /* ── ATS score ring color stops ─────────────────────────────────────────── */
   .score-excellent { @apply text-score; }
   .score-good      { @apply text-yellow-400; }
@@ -142,6 +149,16 @@
   }
 }
 
+/* Custom cursor zone (landing page) — hide the native cursor so CursorFX's
+   dot/ring/glow replace it. Gated to fine pointers: touch devices never hide
+   anything, and the app's form pages keep the native cursor untouched. */
+@media (pointer: fine) {
+  .custom-cursor-zone,
+  .custom-cursor-zone * {
+    cursor: none !important;
+  }
+}
+
 /* Aurora blobs read as vivid glow against a dark base but muddy/harsh against
    a light one — dim them globally in light mode rather than re-tuning each
    blob's individual opacity in AuroraBackground.jsx. */
@@ -151,9 +168,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   /* MotionConfig reducedMotion="user" (main.jsx) handles every Framer Motion
-     component automatically. This covers the one animation that ISN'T
-     Framer-driven — the aurora's CSS keyframe drift. */
-  .aurora-blob {
+     component automatically. This covers the animations that AREN'T
+     Framer-driven — raw CSS keyframe loops (aurora drift + the landing
+     page's idle float/orbit/fall vignettes). */
+  .aurora-blob,
+  .animate-float,
+  .animate-orbit,
+  .animate-fall-loop {
     animation: none !important;
   }
 }

@@ -39,6 +39,7 @@ export default function Dashboard() {
   return (
     <div className="p-8 max-w-[1400px] mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
+        <p className="eyebrow !text-brand mb-2">Overview</p>
         <h1 className="font-display text-2xl font-bold text-text-primary">
           Good {getGreeting()}, {firstName} 👋
         </h1>
@@ -59,11 +60,14 @@ export default function Dashboard() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Recent jobs */}
         <motion.div
-          initial="hidden" animate="visible" variants={fadeInUp}
+          initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }} variants={fadeInUp}
           className="lg:col-span-2 card"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-text-primary">Recent Resumes</h2>
+            <div>
+              <p className="eyebrow mb-1">Recent activity</p>
+              <h2 className="font-semibold text-text-primary">Recent Resumes</h2>
+            </div>
             <Link to="/history" className="text-xs text-brand hover:text-brand-hover flex items-center gap-1">
               View all <ChevronRight size={12} />
             </Link>
@@ -106,7 +110,10 @@ export default function Dashboard() {
         </motion.div>
 
         {/* Quick actions + plan */}
-        <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="space-y-4">
+        <motion.div
+          initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }} variants={fadeInUp}
+          className="space-y-4"
+        >
           <div className="card">
             <h2 className="font-semibold text-text-primary mb-4">Quick actions</h2>
             <div className="space-y-2">
@@ -147,7 +154,7 @@ export default function Dashboard() {
                 <p className="text-xs text-text-muted mb-3">
                   {stats?.resumes_this_month ?? 0}/3 resumes used this month
                 </p>
-                <Link to="/settings" className="btn-primary text-xs w-full text-center block py-2">
+                <Link to="/settings?section=plan" className="btn-primary text-xs w-full text-center block py-2">
                   Upgrade to Pro →
                 </Link>
               </div>

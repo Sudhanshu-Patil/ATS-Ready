@@ -7,6 +7,7 @@ import { authAPI } from './api/client'
 import AuroraBackground from './components/AuroraBackground'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
@@ -66,7 +67,9 @@ export default function App() {
           <Route path="/settings"       element={<Settings />} />
         </Route>
 
-        <Route path="/"  element={<Navigate to="/dashboard" replace />} />
+        {/* Public cinematic landing — logged-in users see auth-aware CTAs
+            instead of being force-redirected (session restore is async). */}
+        <Route path="/"  element={<Landing />} />
         <Route path="*"  element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </>

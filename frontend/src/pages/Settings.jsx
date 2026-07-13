@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
@@ -12,7 +13,22 @@ const SECTIONS = ['account', 'security', 'plan']
 
 export default function Settings() {
   const { user, login, accessToken } = useAuthStore()
-  const [activeSection, setActiveSection] = useState('account')
+  // Deep-linkable sections: /settings?section=plan (used by the "Upgrade to
+  // Pro" links in the sidebar and dashboard). The effect — not just the
+  // useState initializer — matters: navigating from /settings to
+  // /settings?section=plan changes only the search params, so the component
+  // doesn't remount (Layout keys its route transition on pathname alone).
+  const [searchParams] = useSearchParams()
+  const sectionParam = searchParams.get('section')
+  const [activeSection, setActiveSection] = useState(
+    SECTIONS.includes(sectionParam) ? sectionParam : 'account'
+  )
+
+  useEffect(() => {
+    if (sectionParam && SECTIONS.includes(sectionParam)) {
+      setActiveSection(sectionParam)
+    }
+  }, [sectionParam])
 
   return (
     <div className="p-8 max-w-5xl mx-auto">

@@ -394,7 +394,8 @@ export default function JobRecommendations() {
           a full trickle-in hurts scannability more than it adds polish. */}
       {!loading && !refreshing && visibleJobs.length > 0 && (
         <motion.div
-          initial="hidden" animate="visible" variants={staggerContainer}
+          initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-60px' }}
+          variants={staggerContainer}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
         >
           {visibleJobs.map((job, i) => (
