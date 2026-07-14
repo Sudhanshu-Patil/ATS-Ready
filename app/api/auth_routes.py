@@ -1,12 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.api.rate_limit import limiter
 from app.db.database import get_db
 from app.db.models import User
 from app.services.auth_service import (
@@ -83,7 +84,9 @@ def _set_auth_cookies(response: Response, user_id: int) -> str:
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @auth_router.post("/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("5/hour")
 async def register(
+    request: Request,
     data: RegisterRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
@@ -131,7 +134,9 @@ async def register(
 
 
 @auth_router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 async def login(
+    request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
@@ -252,7 +257,9 @@ async def update_me(
 
 
 @auth_router.post("/change-password")
+@limiter.limit("10/hour")
 async def change_password(
+    request: Request,
     data: dict,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -291,7 +298,9 @@ class ResetPasswordRequest(BaseModel):
 
 
 @auth_router.post("/forgot-password")
+@limiter.limit("5/hour")
 async def forgot_password(
+    request: Request,
     data: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -312,7 +321,9 @@ async def forgot_password(
 
 
 @auth_router.post("/reset-password")
+@limiter.limit("10/hour")
 async def reset_password(
+    request: Request,
     data: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -344,7 +355,8 @@ class VerifyEmailRequest(BaseModel):
 
 
 @auth_router.post("/send-verification")
-async def send_verification(user: User = Depends(get_current_user)):
+@limiter.limit("5/hour")
+async def send_verification(request: Request, user: User = Depends(get_current_user)):
     """Resend the verification email for the logged-in user."""
     if user.is_verified:
         return {"message": "Email is already verified", "already_verified": True}

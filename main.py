@@ -10,9 +10,12 @@ from pathlib import Path
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
+from app.api.rate_limit import limiter
 from app.config import settings
 from app.db.database import close_db, init_db
 from app.services.cache_service import cache_service
@@ -76,6 +79,16 @@ app = FastAPI(
     docs_url="/docs" if settings.is_development else None,
     redoc_url="/redoc" if settings.is_development else None,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests — please wait a moment and try again."},
+    ),
+)
+app.add_middleware(SlowAPIMiddleware)
 
 ALLOWED_ORIGINS = [settings.FRONTEND_URL]
 if settings.is_development:
