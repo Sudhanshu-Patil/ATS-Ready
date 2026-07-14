@@ -53,10 +53,40 @@ import httpx
 from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
 from app.config import settings
 from app.db.models import Skill, WorkExperience
 from app.services.cache_service import cache_service
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """Network blips / 5xx worth one retry — never 4xx (won't succeed on retry)."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return False
+
+
+# One extra attempt, short fixed wait — for the 4 fast free JSON APIs only.
+# Deliberately NOT applied to the 3 Apify-backed sources below: each actor
+# run already takes 20-60s and the full aggregation runs at ~91s against
+# Render's ~100s request ceiling (see _fetch_all_jobs) — retrying one of
+# those would risk timing out the whole recommendations endpoint.
+_retry_transient = retry(
+    retry=retry_if_exception(_is_transient),
+    stop=stop_after_attempt(2),
+    wait=wait_fixed(0.5),
+    reraise=True,
+)
+
+
+@_retry_transient
+async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    r = await client.get(url, **kwargs)
+    r.raise_for_status()
+    return r
 
 logger = logging.getLogger(__name__)
 
@@ -205,11 +235,11 @@ def _infer_seniority(titles: List[str]) -> str:
 async def _fetch_remotive(client: httpx.AsyncClient) -> List[JobListing]:
     """Remotive public JSON API — no key needed."""
     try:
-        r = await client.get(
+        r = await _get_with_retry(
+            client,
             "https://remotive.com/api/remote-jobs",
             params={"limit": 100, "category": "software-dev"},
         )
-        r.raise_for_status()
         jobs = r.json().get("jobs", [])
         return [
             JobListing(
@@ -233,8 +263,7 @@ async def _fetch_remotive(client: httpx.AsyncClient) -> List[JobListing]:
 async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
     """Arbeitnow public JSON API — no key needed."""
     try:
-        r = await client.get("https://www.arbeitnow.com/api/job-board-api")
-        r.raise_for_status()
+        r = await _get_with_retry(client, "https://www.arbeitnow.com/api/job-board-api")
         jobs = r.json().get("data", [])
         return [
             JobListing(
@@ -258,11 +287,11 @@ async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
 async def _fetch_themuse(client: httpx.AsyncClient) -> List[JobListing]:
     """The Muse public JSON API — no key needed."""
     try:
-        r = await client.get(
+        r = await _get_with_retry(
+            client,
             "https://www.themuse.com/api/public/jobs",
             params={"page": 0, "per_page": 100, "category": "Engineering"},
         )
-        r.raise_for_status()
         jobs = r.json().get("results", [])
         listings = []
         for j in jobs:
@@ -295,7 +324,8 @@ async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
     """
     try:
         # Find the latest "Ask HN: Who is Hiring?" post
-        search = await client.get(
+        search = await _get_with_retry(
+            client,
             "https://hn.algolia.com/api/v1/search",
             params={
                 "tags":       "ask_hn",
@@ -303,7 +333,6 @@ async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
                 "hitsPerPage": 1,
             },
         )
-        search.raise_for_status()
         hits = search.json().get("hits", [])
         if not hits:
             return []
@@ -313,10 +342,7 @@ async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
             return []
 
         # Fetch the story's comments
-        story = await client.get(
-            f"https://hn.algolia.com/api/v1/items/{story_id}"
-        )
-        story.raise_for_status()
+        story = await _get_with_retry(client, f"https://hn.algolia.com/api/v1/items/{story_id}")
         children = story.json().get("children", [])[:80]
 
         listings = []
