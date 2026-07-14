@@ -24,7 +24,7 @@ HOW FREE TIER LIMITS WORK:
   The check runs before enqueuing to avoid wasting the job slot.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, status
 from sqlalchemy import func, select
@@ -61,8 +61,11 @@ async def check_resume_limit(
         # Unlimited plan — no check needed
         return user
 
-    # Count completed resumes this calendar month
-    now = datetime.now(timezone.utc)
+    # Count completed resumes this calendar month.
+    # NAIVE UTC on purpose: created_at is TIMESTAMP WITHOUT TIME ZONE (written
+    # via datetime.utcnow() everywhere) — asyncpg rejects tz-aware parameters
+    # against naive columns, which crashed every free-plan generation.
+    now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     result = await db.execute(

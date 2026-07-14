@@ -118,7 +118,10 @@ def test_webhook_signature_rejected_when_unconfigured(monkeypatch):
 
 # ── Billing disabled → graceful responses ─────────────────────────────────────
 
-async def test_checkout_graceful_when_billing_disabled(client):
+async def test_checkout_graceful_when_billing_disabled(client, monkeypatch):
+    # Force the disabled path regardless of what the local .env says —
+    # this test is about graceful degradation, not the live config.
+    monkeypatch.setattr(settings, "BILLING_ENABLED", False)
     email = unique_email()
     reg = await register(client, email)
     r = await client.post(

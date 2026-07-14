@@ -112,7 +112,7 @@ generate. Emails now go to real inboxes via your SMTP provider.
 docker compose -f docker-compose.prod.yaml logs -f api worker
 
 # Deploy an update
-git pull && docker compose -f docker-compose.prod.yaml up -d --build
+git pull && docker compose -f docker-compose.prod.yaml up -d --build --force-recreate api worker
 
 # Nightly DB backup (crontab -e), keeps 7 days:
 0 3 * * * docker compose -f /home/ubuntu/app/docker-compose.prod.yaml exec -T db pg_dump -U atsready atsready | gzip > /home/ubuntu/backups/db-$(date +\%u).sql.gz

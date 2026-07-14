@@ -18,7 +18,7 @@ ENDPOINTS:
   POST /api/webhooks/razorpay        — webhook handler (signature-verified)
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
@@ -75,7 +75,9 @@ async def billing_status(
     from sqlalchemy import func
     from app.db.models import JobApplication
 
-    now = datetime.now(timezone.utc)
+    # Naive UTC on purpose — created_at is a naive TIMESTAMP column; asyncpg
+    # rejects tz-aware parameters against it (see plan_limits.py).
+    now = datetime.utcnow()
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     result = await db.execute(
         select(func.count(JobApplication.id)).where(
