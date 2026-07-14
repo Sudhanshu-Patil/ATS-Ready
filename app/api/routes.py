@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -470,6 +470,187 @@ async def delete_experience(
     await db.commit()
     await cache_service.invalidate_profile(user.id)
     return {"message": "Experience deleted"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resume Import — upload an existing resume, AI-fill the metabase
+# ─────────────────────────────────────────────────────────────────────────────
+
+MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+
+
+def _extract_resume_text(filename: str, data: bytes) -> str:
+    """Extract plain text from an uploaded PDF or DOCX (sync — run in a thread)."""
+    import io
+    name = (filename or "").lower()
+    if name.endswith(".pdf"):
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(data))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    if name.endswith(".docx"):
+        import docx
+        doc = docx.Document(io.BytesIO(data))
+        parts = [p.text for p in doc.paragraphs]
+        # Resumes often lay content out in tables — include them
+        for table in doc.tables:
+            for row in table.rows:
+                parts.extend(cell.text for cell in row.cells)
+        return "\n".join(parts)
+    raise HTTPException(status_code=422, detail="Upload a .pdf or .docx file")
+
+
+@router.post("/metabase/import-resume")
+async def import_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Import an existing resume: extract text (PDF/DOCX) → AI-parse into a
+    structured profile → merge into the metabase.
+
+    Merge is ADDITIVE and idempotent (same convention as the seed script):
+    skills dedupe by name, experience by company+role, projects by title,
+    education by institution. Personal fields only overwrite when the
+    parsed value is non-empty — a sparse resume never blanks existing data.
+    """
+    import asyncio
+
+    data = await file.read()
+    if len(data) > MAX_RESUME_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 5MB)")
+
+    text = await asyncio.to_thread(_extract_resume_text, file.filename, data)
+    if len(text.strip()) < 200:
+        raise HTTPException(
+            status_code=422,
+            detail="Couldn't extract readable text — is this a scanned/image PDF? "
+                   "Try a text-based export of your resume.",
+        )
+
+    from app.agents.ai_agent import ai_agent
+    # The LLM call is sync/blocking — keep it off the event loop
+    try:
+        parsed = await asyncio.to_thread(ai_agent.parse_resume, text)
+    except Exception as exc:
+        logger.error("Resume parse failed for user %s: %s", user.id, exc)
+        raise HTTPException(status_code=502, detail="AI parsing failed — please try again")
+
+    counts = {"skills": 0, "experience": 0, "projects": 0, "education": 0}
+
+    # ── Personal (non-empty fields only) ─────────────────────────────────────
+    personal = parsed.get("personal") or {}
+    result = await db.execute(select(PersonalInfo).where(PersonalInfo.user_id == user.id))
+    info = result.scalar_one_or_none()
+    allowed = {"full_name", "email", "phone", "location", "linkedin",
+               "github", "portfolio", "professional_summary"}
+    cleaned = {k: v for k, v in personal.items() if k in allowed and v}
+    if info:
+        for k, v in cleaned.items():
+            setattr(info, k, v)
+    elif cleaned:
+        db.add(PersonalInfo(user_id=user.id, **cleaned))
+
+    # ── Skills (dedupe by name, case-insensitive) ────────────────────────────
+    existing = await db.execute(select(Skill.name).where(Skill.user_id == user.id))
+    have = {n.lower() for (n,) in existing.all()}
+    for s in parsed.get("skills") or []:
+        name = (s.get("name") or "").strip()
+        if not name or name.lower() in have:
+            continue
+        have.add(name.lower())
+        db.add(Skill(
+            user_id=user.id,
+            name=name[:100],
+            category=(s.get("category") or "Other")[:100],
+            proficiency=s.get("proficiency") if s.get("proficiency") in
+                        ("Beginner", "Intermediate", "Advanced", "Expert") else "Intermediate",
+            years_experience=float(s.get("years_experience") or 1.0),
+            keywords=[],
+            is_primary=bool(s.get("is_primary", False)),
+        ))
+        counts["skills"] += 1
+
+    # ── Experience (dedupe by company+role) ──────────────────────────────────
+    for e in parsed.get("experience") or []:
+        company, role = (e.get("company") or "").strip(), (e.get("role") or "").strip()
+        if not company or not role:
+            continue
+        dup = await db.execute(select(WorkExperience).where(
+            WorkExperience.user_id == user.id,
+            WorkExperience.company == company,
+            WorkExperience.role == role,
+        ))
+        if dup.scalar_one_or_none():
+            continue
+        exp = WorkExperience(
+            user_id=user.id, company=company[:200], role=role[:200],
+            location=(e.get("location") or "")[:100] or None,
+            start_date=(e.get("start_date") or "Unknown")[:20],
+            end_date=(e.get("end_date") or "")[:20] or None,
+            is_current=bool(e.get("is_current", False)),
+            tech_stack=[],
+        )
+        db.add(exp)
+        await db.flush()
+        for b in (e.get("bullets") or [])[:10]:
+            if b and b.strip():
+                db.add(ExperienceBullet(experience_id=exp.id, bullet=b.strip(), keywords=[]))
+        counts["experience"] += 1
+
+    # ── Projects (dedupe by title) ────────────────────────────────────────────
+    for p in parsed.get("projects") or []:
+        title = (p.get("title") or "").strip()
+        if not title:
+            continue
+        dup = await db.execute(select(Project).where(
+            Project.user_id == user.id, Project.title == title,
+        ))
+        if dup.scalar_one_or_none():
+            continue
+        proj = Project(
+            user_id=user.id, title=title[:200],
+            description=(p.get("description") or title),
+            tech_stack=[t for t in (p.get("tech_stack") or []) if t][:15],
+            github_url=(p.get("github_url") or "")[:500] or None,
+            is_featured=True,
+        )
+        db.add(proj)
+        await db.flush()
+        for b in (p.get("bullets") or [])[:6]:
+            if b and b.strip():
+                db.add(ProjectBullet(project_id=proj.id, bullet=b.strip(), keywords=[]))
+        counts["projects"] += 1
+
+    # ── Education (dedupe by institution) ─────────────────────────────────────
+    for ed in parsed.get("education") or []:
+        institution = (ed.get("institution") or "").strip()
+        if not institution:
+            continue
+        dup = await db.execute(select(Education).where(
+            Education.user_id == user.id, Education.institution == institution,
+        ))
+        if dup.scalar_one_or_none():
+            continue
+        db.add(Education(
+            user_id=user.id, institution=institution[:200],
+            degree=(ed.get("degree") or "Degree")[:200],
+            field=(ed.get("field") or "")[:200] or "—",
+            start_year=ed.get("start_year"),
+            end_year=ed.get("end_year"),
+            gpa=(str(ed.get("gpa"))[:10] if ed.get("gpa") else None),
+            relevant_coursework=[],
+        ))
+        counts["education"] += 1
+
+    await db.commit()
+    await cache_service.invalidate_profile(user.id)
+    logger.info("Resume import for user %s: %s", user.id, counts)
+    return {
+        "message": "Resume imported",
+        "personal_updated": bool(cleaned),
+        **counts,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

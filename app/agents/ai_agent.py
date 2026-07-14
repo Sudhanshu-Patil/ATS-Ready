@@ -112,6 +112,67 @@ Rules:
         data["raw_text"] = jd_text
         return ParsedJD(**data)
 
+    # ─── Resume Import: parse an uploaded resume into a metabase profile ─────
+
+    SYSTEM_RESUME_PARSER = """You are an expert resume parser.
+Extract the candidate's profile from raw resume text into precise structured JSON.
+Only extract what is actually present — never invent or embellish.
+Always respond with valid JSON only."""
+
+    def parse_resume(self, resume_text: str) -> Dict[str, Any]:
+        """Parse raw resume text into metabase-shaped profile data."""
+        prompt = f"""Extract this resume into JSON with EXACTLY this structure:
+{{
+  "personal": {{
+    "full_name": "...", "email": "...", "phone": "...", "location": "...",
+    "linkedin": "url or empty string", "github": "url or empty string",
+    "portfolio": "url or empty string",
+    "professional_summary": "the summary/objective section, or write a faithful 2-3 sentence summary from the content"
+  }},
+  "skills": [
+    {{"name": "...", "category": "e.g. Programming Languages / Frameworks / Cloud & DevOps / Databases / Tools",
+      "proficiency": "Beginner|Intermediate|Advanced|Expert (infer from context, default Intermediate)",
+      "years_experience": 1.0, "is_primary": true}}
+  ],
+  "experience": [
+    {{"company": "...", "role": "...", "location": "...",
+      "start_date": "Month Year", "end_date": "Month Year or null if current",
+      "is_current": false,
+      "bullets": ["each achievement/responsibility bullet, verbatim or lightly cleaned"]}}
+  ],
+  "projects": [
+    {{"title": "...", "description": "1-2 sentences",
+      "tech_stack": ["tech1", "tech2"], "github_url": "url or empty string",
+      "bullets": ["notable details"]}}
+  ],
+  "education": [
+    {{"institution": "...", "degree": "e.g. B.E.", "field": "...",
+      "start_year": 2020, "end_year": 2024, "gpa": "as written, or null"}}
+  ]
+}}
+
+Rules:
+- skills: extract EVERY skill mentioned anywhere (skills section, bullets, tech stacks); dedupe.
+- Mark is_primary=true for skills that appear prominently/repeatedly.
+- Dates: keep the resume's own format for start_date/end_date strings.
+- Missing sections → empty arrays. Missing fields → empty string or null.
+
+Resume text:
+---
+{resume_text[:12000]}
+---
+Return ONLY the JSON object."""
+
+        response = self._call(self.SYSTEM_RESUME_PARSER, prompt, max_tokens=3500)
+        try:
+            return json.loads(response.strip())
+        except json.JSONDecodeError:
+            import re
+            match = re.search(r'\{.*\}', response, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+            raise ValueError(f"AI resume parser returned invalid JSON: {response[:200]}")
+
     # ─── Stage 2: Resume Tailoring ────────────────────────────────────────────
 
     SYSTEM_RESUME_TAILOR = """You are an elite resume coach and ATS optimization expert.

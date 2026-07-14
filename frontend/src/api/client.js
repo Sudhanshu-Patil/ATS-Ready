@@ -91,6 +91,13 @@ export const jobsAPI = {
 }
 
 export const metabaseAPI = {
+  importResume: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    // No Content-Type header — axios sets multipart boundary from FormData.
+    // Long timeout: text extraction + LLM parse takes 10-30s.
+    return api.post('/metabase/import-resume', fd, { timeout: 120000 })
+  },
   getPersonal:      ()     => api.get('/metabase/personal'),
   savePersonal:     (data) => api.post('/metabase/personal', data),
   getSkills:        ()     => api.get('/metabase/skills'),

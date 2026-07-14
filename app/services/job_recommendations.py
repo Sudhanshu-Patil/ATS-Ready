@@ -465,7 +465,13 @@ async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, tit
                 source="LinkedIn",
                 tags=[skill_query],
                 description="" if desc == "N/A" else desc,
-                posted_at=item.get("date"),
+                # The actor's "date" is the SCRAPE timestamp, not the posting
+                # date — passing it through made every LinkedIn job claim
+                # "just now" and wrongly pass the "Last 24 hours" filter.
+                # None = honest unknown: date-window filters exclude these,
+                # "Any time" shows them. Freshness is still bounded by the
+                # actor's time_interval=WEEK server-side filter.
+                posted_at=None,
             ))
         logger.info("Apify LinkedIn returned %d listings", len(listings))
         return listings

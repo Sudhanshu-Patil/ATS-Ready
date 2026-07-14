@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Trash2, User, Briefcase, Code, FolderGit2 } from 'lucide-react'
+import { Plus, Trash2, User, Briefcase, Code, FolderGit2, Upload } from 'lucide-react'
 import { metabaseAPI } from '../api/client'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import Tabs from '../components/Tabs'
 import EmptyState from '../components/EmptyState'
 import { Skeleton } from '../components/Skeleton'
+import Spinner from '../components/Spinner'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -16,8 +17,69 @@ const TABS = [
   { id: 'projects',   label: 'Projects',   icon: FolderGit2 },
 ]
 
+// ── Import from an existing resume ────────────────────────────────────────────
+function ImportResumeCard({ onImported }) {
+  const inputRef = useRef(null)
+  const [importing, setImporting] = useState(false)
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    if (!/\.(pdf|docx)$/i.test(file.name)) {
+      toast.error('Upload a .pdf or .docx file')
+      return
+    }
+    setImporting(true)
+    try {
+      const { data } = await metabaseAPI.importResume(file)
+      const parts = []
+      if (data.skills)     parts.push(`${data.skills} skills`)
+      if (data.experience) parts.push(`${data.experience} roles`)
+      if (data.projects)   parts.push(`${data.projects} projects`)
+      if (data.education)  parts.push(`${data.education} education`)
+      if (data.personal_updated) parts.push('personal info')
+      toast.success(parts.length
+        ? `Imported: ${parts.join(', ')}`
+        : 'Nothing new to import — your profile already has it all')
+      onImported()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Import failed — please try again')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="card-glass !p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-brand-muted flex items-center justify-center flex-shrink-0">
+          <Upload size={16} className="text-brand" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-text-primary">Already have a resume?</p>
+          <p className="text-xs text-text-secondary">
+            Upload it (.pdf / .docx) — the AI fills your profile automatically. Existing entries are never overwritten.
+          </p>
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept=".pdf,.docx" className="hidden" onChange={handleFile} />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={importing}
+        className="btn-primary text-sm flex items-center gap-2 whitespace-nowrap"
+      >
+        {importing ? <Spinner size="sm" color="white" /> : <Upload size={14} />}
+        {importing ? 'Parsing your resume…' : 'Import resume'}
+      </button>
+    </div>
+  )
+}
+
 export default function Metabase() {
   const [tab, setTab] = useState('personal')
+  // Bumping this remounts the active tab so it refetches after an import
+  const [reloadKey, setReloadKey] = useState(0)
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
@@ -32,13 +94,14 @@ export default function Metabase() {
       </motion.div>
 
       <motion.div initial="hidden" animate="visible" variants={fadeInUp}>
+        <ImportResumeCard onImported={() => setReloadKey(k => k + 1)} />
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="mb-6" />
       </motion.div>
 
-      {tab === 'personal'   && <PersonalTab />}
-      {tab === 'skills'     && <SkillsTab />}
-      {tab === 'experience' && <ExperienceTab />}
-      {tab === 'projects'   && <ProjectsTab />}
+      {tab === 'personal'   && <PersonalTab   key={`p-${reloadKey}`} />}
+      {tab === 'skills'     && <SkillsTab     key={`s-${reloadKey}`} />}
+      {tab === 'experience' && <ExperienceTab key={`e-${reloadKey}`} />}
+      {tab === 'projects'   && <ProjectsTab   key={`j-${reloadKey}`} />}
     </div>
   )
 }

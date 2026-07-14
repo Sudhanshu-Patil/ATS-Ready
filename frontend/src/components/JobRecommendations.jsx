@@ -3,7 +3,7 @@ import { motion } from 'framer-motion'
 import { ExternalLink, RefreshCw, Briefcase, MapPin, Zap, AlertCircle, Sparkles, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { recommendationsAPI } from '../api/client'
-import { fadeInUp, staggerContainer } from '../lib/motion'
+import { fadeInUp } from '../lib/motion'
 import ScoreRing from './ScoreRing'
 import { Skeleton } from './Skeleton'
 import EmptyState from './EmptyState'
@@ -132,9 +132,11 @@ function JobCard({ job }) {
   const extraSkills   = job.matched_skills.length - visibleSkills.length
   const posted        = relativeTime(job.posted_at)
 
+  // Deliberately NOT a motion element: per-card entrance variants replayed
+  // on every filter change (cards trickling in at scattered positions reads
+  // as broken layout). The grid container fades once; filtering is instant.
   return (
-    <motion.div
-      variants={fadeInUp}
+    <div
       className="group relative rounded-xl border border-bg-border bg-bg-card p-4 flex flex-col gap-3
                  hover:border-brand/40 hover:shadow-lg hover:shadow-brand/5
                  transition-all duration-300"
@@ -199,7 +201,7 @@ function JobCard({ job }) {
           <Zap size={11} /> Generate Resume
         </button>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -390,12 +392,13 @@ export default function JobRecommendations() {
         </div>
       )}
 
-      {/* Job cards grid — stagger capped at DISPLAY_CAP; beyond ~15-20 items
-          a full trickle-in hurts scannability more than it adds polish. */}
+      {/* Job cards grid — ONE whole-grid fade on first reveal. Cards are
+          plain divs on purpose: per-card stagger replayed on every filter
+          change, which read as cards randomly placing themselves. */}
       {!loading && !refreshing && visibleJobs.length > 0 && (
         <motion.div
           initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-60px' }}
-          variants={staggerContainer}
+          variants={fadeInUp}
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
         >
           {visibleJobs.map((job, i) => (

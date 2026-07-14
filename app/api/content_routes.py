@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
+from app.api.plan_limits import check_cover_letter_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, JobApplication, User
 from app.services.metabase_service import metabase_service
@@ -137,7 +138,10 @@ async def _get_profile_and_jd(
 async def generate_cover_letter(
     request: CoverLetterRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    # Pro/Team gate — was silently unenforced (the dependency existed but was
+    # never wired here), letting free users generate cover letters.
+    # No-op while BILLING_ENABLED=false.
+    user: User = Depends(check_cover_letter_access),
 ):
     """
     Generate a personalized cover letter.

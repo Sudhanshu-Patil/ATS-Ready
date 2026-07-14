@@ -39,6 +39,8 @@ openai==1.57.4
 
 # ── Document Generation ───────────────────────────────────────────────────────
 python-docx==1.1.2
+# Resume IMPORT (upload → parse → metabase): PDF text extraction, pure-python
+pypdf==5.1.0
 
 # ── Auth (Step 2 — install now so it's ready) ────────────────────────────────
 python-jose[cryptography]==3.3.0
