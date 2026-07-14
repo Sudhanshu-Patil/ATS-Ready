@@ -1,66 +1,51 @@
 # Production Deployment — No Credit Card, ₹0/month
-### Hugging Face Spaces (app) + Neon (Postgres) + Upstash (Redis)
+### Render (app) + Neon (Postgres) + Upstash (Redis)
 
-None of these ask for a card, ever. HF Docker Spaces free tier: **2 vCPU,
-16 GB RAM**, HTTPS included at `https://<user>-<space>.hf.space`.
+Render's free tier requires **no credit card** (their policy: hit a limit →
+suspended, never billed). Neon and Upstash never ask for one either.
 
-> Koyeb (this guide's previous target) was acquired by Mistral in Feb 2026
-> and closed its free tier to new users. HF Spaces replaces it — with far
-> more RAM.
+> Platform history, July 2026: Oracle needs a card for identity checks,
+> Koyeb closed its free tier after the Mistral acquisition, and Hugging Face
+> moved Docker Spaces to paid plans. Render is the surviving no-card option
+> for containers.
 
-Trade-offs vs. a VM (DEPLOYMENT.md): one container runs API + worker
-(`start-combined.sh`, the Dockerfile's default final stage), the disk is
-**ephemeral** (generated .docx files vanish on rebuild/restart — download
-promptly), the Space **sleeps after ~48h without traffic** (next visitor
-waits ~30-60s), and — important — **free public Spaces expose the source
-code** in the Files tab. This repo contains no secrets (all credentials are
-runtime env vars), but the code itself is browsable. For a portfolio project
-that's usually a feature; if it's a dealbreaker, stop here and say so.
+How it runs: Render builds our Dockerfile with no target selector, which
+gives it the final `production-combined` stage — migrations + ARQ worker +
+API in one container via `start-combined.sh` (which respects Render's
+injected `$PORT`). Verified locally against the real Neon + Upstash.
+
+Trade-offs: the free service **sleeps after 15 min without traffic** (next
+visitor waits ~1 min while it wakes), the disk is **ephemeral** (generated
+.docx files vanish on redeploy — download promptly), 512MB RAM (our combined
+container measured 185MB — fits), and 750 free instance-hours/month (a
+single always-provisioned service fits exactly).
 
 ---
 
-## 1. Neon (Postgres) + Upstash (Redis) — free, no card
+## 1. Neon (Postgres) + Upstash (Redis) — already done ✓
 
-Covered in the previous revision and **already done + verified** for this
-project: Neon project created (Singapore), all migrations applied, Upstash
-regional DB created. The two rules worth re-stating for posterity:
+Both created and verified for this project (Singapore region, migrations
+applied). The two rules worth re-stating:
 
 - Use Neon's **direct** hostname (strip `-pooler`) — their PgBouncer breaks
   asyncpg's prepared statements.
 - The async and sync URLs spell SSL differently:
   `?ssl=require` (asyncpg) vs `?sslmode=require` (psycopg2).
 
-## 2. Create the Space (~5 min)
+## 2. Create the Render service (~10 min)
 
-1. **huggingface.co** → Sign Up (email only, no card)
-2. Profile menu → **New Space**:
-   - Name: `ats-ready`
-   - SDK: **Docker** → *Blank* template
-   - Hardware: **CPU basic · Free**
-   - Visibility: **Public** (required — private Spaces block anonymous
-     visitors from reaching the app)
-3. Create a **write token**: Settings → Access Tokens → New token (type:
-   Write). This is your git-push password.
-
-## 3. Push the code
-
-The Space is itself a git repo. From the project root:
-
-```bash
-git remote add hf https://huggingface.co/spaces/<your-hf-username>/ats-ready
-git push hf master:main        # HF Spaces build from 'main'
-# username = your HF username, password = the write token
-```
-
-HF reads the YAML front-matter at the top of README.md (`sdk: docker`,
-`app_port: 8000`) and builds the Dockerfile. The **final stage is
-`production-combined`** — migrations + ARQ worker + API in one container —
-which is exactly what platforms without a build-target selector get.
-
-## 4. Configure secrets (before the first build finishes)
-
-Space page → **Settings → Variables and secrets** → add each as a **Secret**
-(injected as env vars at runtime; never visible in the public repo):
+1. **render.com** → **Sign up with GitHub** (no card)
+2. **New + → Web Service** → connect your GitHub → select the
+   `ATS-Ready` repo (grant the Render GitHub App access to it — private is fine)
+3. Configure:
+   - Name: `ats-ready` (your URL becomes `https://ats-ready.onrender.com`,
+     possibly with a suffix if the name is taken — note the final URL)
+   - Region: **Singapore** (matches Neon/Upstash)
+   - Branch: `master`
+   - Runtime: **Docker** (auto-detected from the Dockerfile)
+   - Instance type: **Free**
+4. **Advanced** → Health Check Path: `/health`
+5. Environment variables — add each (same values verified from this machine):
 
 | Name | Value |
 |---|---|
@@ -76,32 +61,32 @@ Space page → **Settings → Variables and secrets** → add each as a **Secret
 | `LLM_BASE_URL` | `https://api.groq.com/openai/v1` |
 | `LLM_REASONING_EFFORT` | `low` |
 | `APIFY_API_TOKEN` | your Apify token |
-| `FRONTEND_URL` | `https://<your-hf-username>-ats-ready.hf.space` |
+| `FRONTEND_URL` | `https://ats-ready.onrender.com` (correct after creation if the URL differs) |
 | `SMTP_*` / `EMAIL_FROM` | Gmail app password or Brevo (optional at first — emails log until set) |
 | `BILLING_ENABLED` + `RAZORPAY_*` | your Razorpay values (webhook secret: fresh random) |
 
-Changing secrets triggers a restart automatically.
+6. **Deploy Web Service** — first build ~5-10 min. Watch the logs for
+   `[start-combined]` lines: migrations → worker → API.
 
-## 5. After it's live
+## 3. After it's live
 
-- App: `https://<your-hf-username>-ats-ready.hf.space` — landing page,
-  register, generate.
+- App: `https://ats-ready.onrender.com` — landing page, register, generate.
+- If the final URL differs from what you set, update `FRONTEND_URL` in the
+  service's Environment tab (auto-redeploys) — email links depend on it.
 - **Razorpay webhook**: dashboard → Webhooks → URL
-  `https://<user>-ats-ready.hf.space/api/webhooks/razorpay`, events
+  `https://<app>.onrender.com/api/webhooks/razorpay`, events
   `subscription.activated/charged/cancelled/halted`, secret matching
   `RAZORPAY_WEBHOOK_SECRET`.
-- **Updates**: `git push hf master:main` (keep GitHub as the primary remote;
-  push to both).
-- **Logs**: Space page → the small "Logs" tab next to the App/Files tabs
-  (build + runtime).
+- **Updates**: `git push origin master` — Render auto-deploys on push.
+- **Logs**: service page → Logs tab.
 
 ## Known free-tier limits
 
 | Limit | Impact |
 |---|---|
-| Sleeps after ~48h idle | First visitor after a quiet spell waits ~30-60s |
-| Ephemeral disk | .docx files vanish on rebuild — download-immediately usage |
-| Public source | Code visible in the Space's Files tab (no secrets in repo) |
+| Sleeps after 15 min idle | Next visitor waits ~1 min for wake-up |
+| Ephemeral disk | .docx files vanish on redeploy — download-immediately usage |
+| 512MB RAM | Combined container measured 185MB — comfortable |
 | Upstash 500K cmds/mo | Handled by `ARQ_POLL_DELAY=10` |
 | Neon autosuspend | ~1s DB wake latency after idle |
 | Groq 8K TPM | One generation at a time (jobs queue) |
