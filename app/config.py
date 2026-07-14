@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     # ── Background Jobs ───────────────────────────────────────────────────────
     JOB_TIMEOUT: int = 180          # max seconds a resume job can run (headroom
                                     # for LLM 429 retries with backoff)
+    ARQ_POLL_DELAY: float = 0.5     # seconds between ARQ queue polls. Every
+                                    # poll is a Redis command — on metered
+                                    # free Redis (Upstash: 500K cmds/month)
+                                    # 0.5s ≈ 5M/month and blows the budget.
+                                    # Set 10 there (~260K/month); jobs then
+                                    # start with up to 10s extra latency.
     WORKER_CONCURRENCY: int = 1     # simultaneous ARQ jobs per worker process.
                                     # 1 on purpose: each job makes 3 sequential
                                     # LLM calls, and free-tier providers (Groq:

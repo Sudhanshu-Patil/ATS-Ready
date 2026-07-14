@@ -281,6 +281,10 @@ class WorkerSettings:
     # Max number of jobs this worker will run simultaneously
     max_jobs = settings.WORKER_CONCURRENCY
 
+    # Queue poll interval — see ARQ_POLL_DELAY in config.py (metered free
+    # Redis tiers need this raised to ~10s to stay inside command budgets)
+    poll_delay = settings.ARQ_POLL_DELAY
+
     # Hard timeout: kill the job if it runs longer than this
     job_timeout = settings.JOB_TIMEOUT
 

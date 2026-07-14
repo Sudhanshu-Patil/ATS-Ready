@@ -1,5 +1,8 @@
 # Production Deployment — Oracle Cloud Always Free (₹0/month)
 
+> **No credit card?** Oracle requires one for identity verification. Use the
+> no-card path instead: **DEPLOYMENT-NOCARD.md** (Koyeb + Neon + Upstash).
+
 The whole stack (`docker-compose.prod.yaml`) runs unchanged on one free VM:
 Caddy (auto-HTTPS) → FastAPI (serves API + built React SPA) → worker,
 Postgres, Redis — with persistent volumes for the DB and generated resumes.
