@@ -1,106 +1,107 @@
 # Production Deployment — No Credit Card, ₹0/month
-### Koyeb (app) + Neon (Postgres) + Upstash (Redis)
+### Hugging Face Spaces (app) + Neon (Postgres) + Upstash (Redis)
 
-None of these three ask for a card. The trade-offs vs. the Oracle VM path
-(see DEPLOYMENT.md): one 512MB container runs API + worker together
-(`start-combined.sh`), generated .docx files are **ephemeral** (gone on
-redeploy — users should download promptly), and the DB/Redis are managed
-free tiers with their own limits. Perfectly fine for a launch.
+None of these ask for a card, ever. HF Docker Spaces free tier: **2 vCPU,
+16 GB RAM**, HTTPS included at `https://<user>-<space>.hf.space`.
 
-Koyeb provides HTTPS + a `*.koyeb.app` domain automatically — no Caddy needed.
+> Koyeb (this guide's previous target) was acquired by Mistral in Feb 2026
+> and closed its free tier to new users. HF Spaces replaces it — with far
+> more RAM.
+
+Trade-offs vs. a VM (DEPLOYMENT.md): one container runs API + worker
+(`start-combined.sh`, the Dockerfile's default final stage), the disk is
+**ephemeral** (generated .docx files vanish on rebuild/restart — download
+promptly), the Space **sleeps after ~48h without traffic** (next visitor
+waits ~30-60s), and — important — **free public Spaces expose the source
+code** in the Files tab. This repo contains no secrets (all credentials are
+runtime env vars), but the code itself is browsable. For a portfolio project
+that's usually a feature; if it's a dealbreaker, stop here and say so.
 
 ---
 
-## 1. Push the repo to GitHub (~5 min)
+## 1. Neon (Postgres) + Upstash (Redis) — free, no card
 
-Koyeb deploys straight from GitHub:
+Covered in the previous revision and **already done + verified** for this
+project: Neon project created (Singapore), all migrations applied, Upstash
+regional DB created. The two rules worth re-stating for posterity:
+
+- Use Neon's **direct** hostname (strip `-pooler`) — their PgBouncer breaks
+  asyncpg's prepared statements.
+- The async and sync URLs spell SSL differently:
+  `?ssl=require` (asyncpg) vs `?sslmode=require` (psycopg2).
+
+## 2. Create the Space (~5 min)
+
+1. **huggingface.co** → Sign Up (email only, no card)
+2. Profile menu → **New Space**:
+   - Name: `ats-ready`
+   - SDK: **Docker** → *Blank* template
+   - Hardware: **CPU basic · Free**
+   - Visibility: **Public** (required — private Spaces block anonymous
+     visitors from reaching the app)
+3. Create a **write token**: Settings → Access Tokens → New token (type:
+   Write). This is your git-push password.
+
+## 3. Push the code
+
+The Space is itself a git repo. From the project root:
 
 ```bash
-# on your machine, in the project root
-git remote add origin https://github.com/<you>/ats-ready.git   # create a PRIVATE repo first
-git push -u origin master
+git remote add hf https://huggingface.co/spaces/<your-hf-username>/ats-ready
+git push hf master:main        # HF Spaces build from 'main'
+# username = your HF username, password = the write token
 ```
 
-## 2. Neon — free Postgres (~3 min)
+HF reads the YAML front-matter at the top of README.md (`sdk: docker`,
+`app_port: 8000`) and builds the Dockerfile. The **final stage is
+`production-combined`** — migrations + ARQ worker + API in one container —
+which is exactly what platforms without a build-target selector get.
 
-1. **neon.tech** → sign up (GitHub login, no card) → create project
-   (region: Singapore for India)
-2. On the dashboard, open **Connection Details** and — important — select the
-   **direct** connection (host WITHOUT `-pooler`). The pooled string runs
-   PgBouncer in transaction mode, which breaks asyncpg's prepared statements.
-3. From the one string Neon shows (`postgresql://USER:PASS@HOST/neondb`),
-   derive our two URLs (note the different SSL parameter spellings):
+## 4. Configure secrets (before the first build finishes)
 
-```
-DATABASE_URL=postgresql+asyncpg://USER:PASS@HOST/neondb?ssl=require
-SYNC_DATABASE_URL=postgresql+psycopg2://USER:PASS@HOST/neondb?sslmode=require
-```
+Space page → **Settings → Variables and secrets** → add each as a **Secret**
+(injected as env vars at runtime; never visible in the public repo):
 
-Free-tier note: Neon autosuspends after ~5 min idle; the first request after
-a quiet period adds ~1s of DB wake-up latency. Harmless.
-
-## 3. Upstash — free Redis (~2 min)
-
-1. **upstash.com** → sign up (no card) → Create Database (Regional,
-   Singapore/closest)
-2. Copy the **`rediss://`** connection URL (TLS) from the database page:
-
-```
-REDIS_URL=rediss://default:PASSWORD@HOST:6379
-```
-
-Free-tier budget: **500K commands/month** — that's why `ARQ_POLL_DELAY=10`
-below is REQUIRED (the worker polls Redis; at the default 0.5s that's ~5M
-commands/month, at 10s it's ~260K). Jobs start with up to 10s extra latency.
-
-## 4. Koyeb — the app (~10 min)
-
-1. **koyeb.com** → sign up with GitHub (no card on the free tier)
-2. **Create Web Service** → GitHub → select your repo, branch `master`
-3. Builder: **Dockerfile** (defaults are right — the Dockerfile's final
-   stage is the production image with the React app baked in)
-4. **Override the command**: `sh start-combined.sh`
-   (runs migrations, then the ARQ worker + API in one container)
-5. Instance type: **Free** (0.1 vCPU / 512MB) · Port: **8000** ·
-   Health check: HTTP `/health`
-6. Environment variables (mark secrets as Secret type):
-
-| Variable | Value |
+| Name | Value |
 |---|---|
 | `ENVIRONMENT` | `production` |
 | `DEBUG` | `false` |
-| `JWT_SECRET` | `openssl rand -hex 32` output |
-| `DATABASE_URL` | from step 2 (`+asyncpg`, `?ssl=require`) |
-| `SYNC_DATABASE_URL` | from step 2 (`+psycopg2`, `?sslmode=require`) |
-| `REDIS_URL` | from step 3 (`rediss://…`) |
-| `ARQ_POLL_DELAY` | `10` ← required, see step 3 |
+| `JWT_SECRET` | fresh `openssl rand -hex 32` |
+| `DATABASE_URL` | the verified asyncpg URL (direct host, `?ssl=require`) |
+| `SYNC_DATABASE_URL` | the verified psycopg2 URL (`?sslmode=require`) |
+| `REDIS_URL` | the verified Upstash `rediss://…` URL |
+| `ARQ_POLL_DELAY` | `10` (Upstash 500K cmds/month budget) |
 | `LLM_API_KEY` | your Groq key |
+| `MODEL` | `openai/gpt-oss-120b` |
+| `LLM_BASE_URL` | `https://api.groq.com/openai/v1` |
+| `LLM_REASONING_EFFORT` | `low` |
 | `APIFY_API_TOKEN` | your Apify token |
-| `FRONTEND_URL` | `https://<app-name>-<org>.koyeb.app` (shown at creation; update after if unsure) |
-| `SMTP_HOST/PORT/USER/PASSWORD/SMTP_TLS/EMAIL_FROM` | Gmail app password or Brevo — same as DEPLOYMENT.md step 4 |
-| `BILLING_ENABLED` + `RAZORPAY_*` | your Razorpay values when ready |
+| `FRONTEND_URL` | `https://<your-hf-username>-ats-ready.hf.space` |
+| `SMTP_*` / `EMAIL_FROM` | Gmail app password or Brevo (optional at first — emails log until set) |
+| `BILLING_ENABLED` + `RAZORPAY_*` | your Razorpay values (webhook secret: fresh random) |
 
-7. **Deploy**. First build ~5-8 min. The app is live at the `*.koyeb.app`
-   URL with HTTPS included.
+Changing secrets triggers a restart automatically.
 
 ## 5. After it's live
 
-- **Razorpay webhook** (finally has a real URL): dashboard → Settings →
-  Webhooks → edit your webhook → URL
-  `https://<app>.koyeb.app/api/webhooks/razorpay`, secret = a fresh
-  `openssl rand -hex 24` (put the same value in Koyeb's
-  `RAZORPAY_WEBHOOK_SECRET`), events: `subscription.activated/charged/
-  cancelled/halted`.
-- **Updates**: `git push` → Koyeb auto-rebuilds and redeploys.
-- **Logs**: Koyeb dashboard → your service → Runtime logs (you'll see
-  `[start-combined]` lines, then uvicorn + arq output interleaved).
+- App: `https://<your-hf-username>-ats-ready.hf.space` — landing page,
+  register, generate.
+- **Razorpay webhook**: dashboard → Webhooks → URL
+  `https://<user>-ats-ready.hf.space/api/webhooks/razorpay`, events
+  `subscription.activated/charged/cancelled/halted`, secret matching
+  `RAZORPAY_WEBHOOK_SECRET`.
+- **Updates**: `git push hf master:main` (keep GitHub as the primary remote;
+  push to both).
+- **Logs**: Space page → the small "Logs" tab next to the App/Files tabs
+  (build + runtime).
 
-## Known free-tier limits (accepted trade-offs)
+## Known free-tier limits
 
 | Limit | Impact |
 |---|---|
-| Ephemeral disk | Generated .docx files vanish on each redeploy/restart — fine for download-immediately usage |
-| 512MB RAM | API (1 uvicorn worker) + ARQ worker fit, but heavy concurrency will OOM-restart — matches the 1-job-at-a-time Groq free tier anyway |
+| Sleeps after ~48h idle | First visitor after a quiet spell waits ~30-60s |
+| Ephemeral disk | .docx files vanish on rebuild — download-immediately usage |
+| Public source | Code visible in the Space's Files tab (no secrets in repo) |
 | Upstash 500K cmds/mo | Handled by `ARQ_POLL_DELAY=10` |
-| Neon autosuspend | ~1s wake latency after idle periods |
-| Groq 8K TPM | One generation at a time (jobs queue) — unchanged from dev |
+| Neon autosuspend | ~1s DB wake latency after idle |
+| Groq 8K TPM | One generation at a time (jobs queue) |

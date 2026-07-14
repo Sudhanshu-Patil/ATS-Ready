@@ -88,3 +88,12 @@ CMD ["uvicorn", "main:app", \
      "--http", "httptools", \
      "--proxy-headers", \
      "--forwarded-allow-ips", "*"]
+
+
+# ── Production (combined, single-container) ───────────────────────────────────
+# LAST stage on purpose: platforms that build a Dockerfile without a target
+# selector (Hugging Face Spaces) get this — API + ARQ worker + migrations in
+# one container via start-combined.sh. docker-compose.prod.yaml is unaffected
+# (it pins `target: production` explicitly).
+FROM production AS production-combined
+CMD ["sh", "start-combined.sh"]

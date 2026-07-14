@@ -1,6 +1,19 @@
-# 🤖 AI Resume Agent
+---
+title: ATS-Ready
+emoji: ⚡
+colorFrom: red
+colorTo: yellow
+sdk: docker
+app_port: 8000
+pinned: false
+---
 
-Automatically tailors your resume to any job description using GPT-4, maximizing ATS scores. Paste a JD URL or text — get an optimized `.docx` in seconds.
+# 🤖 ATS-Ready — AI Resume Agent
+
+Automatically tailors your resume to any job description using LLM pipelines, maximizing ATS scores. Paste a JD URL or text — get an optimized `.docx` in seconds.
+
+> The YAML block above is Hugging Face Spaces configuration (Docker deploy,
+> app on port 8000) — GitHub just renders it as a table, ignore it here.
 
 ---
 
