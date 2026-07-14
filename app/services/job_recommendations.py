@@ -74,7 +74,7 @@ MAX_RESULTS = 60           # cap the returned list — kept generous (vs. the ~2
 # profiles (more skills) become mathematically harder to match — backwards.
 SKILL_MATCH_CAP = 8
 REQUEST_TIMEOUT = 10       # seconds per HTTP call
-APIFY_TIMEOUT = 90         # Apify actor runs are a live scrape, not a fast JSON
+APIFY_TIMEOUT = 180        # Apify actor runs are a live scrape, not a fast JSON
                            # API — needs much more headroom than REQUEST_TIMEOUT.
                            # Apify itself hard-cuts run-sync at 300s.
 
@@ -375,7 +375,11 @@ async def _apify_crawl_html(client: httpx.AsyncClient, url: str) -> Optional[str
     try:
         r = await client.post(
             "https://api.apify.com/v2/actors/apify~website-content-crawler/run-sync-get-dataset-items",
-            params={"token": settings.APIFY_API_TOKEN},
+            # memory=4096 caps this run at 4GB (default is 8GB). Two crawler
+            # runs + the LinkedIn actor then fit inside the account's 16GB
+            # actor-memory ceiling CONCURRENTLY — sequential execution pushed
+            # total refresh time past Render's ~100s proxy timeout.
+            params={"token": settings.APIFY_API_TOKEN, "memory": 4096},
             json={
                 "startUrls": [{"url": url}],
                 "maxCrawlPages": 1,
@@ -399,37 +403,75 @@ async def _apify_crawl_html(client: httpx.AsyncClient, url: str) -> Optional[str
         return None
 
 
-async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str) -> List[JobListing]:
-    """LinkedIn public job search, crawled via Apify (see _apify_crawl_html)."""
-    url = f"https://www.linkedin.com/jobs/search/?keywords={quote(skill_query, safe='')}"
-    html = await _apify_crawl_html(client, url)
-    if not html:
+async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, title_query: str) -> List[JobListing]:
+    """
+    LinkedIn jobs via the purpose-built forward_dinosaur/linkedin-job-scraper
+    actor (free — platform compute only). Unlike the generic HTML crawl used
+    for Naukri/Indeed, this returns structured JSON, so no selector fragility
+    against LinkedIn's bot-hostile markup.
+
+    Requires a ONE-TIME manual approval in the Apify console (the actor asks
+    for full account permissions): if unapproved, the API returns 403 and we
+    degrade gracefully like every other source. Approval URL appears in the
+    error payload / actor page.
+
+    Input matches the actor's build schema exactly — all fields required
+    (verified against build anu3bs1kzhwFd6SgP):
+      remote: "1"=on-site "2"=remote "3"=hybrid · contract_type: "F"=full-time
+    """
+    if not settings.APIFY_API_TOKEN:
         return []
     try:
-        soup = BeautifulSoup(html, "html.parser")
+        r = await client.post(
+            "https://api.apify.com/v2/actors/forward_dinosaur~linkedin-job-scraper/run-sync-get-dataset-items",
+            params={"token": settings.APIFY_API_TOKEN},
+            json={
+                "query":         title_query,
+                "location":      "India",   # primary market; other sources cover global/remote
+                "delay":         200,
+                "max_results":   15,        # runtime scales with result count —
+                                            # 15 keeps the run well under
+                                            # Render's ~100s request ceiling
+                "remote":        ["1", "2", "3"],
+                "contract_type": ["F"],
+                "time_interval": "WEEK",
+                "proxyConfiguration": {"useApifyProxy": True},
+            },
+            timeout=APIFY_TIMEOUT,
+        )
+        if r.status_code in (403, 408):
+            logger.warning("Apify LinkedIn actor unavailable (HTTP %d — %s)",
+                           r.status_code,
+                           "needs one-time console approval" if r.status_code == 403 else "run timed out")
+            return []
+        r.raise_for_status()
+
         listings = []
-        for card in soup.select("div.base-card")[:30]:
-            title_el = card.select_one("h3.base-search-card__title")
-            comp_el  = card.select_one("h4.base-search-card__subtitle")
-            loc_el   = card.select_one("span.job-search-card__location")
-            link_el  = card.select_one("a.base-card__full-link")
-            time_el  = card.select_one("time")
-            if not title_el or not link_el:
+        for item in r.json():
+            title = item.get("title")
+            link = item.get("link")
+            if not title or not link or title == "N/A":
                 continue
+            # This actor returns no per-job location, and description is "N/A"
+            # in list mode — tag the listing with the skills that FOUND it so
+            # keyword scoring has real signal instead of an empty description.
+            desc = item.get("description", "") or ""
+            company = item.get("company") or ""
             listings.append(JobListing(
-                title=title_el.get_text(strip=True),
-                company=comp_el.get_text(strip=True) if comp_el else "",
-                location=loc_el.get_text(strip=True) if loc_el else "",
-                url=link_el.get("href", ""),
+                title=title,
+                company="" if company == "N/A" else company,
+                location="India",
+                url=link,
                 source="LinkedIn",
-                tags=[],
-                description=card.get_text(separator=" ", strip=True),
-                posted_at=time_el.get("datetime") if time_el else None,
+                tags=[skill_query],
+                description="" if desc == "N/A" else desc,
+                posted_at=item.get("date"),
             ))
-        logger.info("Apify LinkedIn crawl returned %d listings", len(listings))
+        logger.info("Apify LinkedIn returned %d listings", len(listings))
         return listings
     except Exception as exc:
-        logger.warning("LinkedIn HTML parse failed: %s", exc)
+        # %r not %s — timeout exceptions often stringify to "" and hide the cause
+        logger.warning("Apify LinkedIn fetch failed: %r", exc)
         return []
 
 
@@ -508,15 +550,15 @@ async def _fetch_apify_indeed(client: httpx.AsyncClient, skill_query: str) -> Li
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-async def _fetch_all_jobs(skill_query: str) -> List[JobListing]:
+async def _fetch_all_jobs(skill_query: str, title_query: str = "Software Engineer") -> List[JobListing]:
     """
-    Fetch from all sources. The 4 fast JSON-API sources run concurrently (no
-    per-request cost beyond network time). The 3 Apify-crawled sources each
-    spin up a real headless-browser run, and the account's actor-memory
-    ceiling (16GB total, confirmed via /users/me/limits) means 3 of those
-    running at once can trip a 402 "actor-memory-limit-exceeded" — observed
-    empirically, not a docs-documented limit. They're run sequentially
-    instead, trading some latency for reliability.
+    Fetch from all sources CONCURRENTLY — including the 3 Apify-backed ones.
+    Concurrency is safe because each website-content-crawler run is capped at
+    memory=4096 (2×4GB + the LinkedIn actor fit inside the account's 16GB
+    actor-memory ceiling that a 402 "actor-memory-limit-exceeded" enforced
+    when three uncapped 8GB runs raced). Total wall time is now max(sources),
+    not sum — required to stay under Render's ~100s request timeout on the
+    first uncached dashboard load.
     """
     all_jobs: List[JobListing] = []
 
@@ -525,28 +567,21 @@ async def _fetch_all_jobs(skill_query: str) -> List[JobListing]:
         timeout=REQUEST_TIMEOUT,
         follow_redirects=True,
     ) as client:
-        fast_results = await asyncio.gather(
+        results = await asyncio.gather(
             _fetch_remotive(client),
             _fetch_arbeitnow(client),
             _fetch_themuse(client),
             _fetch_hn_hiring(client),
+            _fetch_apify_linkedin(client, skill_query, title_query),
+            _fetch_apify_naukri(client, skill_query),
+            _fetch_apify_indeed(client, skill_query),
             return_exceptions=True,
         )
-        for r in fast_results:
+        for r in results:
             if isinstance(r, list):
                 all_jobs.extend(r)
             elif isinstance(r, Exception):
-                logger.warning("Source fetch raised exception: %s", r)
-
-        for coro in (
-            _fetch_apify_linkedin(client, skill_query),
-            _fetch_apify_naukri(client, skill_query),
-            _fetch_apify_indeed(client, skill_query),
-        ):
-            try:
-                all_jobs.extend(await coro)
-            except Exception as exc:
-                logger.warning("Apify source fetch raised exception: %s", exc)
+                logger.warning("Source fetch raised exception: %r", r)
 
     # De-duplicate by URL
     seen: set = set()
@@ -598,9 +633,15 @@ async def get_recommendations_for_user(
     experiences: List[WorkExperience] = exp_result.scalars().all()
     user_titles = [e.role for e in experiences if e.role] or ["Software Engineer"]
 
+    # LinkedIn's search chokes on the comma-joined skill blob (treats it as
+    # one phrase → 0 results) — it gets a title-style query instead. The
+    # current/most-recent role reads exactly like a LinkedIn search.
+    title_query = user_titles[0]
+
     # 3. Fetch all jobs concurrently
-    logger.info("Fetching jobs for user %s (skills: %s)", user_id, skill_query)
-    all_jobs = await _fetch_all_jobs(skill_query)
+    logger.info("Fetching jobs for user %s (skills: %s | title: %s)",
+                user_id, skill_query, title_query)
+    all_jobs = await _fetch_all_jobs(skill_query, title_query)
     logger.info("Total jobs fetched across all sources: %d", len(all_jobs))
 
     # 4. Score and filter
