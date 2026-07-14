@@ -89,6 +89,19 @@ the 403 error payload). Approval is **per Apify account**, so approving it
 once covers dev and production alike. Unapproved, the app degrades
 gracefully: LinkedIn listings are simply absent.
 
+## Optional: error tracking (Sentry — free, no card)
+
+The app already reports errors to Sentry whenever `SENTRY_DSN` is set (see
+`main.py`) — it's just never been turned on. Without it, the only way to
+learn about a production crash is a user complaining or reading Render logs.
+
+1. **sentry.io** → free account → Create Project → platform **FastAPI**
+2. Copy the DSN it gives you (`https://xxx@xxx.ingest.sentry.io/xxx`)
+3. Render → Environment → add `SENTRY_DSN` = that value → redeploy
+4. Free tier: 5K errors/month, 30-day retention — plenty for this app's
+   traffic. `SENTRY_TRACES_SAMPLE_RATE` (default 0.1) controls performance
+   trace sampling; lower it to 0 to track errors only, no perf overhead.
+
 ## Known free-tier limits
 
 | Limit | Impact |
