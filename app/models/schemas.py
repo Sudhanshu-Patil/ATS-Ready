@@ -119,6 +119,15 @@ class SkillCreate(BaseModel):
     is_primary:       bool = True
 
 
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    proficiency: Optional[str] = None
+    years_experience: Optional[float] = None
+    keywords: Optional[List[str]] = None
+    is_primary: Optional[bool] = None
+
+
 class SkillOut(BaseModel):
     model_config = model_config = {"from_attributes": True}
 
@@ -153,6 +162,19 @@ class ProjectCreate(BaseModel):
     bullets:           List[BulletCreate] = []
 
 
+class ProjectUpdate(BaseModel):
+    title:             Optional[str] = None
+    description:       Optional[str] = None
+    short_description: Optional[str] = None
+    tech_stack:        Optional[List[str]] = None
+    impact:            Optional[str] = None
+    github_url:        Optional[str] = None
+    live_url:          Optional[str] = None
+    start_date:        Optional[str] = None
+    end_date:          Optional[str] = None
+    is_featured:       Optional[bool] = None
+
+
 class ProjectOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -174,15 +196,29 @@ class WorkExperienceCreate(BaseModel):
     bullets:     List[ExperienceBulletCreate] = []
 
 
+class WorkExperienceUpdate(BaseModel):
+    company:     Optional[str] = None
+    role:        Optional[str] = None
+    location:    Optional[str] = None
+    start_date:  Optional[str] = None
+    end_date:    Optional[str] = None
+    is_current:  Optional[bool] = None
+    description: Optional[str] = None
+    tech_stack:  Optional[List[str]] = None
+
+
 class WorkExperienceOut(BaseModel):
     model_config = {"from_attributes": True}
 
-    id:         int
-    company:    str
-    role:       str
-    start_date: str
-    end_date:   Optional[str] = None
-    is_current: bool
+    id:          int
+    company:     str
+    role:        str
+    location:    Optional[str] = None
+    start_date:  str
+    end_date:    Optional[str] = None
+    is_current:  bool
+    description: Optional[str] = None
+    tech_stack:  List[str] = []
 
 
 class PersonalInfoUpdate(BaseModel):

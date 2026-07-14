@@ -102,12 +102,15 @@ export const metabaseAPI = {
   savePersonal:     (data) => api.post('/metabase/personal', data),
   getSkills:        ()     => api.get('/metabase/skills'),
   addSkill:         (data) => api.post('/metabase/skills', data),
+  updateSkill:      (id, data) => api.patch(`/metabase/skills/${id}`, data),
   deleteSkill:      (id)   => api.delete(`/metabase/skills/${id}`),
   getProjects:      ()     => api.get('/metabase/projects'),
   addProject:       (data) => api.post('/metabase/projects', data),
+  updateProject:    (id, data) => api.patch(`/metabase/projects/${id}`, data),
   deleteProject:    (id)   => api.delete(`/metabase/projects/${id}`),
   getExperience:    ()     => api.get('/metabase/experience'),
   addExperience:    (data) => api.post('/metabase/experience', data),
+  updateExperience: (id, data) => api.patch(`/metabase/experience/${id}`, data),
   deleteExperience: (id)   => api.delete(`/metabase/experience/${id}`),
 }
 

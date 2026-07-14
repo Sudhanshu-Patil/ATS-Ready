@@ -18,8 +18,8 @@ from app.db.models import (
 )
 from app.models.schemas import (
     ATSBreakdown, GenerateResumeRequest, GenerateResumeResponse,
-    JobStatusResponse, PersonalInfoUpdate, ProjectCreate, SkillCreate,
-    SkillOut, WorkExperienceCreate,
+    JobStatusResponse, PersonalInfoUpdate, ProjectCreate, ProjectUpdate,
+    SkillCreate, SkillOut, SkillUpdate, WorkExperienceCreate, WorkExperienceUpdate,
 )
 from app.services.cache_service import cache_service
 from app.services.storage_service import storage_service
@@ -322,6 +322,41 @@ async def add_skill(
     return skill
 
 
+@router.patch("/metabase/skills/{skill_id}", response_model=SkillOut)
+async def update_skill(
+    skill_id: str,
+    data: SkillUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Skill).where(Skill.id == skill_id, Skill.user_id == user.id)
+    )
+    skill = result.scalar_one_or_none()
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+
+    updates = data.model_dump(exclude_unset=True)
+    if updates.get("name"):
+        existing = await db.execute(
+            select(Skill).where(
+                Skill.user_id == user.id,
+                Skill.name == updates["name"],
+                Skill.id != skill.id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail=f"Skill '{updates['name']}' already exists")
+
+    for key, value in updates.items():
+        setattr(skill, key, value)
+
+    await db.commit()
+    await db.refresh(skill)
+    await cache_service.invalidate_profile(user.id)
+    return skill
+
+
 @router.delete("/metabase/skills/{skill_id}")
 async def delete_skill(
     skill_id: str,
@@ -357,11 +392,18 @@ async def get_projects(
     projects = result.scalars().all()
     return [
         {
-            "id":           str(p.id),
-            "title":        p.title,
-            "tech_stack":   p.tech_stack,
-            "is_featured":  p.is_featured,
-            "bullets_count": len(p.bullets),
+            "id":                str(p.id),
+            "title":             p.title,
+            "description":       p.description,
+            "short_description": p.short_description,
+            "tech_stack":        p.tech_stack or [],
+            "impact":            p.impact,
+            "github_url":       p.github_url,
+            "live_url":         p.live_url,
+            "start_date":       p.start_date,
+            "end_date":         p.end_date,
+            "is_featured":      p.is_featured,
+            "bullets_count":    len(p.bullets),
         }
         for p in projects
     ]
@@ -384,6 +426,43 @@ async def add_project(
     await db.refresh(project)
     await cache_service.invalidate_profile(user.id)
     return {"message": "Project added", "id": str(project.id)}
+
+
+@router.patch("/metabase/projects/{project_id}")
+async def update_project(
+    project_id: str,
+    data: ProjectUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    )
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    updates = data.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(project, key, value)
+
+    await db.commit()
+    await db.refresh(project)
+    await cache_service.invalidate_profile(user.id)
+    return {
+        "message": "Project updated",
+        "id": str(project.id),
+        "title": project.title,
+        "description": project.description,
+        "short_description": project.short_description,
+        "tech_stack": project.tech_stack or [],
+        "impact": project.impact,
+        "github_url": project.github_url,
+        "live_url": project.live_url,
+        "start_date": project.start_date,
+        "end_date": project.end_date,
+        "is_featured": project.is_featured,
+    }
 
 
 @router.delete("/metabase/projects/{project_id}")
@@ -421,12 +500,15 @@ async def get_experience(
     exps = result.scalars().all()
     return [
         {
-            "id":         str(e.id),
-            "company":    e.company,
-            "role":       e.role,
-            "start_date": e.start_date,
-            "end_date":   e.end_date,
-            "is_current": e.is_current,
+            "id":          str(e.id),
+            "company":     e.company,
+            "role":        e.role,
+            "location":    e.location,
+            "start_date":  e.start_date,
+            "end_date":    e.end_date,
+            "is_current":  e.is_current,
+            "description": e.description,
+            "tech_stack":  e.tech_stack or [],
         }
         for e in exps
     ]
@@ -449,6 +531,44 @@ async def add_experience(
     await db.refresh(exp)
     await cache_service.invalidate_profile(user.id)
     return {"message": "Experience added", "id": str(exp.id)}
+
+
+@router.patch("/metabase/experience/{exp_id}")
+async def update_experience(
+    exp_id: str,
+    data: WorkExperienceUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(WorkExperience).where(
+            WorkExperience.id == exp_id,
+            WorkExperience.user_id == user.id,
+        )
+    )
+    exp = result.scalar_one_or_none()
+    if not exp:
+        raise HTTPException(status_code=404, detail="Experience not found")
+
+    updates = data.model_dump(exclude_unset=True)
+    for key, value in updates.items():
+        setattr(exp, key, value)
+
+    await db.commit()
+    await db.refresh(exp)
+    await cache_service.invalidate_profile(user.id)
+    return {
+        "message": "Experience updated",
+        "id": str(exp.id),
+        "company": exp.company,
+        "role": exp.role,
+        "location": exp.location,
+        "start_date": exp.start_date,
+        "end_date": exp.end_date,
+        "is_current": exp.is_current,
+        "description": exp.description,
+        "tech_stack": exp.tech_stack or [],
+    }
 
 
 @router.delete("/metabase/experience/{exp_id}")

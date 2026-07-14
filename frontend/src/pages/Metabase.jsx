@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Trash2, User, Briefcase, Code, FolderGit2, Upload } from 'lucide-react'
+import { Plus, Trash2, Pencil, User, Briefcase, Code, FolderGit2, Upload } from 'lucide-react'
 import { metabaseAPI } from '../api/client'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import Tabs from '../components/Tabs'
@@ -180,7 +180,10 @@ function PersonalTab() {
 function SkillsTab() {
   const [skills, setSkills] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ name: '', category: 'Programming Languages', proficiency: 'Intermediate', years_experience: 1 })
+  const blankForm = { name: '', category: 'Programming Languages', proficiency: 'Intermediate', years_experience: 1, is_primary: true }
+  const [form, setForm] = useState(blankForm)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState(blankForm)
 
   const load = () => {
     metabaseAPI.getSkills()
@@ -196,10 +199,42 @@ function SkillsTab() {
     try {
       await metabaseAPI.addSkill(form)
       toast.success(`${form.name} added`)
-      setForm(f => ({ ...f, name: '' }))
+      setForm(blankForm)
       load()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to add skill')
+    }
+  }
+
+  const startEdit = (skill) => {
+    setEditingId(skill.id)
+    setEditForm({
+      name: skill.name || '',
+      category: skill.category || '',
+      proficiency: skill.proficiency || 'Intermediate',
+      years_experience: skill.years_experience || 0,
+      is_primary: !!skill.is_primary,
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditForm(blankForm)
+  }
+
+  const saveEdit = async (id) => {
+    if (!editForm.name.trim()) { toast.error('Skill name required'); return }
+    try {
+      await metabaseAPI.updateSkill(id, {
+        ...editForm,
+        years_experience: Number(editForm.years_experience) || 0,
+      })
+      toast.success('Skill updated')
+      setEditingId(null)
+      setEditForm(blankForm)
+      load()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update skill')
     }
   }
 
@@ -251,12 +286,39 @@ function SkillsTab() {
               <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">{cat}</p>
               <div className="flex flex-wrap gap-2">
                 {items.map(s => (
-                  <div key={s.id} className="flex items-center gap-2 bg-bg-hover border border-bg-border rounded-lg px-3 py-1.5 group">
-                    <span className="text-sm text-text-primary">{s.name}</span>
-                    <span className={clsx('text-xs', profColors[s.proficiency] || 'text-text-muted')}>{s.proficiency}</span>
-                    <button onClick={() => del(s.id, s.name)} className="text-text-muted hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
-                      <Trash2 size={12} />
-                    </button>
+                  <div key={s.id} className="flex flex-col gap-2 rounded-lg border border-bg-border bg-bg-hover px-3 py-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-text-primary">{s.name}</span>
+                      <span className={clsx('text-xs', profColors[s.proficiency] || 'text-text-muted')}>{s.proficiency}</span>
+                      {s.is_primary ? <span className="rounded-full bg-brand-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand">Primary</span> : null}
+                      <span className="text-[11px] text-text-muted">{s.years_experience}y</span>
+                      <button onClick={() => startEdit(s)} className="ml-auto rounded-md border border-bg-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:border-brand hover:text-brand">
+                        Edit
+                      </button>
+                      <button onClick={() => del(s.id, s.name)} className="rounded-md border border-bg-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:border-red-400 hover:text-red-400">
+                        Delete
+                      </button>
+                    </div>
+                    {editingId === s.id ? (
+                      <div className="space-y-2 border-t border-bg-border pt-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <input className="input text-sm" placeholder="Skill name" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+                          <input className="input text-sm" placeholder="Category" value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} />
+                          <select className="input text-sm" value={editForm.proficiency} onChange={e => setEditForm(f => ({ ...f, proficiency: e.target.value }))}>
+                            {['Beginner', 'Intermediate', 'Advanced', 'Expert'].map(p => <option key={p}>{p}</option>)}
+                          </select>
+                          <input type="number" className="input text-sm" placeholder="Years" min="0" max="30" value={editForm.years_experience} onChange={e => setEditForm(f => ({ ...f, years_experience: e.target.value }))} />
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-text-secondary">
+                          <input type="checkbox" className="rounded" checked={editForm.is_primary} onChange={e => setEditForm(f => ({ ...f, is_primary: e.target.checked }))} />
+                          Primary skill
+                        </label>
+                        <div className="flex gap-2">
+                          <button onClick={() => saveEdit(s.id)} className="btn-primary text-sm">Save changes</button>
+                          <button onClick={cancelEdit} className="btn-secondary text-sm">Cancel</button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -273,7 +335,10 @@ function SkillsTab() {
 function ExperienceTab() {
   const [exps, setExps]     = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm]     = useState({ company: '', role: '', start_date: '', end_date: '', is_current: false, location: '' })
+  const blankForm = { company: '', role: '', start_date: '', end_date: '', is_current: false, location: '', description: '' }
+  const [form, setForm]     = useState(blankForm)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState(blankForm)
 
   const load = () => {
     metabaseAPI.getExperience()
@@ -284,17 +349,56 @@ function ExperienceTab() {
 
   useEffect(load, [])
 
+  const normalizePayload = (data) => ({
+    ...data,
+    location: data.location?.trim() || null,
+    end_date: data.is_current ? null : (data.end_date?.trim() || null),
+    description: data.description?.trim() || null,
+  })
+
   const add = async () => {
     if (!form.company || !form.role || !form.start_date) {
       toast.error('Company, role, and start date are required')
       return
     }
     try {
-      await metabaseAPI.addExperience({ ...form, bullets: [] })
+      await metabaseAPI.addExperience({ ...normalizePayload(form), bullets: [] })
       toast.success('Experience added')
-      setForm({ company: '', role: '', start_date: '', end_date: '', is_current: false, location: '' })
+      setForm(blankForm)
       load()
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed') }
+  }
+
+  const startEdit = (exp) => {
+    setEditingId(exp.id)
+    setEditForm({
+      company: exp.company || '',
+      role: exp.role || '',
+      start_date: exp.start_date || '',
+      end_date: exp.end_date || '',
+      is_current: !!exp.is_current,
+      location: exp.location || '',
+      description: exp.description || '',
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditForm(blankForm)
+  }
+
+  const saveEdit = async (id) => {
+    if (!editForm.company || !editForm.role || !editForm.start_date) {
+      toast.error('Company, role, and start date are required')
+      return
+    }
+    try {
+      await metabaseAPI.updateExperience(id, normalizePayload(editForm))
+      toast.success('Experience updated')
+      setEditingId(null)
+      setEditForm(blankForm)
+      load()
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to update experience') }
   }
 
   const del = async (id) => {
@@ -318,6 +422,7 @@ function ExperienceTab() {
             Current role
           </label>
         </div>
+        <textarea className="input text-sm min-h-20 resize-y w-full mb-3" placeholder="Describe your impact, responsibilities, and achievements" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
         <button onClick={add} className="btn-primary text-sm flex items-center gap-2">
           <Plus size={14} /> Add experience
         </button>
@@ -332,15 +437,43 @@ function ExperienceTab() {
       ) : (
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-3">
           {exps.map(e => (
-            <motion.div key={e.id} variants={fadeInUp} className="card flex items-start justify-between">
-              <div>
-                <p className="font-semibold text-text-primary">{e.role}</p>
-                <p className="text-sm text-text-secondary">{e.company}</p>
-                <p className="text-xs text-text-muted mt-1">{e.start_date} — {e.is_current ? 'Present' : e.end_date || '—'}</p>
+            <motion.div key={e.id} variants={fadeInUp} className="card">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-text-primary">{e.role}</p>
+                  <p className="text-sm text-text-secondary">{e.company}</p>
+                  <p className="text-xs text-text-muted mt-1">{e.start_date} — {e.is_current ? 'Present' : e.end_date || '—'}</p>
+                  {e.description ? <p className="text-sm text-text-secondary mt-2 whitespace-pre-wrap">{e.description}</p> : null}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => startEdit(e)} className="text-text-muted hover:text-brand transition-colors p-1" title="Edit experience">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={() => del(e.id)} className="text-text-muted hover:text-red-400 transition-colors p-1" title="Delete experience">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
-              <button onClick={() => del(e.id)} className="text-text-muted hover:text-red-400 transition-colors p-1">
-                <Trash2 size={15} />
-              </button>
+              {editingId === e.id ? (
+                <div className="mt-4 border-t border-bg-border pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <input className="input text-sm" placeholder="Company" value={editForm.company} onChange={e => setEditForm(f => ({ ...f, company: e.target.value }))} />
+                    <input className="input text-sm" placeholder="Role" value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))} />
+                    <input className="input text-sm" placeholder="Location" value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} />
+                    <input className="input text-sm" placeholder="Start date (e.g. Jan 2022)" value={editForm.start_date} onChange={e => setEditForm(f => ({ ...f, start_date: e.target.value }))} />
+                    <input className="input text-sm" placeholder="End date" value={editForm.end_date} onChange={e => setEditForm(f => ({ ...f, end_date: e.target.value }))} disabled={editForm.is_current} />
+                    <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                      <input type="checkbox" className="rounded" checked={editForm.is_current} onChange={e => setEditForm(f => ({ ...f, is_current: e.target.checked, end_date: '' }))} />
+                      Current role
+                    </label>
+                  </div>
+                  <textarea className="input text-sm min-h-20 resize-y w-full" placeholder="Describe your impact, responsibilities, and achievements" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveEdit(e.id)} className="btn-primary text-sm">Save changes</button>
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">Cancel</button>
+                  </div>
+                </div>
+              ) : null}
             </motion.div>
           ))}
         </motion.div>
@@ -354,7 +487,10 @@ function ExperienceTab() {
 function ProjectsTab() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ title: '', description: '', tech_stack: '', github_url: '', is_featured: true })
+  const blankForm = { title: '', description: '', tech_stack: '', github_url: '', is_featured: true }
+  const [form, setForm] = useState(blankForm)
+  const [editingId, setEditingId] = useState(null)
+  const [editForm, setEditForm] = useState(blankForm)
 
   const load = () => {
     metabaseAPI.getProjects()
@@ -365,18 +501,53 @@ function ProjectsTab() {
 
   useEffect(load, [])
 
+  const normalizePayload = (data) => ({
+    ...data,
+    tech_stack: data.tech_stack.split(',').map(s => s.trim()).filter(Boolean),
+    github_url: data.github_url?.trim() || null,
+  })
+
   const add = async () => {
     if (!form.title || !form.description) { toast.error('Title and description required'); return }
     try {
       await metabaseAPI.addProject({
-        ...form,
-        tech_stack: form.tech_stack.split(',').map(s => s.trim()).filter(Boolean),
+        ...normalizePayload(form),
         bullets: [],
       })
       toast.success('Project added')
-      setForm({ title: '', description: '', tech_stack: '', github_url: '', is_featured: true })
+      setForm(blankForm)
       load()
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed') }
+  }
+
+  const startEdit = (project) => {
+    setEditingId(project.id)
+    setEditForm({
+      title: project.title || '',
+      description: project.description || '',
+      tech_stack: project.tech_stack?.join(', ') || '',
+      github_url: project.github_url || '',
+      is_featured: !!project.is_featured,
+    })
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setEditForm(blankForm)
+  }
+
+  const saveEdit = async (id) => {
+    if (!editForm.title || !editForm.description) {
+      toast.error('Title and description required')
+      return
+    }
+    try {
+      await metabaseAPI.updateProject(id, normalizePayload(editForm))
+      toast.success('Project updated')
+      setEditingId(null)
+      setEditForm(blankForm)
+      load()
+    } catch (err) { toast.error(err.response?.data?.detail || 'Failed to update project') }
   }
 
   const del = async (id) => {
@@ -409,20 +580,40 @@ function ProjectsTab() {
       ) : (
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-3">
           {projects.map(p => (
-            <motion.div key={p.id} variants={fadeInUp} className="card flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-text-primary">{p.title}</p>
-                {p.tech_stack?.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {p.tech_stack.map(t => (
-                      <span key={t} className="badge bg-brand-muted text-brand">{t}</span>
-                    ))}
-                  </div>
-                )}
+            <motion.div key={p.id} variants={fadeInUp} className="card">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-text-primary">{p.title}</p>
+                  {p.description ? <p className="text-sm text-text-secondary mt-2 whitespace-pre-wrap">{p.description}</p> : null}
+                  {p.tech_stack?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {p.tech_stack.map(t => (
+                        <span key={t} className="badge bg-brand-muted text-brand">{t}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button onClick={() => startEdit(p)} className="text-text-muted hover:text-brand transition-colors p-1" title="Edit project">
+                    <Pencil size={15} />
+                  </button>
+                  <button onClick={() => del(p.id)} className="text-text-muted hover:text-red-400 transition-colors p-1" title="Delete project">
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
-              <button onClick={() => del(p.id)} className="text-text-muted hover:text-red-400 transition-colors p-1 flex-shrink-0">
-                <Trash2 size={15} />
-              </button>
+              {editingId === p.id ? (
+                <div className="mt-4 border-t border-bg-border pt-4 space-y-3">
+                  <input className="input text-sm w-full" placeholder="Project title" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                  <textarea className="input text-sm min-h-20 resize-y w-full" placeholder="Description" value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                  <input className="input text-sm w-full" placeholder="Tech stack (comma separated)" value={editForm.tech_stack} onChange={e => setEditForm(f => ({ ...f, tech_stack: e.target.value }))} />
+                  <input className="input text-sm w-full" placeholder="GitHub URL (optional)" value={editForm.github_url} onChange={e => setEditForm(f => ({ ...f, github_url: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <button onClick={() => saveEdit(p.id)} className="btn-primary text-sm">Save changes</button>
+                    <button onClick={cancelEdit} className="btn-secondary text-sm">Cancel</button>
+                  </div>
+                </div>
+              ) : null}
             </motion.div>
           ))}
         </motion.div>
