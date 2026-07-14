@@ -36,9 +36,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"   # matches the Dockerfile base image
           cache: pip
       - run: pip install -r requirements.txt
+      # pytest/pytest-asyncio are dev-only (installed inline in the
+      # Dockerfile's development stage, not in requirements.txt) — CI needs
+      # them added explicitly since it doesn't build that image. Version
+      # pinned to match the Dockerfile exactly — keep both in sync.
+      - run: pip install pytest==9.1.1 pytest-asyncio==1.4.0
       - run: alembic upgrade head
       - run: pytest -q
 

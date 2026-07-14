@@ -40,8 +40,10 @@ RUN mkdir -p /app/outputs
 # ── Development ───────────────────────────────────────────────────────────────
 FROM base AS development
 
-# Dev extras: watchfiles for hot-reload, python-dotenv for CLI scripts
-RUN pip install --no-cache-dir watchfiles python-dotenv pytest pytest-asyncio httpx
+# Dev extras: watchfiles for hot-reload, python-dotenv for CLI scripts.
+# pytest/pytest-asyncio pinned here AND in .github/workflows/ci.yaml —
+# keep both in sync so CI runs the same test-runner versions as dev.
+RUN pip install --no-cache-dir watchfiles python-dotenv pytest==9.1.1 pytest-asyncio==1.4.0 httpx
 
 # Mount source at runtime (docker-compose volume) — don't COPY here
 EXPOSE 8000
