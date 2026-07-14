@@ -80,6 +80,15 @@ applied). The two rules worth re-stating:
 - **Updates**: `git push origin master` — Render auto-deploys on push.
 - **Logs**: service page → Logs tab.
 
+## One-time: Apify LinkedIn actor approval
+
+The LinkedIn jobs source uses `forward_dinosaur/linkedin-job-scraper`, which
+requests full Apify-account permissions — Apify blocks API runs (403) until
+the account owner approves it once in the console (the approval URL is in
+the 403 error payload). Approval is **per Apify account**, so approving it
+once covers dev and production alike. Unapproved, the app degrades
+gracefully: LinkedIn listings are simply absent.
+
 ## Known free-tier limits
 
 | Limit | Impact |
