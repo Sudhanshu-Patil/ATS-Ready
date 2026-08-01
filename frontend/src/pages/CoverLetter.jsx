@@ -80,7 +80,7 @@ export default function CoverLetter() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
@@ -110,7 +110,7 @@ export default function CoverLetter() {
 
             {/* Tone selector */}
             <label className="block text-sm font-medium text-text-secondary mb-3">Tone</label>
-            <div className="grid grid-cols-3 gap-3 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
               {TONES.map(t => (
                 <button key={t.id} onClick={() => setTone(t.id)}
                   className={clsx('p-3 rounded-xl border text-left transition-all',
@@ -136,7 +136,7 @@ export default function CoverLetter() {
           {/* Result */}
           {result && (
             <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center flex-wrap justify-between gap-2 mb-4">
                 <div>
                   <h2 className="font-semibold text-text-primary">{result.job_title}</h2>
                   {result.company && <p className="text-sm text-text-secondary">@ {result.company}</p>}
@@ -171,7 +171,7 @@ export default function CoverLetter() {
                 </pre>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <button onClick={() => copyToClipboard(result.body)}
                   className="btn-ghost flex items-center gap-2 text-sm">
                   <Copy size={14} /> Copy letter
@@ -200,7 +200,7 @@ export default function CoverLetter() {
             <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-3">
               {history.map(cl => (
                 <motion.div key={cl.id} variants={fadeInUp} className="card">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center flex-wrap justify-between gap-3">
                     <div>
                       <p className="font-medium text-text-primary">{cl.job_title || 'Untitled'}</p>
                       <p className="text-sm text-text-secondary">{cl.company} · {cl.word_count} words · {cl.tone}</p>

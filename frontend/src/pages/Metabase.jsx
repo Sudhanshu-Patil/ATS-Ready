@@ -82,7 +82,7 @@ export default function Metabase() {
   const [reloadKey, setReloadKey] = useState(0)
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
@@ -155,7 +155,7 @@ function PersonalTab() {
 
   return (
     <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {field('full_name', 'Full name', 'text', 'Priya Sharma')}
         {field('email',     'Email',     'email', 'you@example.com')}
         {field('phone',     'Phone',     'tel',   '+91-98765-43210')}
@@ -258,7 +258,7 @@ function SkillsTab() {
       {/* Add form */}
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
         <p className="text-sm font-semibold text-text-primary mb-3">Add skill</p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <input className="input text-sm" placeholder="Skill name (e.g. Python)" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <input className="input text-sm" placeholder="Category" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
           <select className="input text-sm" value={form.proficiency} onChange={e => setForm(f => ({ ...f, proficiency: e.target.value }))}>
@@ -301,7 +301,7 @@ function SkillsTab() {
                     </div>
                     {editingId === s.id ? (
                       <div className="space-y-2 border-t border-bg-border pt-2">
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <input className="input text-sm" placeholder="Skill name" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
                           <input className="input text-sm" placeholder="Category" value={editForm.category} onChange={e => setEditForm(f => ({ ...f, category: e.target.value }))} />
                           <select className="input text-sm" value={editForm.proficiency} onChange={e => setEditForm(f => ({ ...f, proficiency: e.target.value }))}>
@@ -411,7 +411,7 @@ function ExperienceTab() {
     <div className="space-y-5">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
         <p className="text-sm font-semibold text-text-primary mb-3">Add experience</p>
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <input className="input text-sm" placeholder="Company" value={form.company} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} />
           <input className="input text-sm" placeholder="Role" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} />
           <input className="input text-sm" placeholder="Location" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
@@ -456,7 +456,7 @@ function ExperienceTab() {
               </div>
               {editingId === e.id ? (
                 <div className="mt-4 border-t border-bg-border pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input className="input text-sm" placeholder="Company" value={editForm.company} onChange={e => setEditForm(f => ({ ...f, company: e.target.value }))} />
                     <input className="input text-sm" placeholder="Role" value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))} />
                     <input className="input text-sm" placeholder="Location" value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} />

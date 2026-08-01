@@ -118,7 +118,7 @@ export default function Generator() {
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-4xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <p className="eyebrow !text-brand mb-2">Pipeline</p>
         <h1 className="font-display text-2xl font-bold text-text-primary">Generate Resume</h1>
@@ -228,9 +228,9 @@ export default function Generator() {
       {/* Result — persists when switching tabs and coming back */}
       {result && !loading && (
         <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
-          <div className="flex items-start gap-6 mb-6">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-6">
             <ScoreRing score={result.ats_score || 0} size="lg" />
-            <div className="flex-1">
+            <div className="flex-1 min-w-0 w-full">
               <h2 className="text-lg font-bold text-text-primary">{result.job_title || 'Resume Generated'}</h2>
               {result.company && <p className="text-text-secondary text-sm mb-3">@ {result.company}</p>}
 

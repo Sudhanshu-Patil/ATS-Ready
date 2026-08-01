@@ -80,7 +80,7 @@ export default function InterviewPrep() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-9 h-9 rounded-xl bg-accent-violet/10 flex items-center justify-center">
@@ -146,7 +146,7 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
     <div className="space-y-5">
       {/* Header */}
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center flex-wrap justify-between gap-2 mb-4">
           <div>
             <h2 className="font-semibold text-text-primary">{result.job_title}</h2>
             {result.company && <p className="text-sm text-text-secondary">@ {result.company}</p>}
@@ -314,7 +314,7 @@ function HistoryItem({ item, onDelete }) {
 
   return (
     <motion.div variants={fadeInUp} className="card">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center flex-wrap justify-between gap-3">
         <div>
           <p className="font-medium text-text-primary">{item.job_title || 'Untitled'}</p>
           <p className="text-sm text-text-secondary">{item.company} · {item.question_count} questions</p>

@@ -63,7 +63,7 @@ export default function History() {
   }
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
+    <div className="p-4 sm:p-8 max-w-[1400px] mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp}
         className="flex items-center justify-between mb-8 flex-wrap gap-4">
         <div>
@@ -99,51 +99,55 @@ export default function History() {
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-2">
           {filtered.map(job => (
             <motion.div key={job.id} variants={fadeInUp}
-              className="card p-4 flex items-center gap-4 hover:border-brand/20 transition-colors">
-              <StatusBadge variant="icon" {...(STATUS_CONFIG[job.status] || STATUS_CONFIG.pending)} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-text-primary truncate">
-                  {job.job_title || (job.status === 'pending' || job.status === 'running' ? 'Processing…' : 'Untitled')}
-                  {job.company && <span className="text-text-muted font-normal"> @ {job.company}</span>}
-                </p>
-                <p className="text-xs text-text-muted">{formatDate(job.created_at)}</p>
+              className="card p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 hover:border-brand/20 transition-colors">
+              <div className="flex items-center gap-4 min-w-0 flex-1">
+                <StatusBadge variant="icon" {...(STATUS_CONFIG[job.status] || STATUS_CONFIG.pending)} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text-primary truncate">
+                    {job.job_title || (job.status === 'pending' || job.status === 'running' ? 'Processing…' : 'Untitled')}
+                    {job.company && <span className="text-text-muted font-normal"> @ {job.company}</span>}
+                  </p>
+                  <p className="text-xs text-text-muted">{formatDate(job.created_at)}</p>
+                </div>
               </div>
 
-              {job.ats_score != null && (
-                <div className="text-right">
-                  <p className={clsx('text-sm font-mono font-semibold', scoreColorClass(job.ats_score))}>
-                    {job.ats_score.toFixed(1)}
-                  </p>
-                  <p className="text-xs text-text-muted">ATS</p>
+              <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
+                {job.ats_score != null && (
+                  <div className="text-right">
+                    <p className={clsx('text-sm font-mono font-semibold', scoreColorClass(job.ats_score))}>
+                      {job.ats_score.toFixed(1)}
+                    </p>
+                    <p className="text-xs text-text-muted">ATS</p>
+                  </div>
+                )}
+
+                {job.status === 'failed' && job.error && (
+                  <p className="text-xs text-red-400 max-w-32 truncate" title={job.error}>{job.error}</p>
+                )}
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {job.status === 'done' && job.download_url && (
+                    <a href={job.download_url}
+                      className="p-1.5 rounded-md text-text-muted hover:text-score hover:bg-score/10 transition-colors"
+                      title="Download">
+                      <Download size={15} />
+                    </a>
+                  )}
+                  {job.status === 'failed' && (
+                    <button onClick={() => handleRetry(job.id)}
+                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
+                      title="Retry">
+                      <RefreshCw size={15} />
+                    </button>
+                  )}
+                  {job.status !== 'running' && (
+                    <button onClick={() => handleDelete(job.id)}
+                      className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      title="Delete">
+                      <Trash2 size={15} />
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {job.status === 'failed' && job.error && (
-                <p className="text-xs text-red-400 max-w-32 truncate" title={job.error}>{job.error}</p>
-              )}
-
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {job.status === 'done' && job.download_url && (
-                  <a href={job.download_url}
-                    className="p-1.5 rounded-md text-text-muted hover:text-score hover:bg-score/10 transition-colors"
-                    title="Download">
-                    <Download size={15} />
-                  </a>
-                )}
-                {job.status === 'failed' && (
-                  <button onClick={() => handleRetry(job.id)}
-                    className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
-                    title="Retry">
-                    <RefreshCw size={15} />
-                  </button>
-                )}
-                {job.status !== 'running' && (
-                  <button onClick={() => handleDelete(job.id)}
-                    className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                    title="Delete">
-                    <Trash2 size={15} />
-                  </button>
-                )}
               </div>
             </motion.div>
           ))}

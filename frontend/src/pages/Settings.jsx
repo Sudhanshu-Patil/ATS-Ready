@@ -31,7 +31,7 @@ export default function Settings() {
   }, [sectionParam])
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
@@ -42,18 +42,20 @@ export default function Settings() {
         <p className="text-text-secondary">Manage your account and subscription.</p>
       </motion.div>
 
-      <div className="flex gap-6">
+      <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
         {/* Sidebar nav — self-contained active styling (not the shared
             .nav-item class, which Layout.jsx's main sidebar now drives via a
-            Framer layoutId pill rather than a static CSS active state). */}
-        <div className="w-44 flex-shrink-0">
-          <nav className="space-y-1">
+            Framer layoutId pill rather than a static CSS active state).
+            Horizontal pill row below `sm`, vertical sidebar at `sm` and up. */}
+        <div className="sm:w-44 flex-shrink-0">
+          <nav className="flex flex-row gap-2 sm:flex-col sm:space-y-1 sm:gap-0">
             {SECTIONS.map(s => (
               <button
                 key={s}
                 onClick={() => setActiveSection(s)}
                 className={clsx(
-                  'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium capitalize transition-colors',
+                  'text-left px-3 py-2.5 rounded-lg text-sm font-medium capitalize transition-colors',
+                  'flex-1 sm:flex-none sm:w-full',
                   activeSection === s
                     ? 'bg-brand-muted text-brand border border-brand/20'
                     : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover border border-transparent'
@@ -117,7 +119,7 @@ function AccountSection({ user, login, accessToken }) {
       <div>
         <label className="block text-sm font-medium text-text-secondary mb-1.5">Email</label>
         <input className="input opacity-60" value={user?.email || ''} disabled />
-        <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex items-center flex-wrap gap-2 mt-1.5">
           {verified === true && (
             <span className="badge bg-score-muted text-score">✓ Verified</span>
           )}
@@ -250,7 +252,7 @@ function PlanSection({ user }) {
     <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="space-y-4">
       <h2 className="font-semibold text-text-primary">Subscription</h2>
       {plans.map(plan => (
-        <div key={plan.id} className={clsx('card flex items-center justify-between', plan.current && 'border-brand/40 bg-brand/5')}>
+        <div key={plan.id} className={clsx('card flex flex-col sm:flex-row sm:items-center justify-between gap-3', plan.current && 'border-brand/40 bg-brand/5')}>
           <div>
             <div className="flex items-center gap-2 mb-1">
               <p className="font-semibold text-text-primary">{plan.label}</p>

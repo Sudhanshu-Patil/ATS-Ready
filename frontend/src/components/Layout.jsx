@@ -1,9 +1,10 @@
+import { useEffect, useState } from 'react'
 import { useOutlet, useLocation, NavLink, useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, History, Database,
   Settings, LogOut, Zap, ChevronRight,
-  BrainCircuit, Mail
+  BrainCircuit, Mail, Menu, X
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
@@ -21,9 +22,9 @@ const NAV = [
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]
 
-function NavItem({ to, icon: Icon, label }) {
+function NavItem({ to, icon: Icon, label, onClick }) {
   return (
-    <NavLink to={to} className="nav-item">
+    <NavLink to={to} className="nav-item" onClick={onClick}>
       {({ isActive }) => (
         <>
           {isActive && (
@@ -48,6 +49,11 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const element = useOutlet()
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Drawer shouldn't survive a navigation on mobile — otherwise the next
+  // page loads underneath it still open.
+  useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   const handleLogout = async () => {
     try { await authAPI.logout() } catch {}
@@ -64,10 +70,25 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Backdrop — closes the drawer on outside tap, mobile only */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
       {/* Sidebar — glass panel over the aurora, one of the few backdrop-blur
           surfaces (persistent, singular — not a repeated list, so the perf
-          tradeoff that keeps .card solid elsewhere doesn't apply here). */}
-      <aside className="w-60 flex-shrink-0 card-glass rounded-none border-y-0 border-l-0 p-0 flex flex-col">
+          tradeoff that keeps .card solid elsewhere doesn't apply here).
+          Below `lg` it's an off-canvas drawer (fixed + translate-x); at
+          `lg` and up it's the original static column. */}
+      <aside className={clsx(
+        'w-60 flex-shrink-0 card-glass rounded-none border-y-0 border-l-0 p-0 flex flex-col',
+        'fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out',
+        'lg:static lg:translate-x-0',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      )}>
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/10">
           <div className="flex items-center justify-between gap-2.5">
@@ -77,21 +98,30 @@ export default function Layout() {
               </div>
               <span className="font-display font-bold text-text-primary text-lg tracking-tight">ATS-Ready</span>
             </Link>
-            <ThemeToggle />
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <button
+                onClick={() => setMobileOpen(false)}
+                className="lg:hidden p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-white/[0.06] transition-colors"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Tools</p>
-          {NAV.slice(0, 4).map((item) => <NavItem key={item.to} {...item} />)}
+          {NAV.slice(0, 4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
 
           <div className="py-2">
             <div className="border-t border-white/10" />
           </div>
 
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Manage</p>
-          {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} />)}
+          {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
         </nav>
 
         {/* User block */}
@@ -128,22 +158,44 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main content — route transitions scoped here via useOutlet(), so the
-          sidebar above (and its nav pill) never remounts on navigation. */}
-      <main className="flex-1 overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
-            className="h-full overflow-y-auto"
+      {/* Content column — mobile top bar (hamburger + logo) stacks above
+          main below `lg`; hidden entirely once the static sidebar takes
+          over. */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="lg:hidden flex-shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-white/10 card-glass rounded-none">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="p-1.5 -ml-1.5 rounded-md text-text-secondary hover:text-text-primary hover:bg-white/[0.06] transition-colors"
+            aria-label="Open menu"
           >
-            {element}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+            <Menu size={20} />
+          </button>
+          <Link to="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <div className="w-7 h-7 rounded-lg bg-brand flex items-center justify-center">
+              <Zap size={14} className="text-white" />
+            </div>
+            <span className="font-display font-bold text-text-primary text-base tracking-tight">ATS-Ready</span>
+          </Link>
+          <ThemeToggle />
+        </header>
+
+        {/* Main content — route transitions scoped here via useOutlet(), so the
+            sidebar above (and its nav pill) never remounts on navigation. */}
+        <main className="flex-1 overflow-hidden">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="h-full overflow-y-auto"
+            >
+              {element}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
     </div>
   )
 }
