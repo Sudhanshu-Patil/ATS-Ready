@@ -1,15 +1,11 @@
 """
-Password reset + email verification flows, and Razorpay webhook signature.
+Password reset + email verification flows, .
 """
-import hashlib
-import hmac
-
 from app.config import settings
 from app.services.auth_service import (
     create_email_verify_token,
     create_reset_token,
 )
-from app.services.billing_service import billing_service
 from tests.conftest import unique_email
 from tests.test_auth import PASSWORD, bearer, login, register
 
@@ -97,23 +93,6 @@ async def test_verify_email_flow(client):
 async def test_verify_email_bad_token_rejected(client):
     r = await client.post("/api/auth/verify-email", json={"token": "junk"})
     assert r.status_code == 400
-
-
-# ── Razorpay webhook signature (pure unit) ───────────────────────────────────
-
-def test_webhook_signature_roundtrip(monkeypatch):
-    monkeypatch.setattr(settings, "RAZORPAY_WEBHOOK_SECRET", "whsec_test_123")
-    body = b'{"event":"subscription.activated"}'
-    good = hmac.new(b"whsec_test_123", body, hashlib.sha256).hexdigest()
-
-    assert billing_service.verify_webhook_signature(body, good) is True
-    assert billing_service.verify_webhook_signature(body, "tampered") is False
-    assert billing_service.verify_webhook_signature(b"other-body", good) is False
-
-
-def test_webhook_signature_rejected_when_unconfigured(monkeypatch):
-    monkeypatch.setattr(settings, "RAZORPAY_WEBHOOK_SECRET", "")
-    assert billing_service.verify_webhook_signature(b"x", "anything") is False
 
 
 # ── Billing disabled → graceful responses ─────────────────────────────────────

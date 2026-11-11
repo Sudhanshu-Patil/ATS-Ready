@@ -130,22 +130,17 @@ class Settings(BaseSettings):
     EMAIL_FROM: str = "ATS-Ready <no-reply@ats-ready.local>"
     RESET_TOKEN_EXPIRE_MINUTES: int = 30
 
-    # ── Razorpay billing ──────────────────────────────────────────────────────
-    # Integration is free: no setup/monthly fee, per-transaction cut only.
-    # Test Mode keys work immediately after signup (KYC only for Live Mode).
-    # Create two subscription Plans in the dashboard and put their IDs here.
-    RAZORPAY_KEY_ID: str = ""
-    RAZORPAY_KEY_SECRET: str = ""
-    RAZORPAY_WEBHOOK_SECRET: str = ""
-    RAZORPAY_PLAN_PRO: str = ""
-    RAZORPAY_PLAN_TEAM: str = ""
+    # ── PayPal billing (sandbox by default) ───────────────────────────────────
+    PAYPAL_CLIENT_ID: str = ""
+    PAYPAL_CLIENT_SECRET: str = ""
+    PAYPAL_API: str = "https://api-m.sandbox.paypal.com"  # live: https://api-m.paypal.com
 
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
     
     # ── Billing ───────────────────────────────────────────────────────────────
-    # Master switch — Razorpay settings live in the Razorpay section above.
+    # Master switch — PayPal settings live in the PayPal section above.
     BILLING_ENABLED: bool = False
 
     # ── Derived helpers ───────────────────────────────────────────────────────

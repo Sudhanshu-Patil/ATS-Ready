@@ -189,55 +189,34 @@ function SecuritySection() {
   )
 }
 
-// Razorpay Checkout is a modal (checkout.js), not a redirect — load the
-// script on demand, open the modal with the subscription created by our
-// backend, then hit /billing/sync so the plan applies even on localhost
-// where Razorpay's webhooks can't reach us.
-function loadRazorpayScript() {
-  return new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true)
-    const s = document.createElement('script')
-    s.src = 'https://checkout.razorpay.com/v1/checkout.js'
-    s.onload = () => resolve(true)
-    s.onerror = () => resolve(false)
-    document.body.appendChild(s)
-  })
-}
-
+// PayPal checkout is a redirect: send the browser to PayPal, which returns to
+// /settings?token=<order_id>; we then ask the backend to capture that order.
 function PlanSection({ user }) {
   const { accessToken, login } = useAuthStore()
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get('token')
+    if (!orderId) return
+    window.history.replaceState({}, '', '/settings?section=plan')
+    billingAPI.sync(orderId)
+      .then(({ data }) => {
+        if (data.plan !== user?.plan) toast.success(`You're on the ${data.plan} plan!`)
+        login(accessToken, { ...user, plan: data.plan })
+      })
+      .catch(() => toast.error('Could not confirm your PayPal payment'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleUpgrade = async (plan) => {
     setLoading(true)
     try {
       const res = await billingAPI.checkout(plan)
-      if (!res.data.billing_enabled || !res.data.subscription_id) {
+      if (!res.data.billing_enabled || !res.data.approve_url) {
         toast(res.data.message || 'Billing not enabled yet.', { icon: 'ℹ️' })
         return
       }
-
-      const scriptOk = await loadRazorpayScript()
-      if (!scriptOk) { toast.error('Could not load the payment gateway'); return }
-
-      const rzp = new window.Razorpay({
-        key:             res.data.key_id,
-        subscription_id: res.data.subscription_id,
-        name:            'ATS-Ready',
-        description:     `${res.data.plan} plan — monthly subscription`,
-        prefill:         { email: res.data.user_email, name: res.data.user_name },
-        theme:           { color: '#FF6B35' },
-        handler: async () => {
-          try {
-            const sync = await billingAPI.sync()
-            toast.success(`You're on the ${sync.data.plan} plan!`)
-            login(accessToken, { ...user, plan: sync.data.plan })
-          } catch {
-            toast('Payment received — your plan will update shortly.', { icon: '⏳' })
-          }
-        },
-      })
-      rzp.open()
+      window.location.href = res.data.approve_url
     } catch { toast.error('Could not start checkout') }
     finally { setLoading(false) }
   }

@@ -118,7 +118,7 @@ export const billingAPI = {
   plans:    ()     => api.get('/billing/plans'),
   status:   ()     => api.get('/billing/status'),
   checkout: (plan) => api.post('/billing/checkout', { plan }),
-  sync:     ()     => api.post('/billing/sync'),
+  sync:     (order_id) => api.post('/billing/sync', { order_id }),
   cancel:   ()     => api.post('/billing/cancel'),
 }
 

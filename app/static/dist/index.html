@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ATS-Ready — AI Resume Optimizer</title>
+    <meta name="description" content="Tailor your resume to any job description in seconds. AI-powered ATS optimization." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#0A0A0F" />
+    <script>
+      // Runs before first paint to avoid a flash of the wrong theme. Must
+      // stay in sync with the fallback logic in src/store/theme.js.
+      (function () {
+        var saved = localStorage.getItem('theme');
+        var theme = saved === 'light' || saved === 'dark'
+          ? saved
+          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BO6SuWQX.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-ekgZNZ4H.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

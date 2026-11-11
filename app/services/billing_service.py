@@ -1,39 +1,27 @@
 """
 app/services/billing_service.py
 ────────────────────────────────
-Razorpay billing integration (raw REST via httpx — no SDK dependency).
+PayPal billing (Orders v2 REST via httpx — no SDK dependency).
 
-WHY RAZORPAY:
-  No setup fee, no monthly fee — a per-transaction cut (~2%) deducted from
-  payments you receive. Test Mode works immediately after signup with zero
-  cost; KYC is only required to accept real money in Live Mode.
+Each upgrade is a one-time 30-day payment (no recurring subscription), which
+keeps the sandbox demo to zero dashboard setup beyond an app's credentials.
 
 FEATURE FLAG:
-  BILLING_ENABLED=false → all methods are graceful no-ops and the app runs
-  normally with plans as plain DB flags.
+  BILLING_ENABLED=false → all methods are graceful no-ops.
 
-CHECKOUT FLOW (differs from Stripe's redirect model):
-  1. Backend creates a Subscription → returns subscription_id
-  2. Frontend opens Razorpay Checkout (checkout.js modal) with that id
-  3. User pays inside the modal
-  4a. Webhook (public deployments): subscription.activated/charged → plan set
-  4b. Sync endpoint (local dev — Razorpay can't reach localhost webhooks):
-      frontend calls POST /billing/sync after the modal reports success;
-      backend fetches the subscription from Razorpay and applies its status.
+CHECKOUT FLOW (redirect):
+  1. Backend creates an Order → returns order_id + approve_url
+  2. Frontend redirects the browser to approve_url (PayPal sandbox login)
+  3. PayPal redirects back to /settings?token=<order_id>
+  4. Frontend calls POST /billing/sync → backend captures the order and
+     applies the plan.
 
-RAZORPAY SETUP (manual, one-time):
-  1. Sign up at https://razorpay.com → Test Mode is on by default
-  2. Settings → API Keys → Generate Test Key → RAZORPAY_KEY_ID / KEY_SECRET
-  3. Subscriptions → Plans → create "Pro" and "Team" monthly plans →
-     copy the plan_xxx ids into RAZORPAY_PLAN_PRO / RAZORPAY_PLAN_TEAM
+PAYPAL SETUP (one-time):
+  1. https://developer.paypal.com → Apps & Credentials → Sandbox → Create App
+  2. Copy Client ID / Secret → PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET
+  3. Pay with a sandbox *personal* test account (Testing Tools → Sandbox Accounts)
   4. Set BILLING_ENABLED=true
-  5. (When deployed publicly) Settings → Webhooks → add
-     https://<your-domain>/api/webhooks/razorpay with events
-     subscription.activated, subscription.charged, subscription.cancelled,
-     subscription.halted → RAZORPAY_WEBHOOK_SECRET
 """
-import hashlib
-import hmac
 import logging
 from typing import Any, Dict, Optional
 
@@ -42,8 +30,6 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-RAZORPAY_API = "https://api.razorpay.com/v1"
 
 # ── Plan definitions ──────────────────────────────────────────────────────────
 
@@ -79,109 +65,78 @@ def get_plan_limits(plan: str) -> dict:
 # ── Billing service ───────────────────────────────────────────────────────────
 
 class BillingService:
-    """Razorpay REST calls. All methods are graceful no-ops when disabled."""
+    """PayPal REST calls. All methods are graceful no-ops when disabled."""
 
     def is_enabled(self) -> bool:
         return settings.BILLING_ENABLED and bool(
-            settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET
+            settings.PAYPAL_CLIENT_ID and settings.PAYPAL_CLIENT_SECRET
         )
 
-    def _auth(self) -> tuple:
-        # Razorpay uses HTTP Basic auth: key_id as user, key_secret as password
-        return (settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
+    async def _token(self, client: httpx.AsyncClient) -> str:
+        r = await client.post(
+            f"{settings.PAYPAL_API}/v1/oauth2/token",
+            auth=(settings.PAYPAL_CLIENT_ID, settings.PAYPAL_CLIENT_SECRET),
+            data={"grant_type": "client_credentials"},
+        )
+        r.raise_for_status()
+        return r.json()["access_token"]
 
-    def _plan_id(self, plan: str) -> Optional[str]:
-        return {
-            "pro":  settings.RAZORPAY_PLAN_PRO,
-            "team": settings.RAZORPAY_PLAN_TEAM,
-        }.get(plan) or None
-
-    # ── Subscriptions ─────────────────────────────────────────────────────────
-
-    async def create_subscription(self, user_id: str, plan: str) -> Optional[Dict[str, Any]]:
-        """
-        Create a Razorpay Subscription for the plan.
-        Returns {"subscription_id", "key_id"} for the frontend checkout modal,
-        or None if billing is disabled / misconfigured.
-        """
+    async def create_order(self, user_id: str, plan: str, return_url: str) -> Optional[Dict[str, Any]]:
+        """Returns {"order_id", "approve_url"}, or None if disabled / failed."""
         if not self.is_enabled():
-            logger.info("Billing disabled — skipping subscription creation")
+            logger.info("Billing disabled — skipping order creation")
             return None
-
-        plan_id = self._plan_id(plan)
-        if not plan_id:
-            logger.error("Razorpay plan id not configured for plan=%s", plan)
-            return None
-
         try:
-            async with httpx.AsyncClient(auth=self._auth(), timeout=20) as client:
-                r = await client.post(f"{RAZORPAY_API}/subscriptions", json={
-                    "plan_id":         plan_id,
-                    "total_count":     12,        # bill monthly for up to 12 cycles
-                    "customer_notify": 1,
-                    "notes":           {"user_id": user_id, "plan": plan},
-                })
+            async with httpx.AsyncClient(timeout=20) as client:
+                token = await self._token(client)
+                r = await client.post(
+                    f"{settings.PAYPAL_API}/v2/checkout/orders",
+                    headers={"Authorization": f"Bearer {token}"},
+                    json={
+                        "intent": "CAPTURE",
+                        "purchase_units": [{
+                            "custom_id": f"{user_id}:{plan}",
+                            "description": f"ATS-Ready {plan} plan (30 days)",
+                            "amount": {
+                                "currency_code": "USD",
+                                "value": f"{PLAN_LIMITS[plan]['price_monthly']:.2f}",
+                            },
+                        }],
+                        "payment_source": {"paypal": {"experience_context": {
+                            "return_url": return_url,
+                            "cancel_url": return_url,
+                            "user_action": "PAY_NOW",
+                        }}},
+                    },
+                )
                 r.raise_for_status()
-                sub = r.json()
-                logger.info("Created Razorpay subscription %s for user %s plan=%s",
-                            sub.get("id"), user_id, plan)
-                return {
-                    "subscription_id": sub.get("id"),
-                    "key_id":          settings.RAZORPAY_KEY_ID,
-                }
-        except httpx.HTTPStatusError as exc:
-            logger.error("Razorpay subscription creation failed: %s — %s",
-                         exc.response.status_code, exc.response.text[:300])
-            return None
+                order = r.json()
+                approve = next((l["href"] for l in order["links"]
+                                if l["rel"] in ("payer-action", "approve")), None)
+                if not approve:
+                    return None
+                return {"order_id": order["id"], "approve_url": approve}
         except Exception as exc:
-            logger.error("Razorpay subscription creation failed: %s", exc)
+            logger.error("PayPal order creation failed: %s", exc)
             return None
 
-    async def fetch_subscription(self, subscription_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch a subscription's current state from Razorpay."""
+    async def capture_order(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Capture an approved order. Returns the PayPal order JSON or None."""
         if not self.is_enabled():
             return None
         try:
-            async with httpx.AsyncClient(auth=self._auth(), timeout=20) as client:
-                r = await client.get(f"{RAZORPAY_API}/subscriptions/{subscription_id}")
+            async with httpx.AsyncClient(timeout=20) as client:
+                token = await self._token(client)
+                r = await client.post(
+                    f"{settings.PAYPAL_API}/v2/checkout/orders/{order_id}/capture",
+                    headers={"Authorization": f"Bearer {token}",
+                             "Content-Type": "application/json"},
+                )
                 r.raise_for_status()
                 return r.json()
         except Exception as exc:
-            logger.error("Razorpay subscription fetch failed for %s: %s",
-                         subscription_id, exc)
+            logger.error("PayPal capture failed for %s: %s", order_id, exc)
             return None
-
-    async def cancel_subscription(self, subscription_id: str) -> bool:
-        """Cancel at cycle end (user keeps access until the paid period ends)."""
-        if not self.is_enabled():
-            return False
-        try:
-            async with httpx.AsyncClient(auth=self._auth(), timeout=20) as client:
-                r = await client.post(
-                    f"{RAZORPAY_API}/subscriptions/{subscription_id}/cancel",
-                    json={"cancel_at_cycle_end": 1},
-                )
-                r.raise_for_status()
-                return True
-        except Exception as exc:
-            logger.error("Razorpay cancel failed for %s: %s", subscription_id, exc)
-            return False
-
-    # ── Webhook verification ──────────────────────────────────────────────────
-
-    def verify_webhook_signature(self, payload: bytes, signature: str) -> bool:
-        """
-        Razorpay signs webhooks with HMAC-SHA256 over the raw body using the
-        webhook secret (X-Razorpay-Signature header). Plain hmac — no SDK.
-        """
-        if not settings.RAZORPAY_WEBHOOK_SECRET or not signature:
-            return False
-        expected = hmac.new(
-            settings.RAZORPAY_WEBHOOK_SECRET.encode(),
-            payload,
-            hashlib.sha256,
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature)
 
 
 # ── Singleton ─────────────────────────────────────────────────────────────────
