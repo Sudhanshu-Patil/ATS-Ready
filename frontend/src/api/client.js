@@ -45,6 +45,10 @@ api.interceptors.response.use(
         return api(original)
       }
     }
+    // FastAPI validation errors (422) return `detail` as a list of objects;
+    // pages pass it straight to toast(), and React crashes on non-strings.
+    const d = error.response?.data?.detail
+    if (Array.isArray(d)) error.response.data.detail = d.map((e) => e.msg).join('; ')
     return Promise.reject(error)
   }
 )
@@ -94,9 +98,13 @@ export const metabaseAPI = {
   importResume: (file) => {
     const fd = new FormData()
     fd.append('file', file)
-    // No Content-Type header — axios sets multipart boundary from FormData.
+    // Must override the instance's JSON default, or axios serialises the
+    // FormData to JSON and the backend never receives the file (422).
     // Long timeout: text extraction + LLM parse takes 10-30s.
-    return api.post('/metabase/import-resume', fd, { timeout: 120000 })
+    return api.post('/metabase/import-resume', fd, {
+      timeout: 120000,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
   },
   getPersonal:      ()     => api.get('/metabase/personal'),
   savePersonal:     (data) => api.post('/metabase/personal', data),
