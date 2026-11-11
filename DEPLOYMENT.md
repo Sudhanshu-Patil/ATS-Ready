@@ -94,19 +94,17 @@ docker compose -f docker-compose.prod.yaml exec api alembic upgrade head
 Open `https://<your-domain>` (or `http://<PUBLIC_IP>`) — landing page, register,
 generate. Emails now go to real inboxes via your SMTP provider.
 
-## 6. Razorpay live wiring (when ready to charge)
+## 6. PayPal wiring
 
-1. Dashboard (Test Mode first): Settings → API Keys → **Generate Key** — the
-   secret is shown **once**; copy both immediately into `.env`
-2. Subscriptions → Plans → create Pro/Team monthly → `RAZORPAY_PLAN_*` ids
-3. Settings → Webhooks → Add:
-   URL `https://<your-domain>/api/webhooks/razorpay`, a strong secret →
-   `RAZORPAY_WEBHOOK_SECRET`, events: `subscription.activated`,
-   `subscription.charged`, `subscription.cancelled`, `subscription.halted`
-4. `BILLING_ENABLED=true` → recreate:
-   `docker compose -f docker-compose.prod.yaml up -d --force-recreate api worker`
-5. Verify with a [test card](https://razorpay.com/docs/payments/payments/test-card-details/)
-   before completing KYC for Live Mode.
+1. developer.paypal.com → Apps & Credentials → **Sandbox** (use **Live** only
+   when ready to charge real money) → copy the app's Client ID and Secret
+2. In `.env`: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `BILLING_ENABLED=true`,
+   `FRONTEND_URL=https://<your-domain>` (PayPal redirects users back here).
+   For Live also set `PAYPAL_API=https://api-m.paypal.com`
+3. Recreate: `docker compose -f docker-compose.prod.yaml up -d --force-recreate api worker`
+4. Verify by paying with a sandbox **Personal** buyer account (Testing Tools →
+   Sandbox Accounts; use a US account, since orders are in USD). No webhook
+   needed: the plan is applied when PayPal redirects back.
 
 ## 7. Operations
 

@@ -242,7 +242,7 @@ function PlanSection({ user }) {
               {plan.features.map(f => <li key={f} className="text-xs text-text-muted">✓ {f}</li>)}
             </ul>
           </div>
-          {!plan.current && plan.id !== 'free' && (
+          {plan.id === 'pro' && user?.plan === 'team' ? null : !plan.current && plan.id !== 'free' && (
             <button
               onClick={() => handleUpgrade(plan.id)}
               disabled={loading}

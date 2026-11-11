@@ -63,7 +63,7 @@ applied). The two rules worth re-stating:
 | `APIFY_API_TOKEN` | your Apify token |
 | `FRONTEND_URL` | `https://ats-ready.onrender.com` (correct after creation if the URL differs) |
 | `SMTP_*` / `EMAIL_FROM` | Gmail app password or Brevo (optional at first — emails log until set) |
-| `BILLING_ENABLED` + `RAZORPAY_*` | your Razorpay values (webhook secret: fresh random) |
+| `BILLING_ENABLED` + `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | your PayPal sandbox app credentials |
 
 6. **Deploy Web Service** — first build ~5-10 min. Watch the logs for
    `[start-combined]` lines: migrations → worker → API.
@@ -73,10 +73,8 @@ applied). The two rules worth re-stating:
 - App: `https://ats-ready.onrender.com` — landing page, register, generate.
 - If the final URL differs from what you set, update `FRONTEND_URL` in the
   service's Environment tab (auto-redeploys) — email links depend on it.
-- **Razorpay webhook**: dashboard → Webhooks → URL
-  `https://<app>.onrender.com/api/webhooks/razorpay`, events
-  `subscription.activated/charged/cancelled/halted`, secret matching
-  `RAZORPAY_WEBHOOK_SECRET`.
+- **PayPal**: no webhook needed. Users return to `FRONTEND_URL/settings` after
+  paying and the plan is applied then, so `FRONTEND_URL` must be correct.
 - **Updates**: `git push origin master` — Render auto-deploys on push.
 - **Logs**: service page → Logs tab.
 

@@ -88,6 +88,16 @@ python cli.py history     # show past generated resumes
 
 ---
 
+## 💳 Payments (PayPal sandbox)
+
+Pro ($19) and Team ($49) upgrades use the PayPal Orders v2 REST API
+(`app/services/billing_service.py`). Checkout is a redirect: the backend creates
+an order, the user approves it on PayPal, and on return the backend captures the
+payment and grants the plan for 30 days. Set `BILLING_ENABLED=true`,
+`PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` (sandbox keys from
+developer.paypal.com) and pay with a sandbox Personal test account. No real
+money moves.
+
 ## 🔄 AI Pipeline
 
 ```

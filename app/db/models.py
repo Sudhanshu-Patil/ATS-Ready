@@ -74,7 +74,7 @@ class User(Base):
     is_active              = Column(Boolean, default=True, nullable=False)
     is_verified            = Column(Boolean, default=False, nullable=False)
 
-    # subscription — provider-neutral names (currently Razorpay):
+    # subscription — provider-neutral names (currently PayPal order id):
     # payment_customer_id     = the provider's customer reference
     # payment_subscription_id = the active subscription reference
     plan                    = Column(String(20), default="free", nullable=False)
