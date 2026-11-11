@@ -156,6 +156,7 @@ Rules:
 - Mark is_primary=true for skills that appear prominently/repeatedly.
 - Dates: keep the resume's own format for start_date/end_date strings.
 - Missing sections → empty arrays. Missing fields → empty string or null.
+- A "Links in document" list may precede the text: put the linkedin.com URL in linkedin, the github.com profile URL in github, any other personal site/portfolio URL in portfolio, and repo URLs in the matching project's github_url. Use the full URL exactly as listed.
 
 Resume text:
 ---

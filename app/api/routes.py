@@ -599,6 +599,13 @@ async def delete_experience(
 MAX_RESUME_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 
 
+def _with_links(text: str, links: list) -> str:
+    """Prepend the document's hyperlink URLs so the LLM can fill linkedin/github/portfolio."""
+    unique = list(dict.fromkeys(links))
+    # Prepended: the LLM prompt truncates long text, so trailing links could be lost
+    return ("Links in document:\n" + "\n".join(unique) + "\n\n" if unique else "") + text
+
+
 def _extract_resume_text(filename: str, data: bytes) -> str:
     """Extract plain text from an uploaded PDF or DOCX (sync — run in a thread)."""
     import io
@@ -606,7 +613,15 @@ def _extract_resume_text(filename: str, data: bytes) -> str:
     if name.endswith(".pdf"):
         from pypdf import PdfReader
         reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        # Link URLs live in annotations, not the text layer ("LinkedIn" is just a label)
+        links = []
+        for page in reader.pages:
+            for a in page.get("/Annots") or []:
+                uri = ((a.get_object().get("/A") or {}).get("/URI"))
+                if uri:
+                    links.append(str(uri))
+        return _with_links(text, links)
     if name.endswith(".docx"):
         import docx
         doc = docx.Document(io.BytesIO(data))
@@ -615,7 +630,12 @@ def _extract_resume_text(filename: str, data: bytes) -> str:
         for table in doc.tables:
             for row in table.rows:
                 parts.extend(cell.text for cell in row.cells)
-        return "\n".join(parts)
+        # Hyperlink targets are relationships, not text. Contact links are often
+        # in the header/footer, so scan those parts too.
+        docparts = [doc.part] + [p.part for s in doc.sections for p in (s.header, s.footer)]
+        links = [r.target_ref for part in docparts for r in part.rels.values()
+                 if r.is_external and r.reltype.endswith("/hyperlink")]
+        return _with_links("\n".join(parts), links)
     raise HTTPException(status_code=422, detail="Upload a .pdf or .docx file")
 
 
