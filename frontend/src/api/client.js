@@ -68,6 +68,8 @@ export const authAPI = {
     }),
   register: (email, password, fullName) =>
     api.post('/auth/register', { email, password, full_name: fullName }),
+  config:   () => api.get('/auth/config'),
+  google:   (credential) => api.post('/auth/google', { credential }),
   logout:   () => api.post('/auth/logout'),
   me:       () => api.get('/auth/me'),
   refresh:  () => api.post('/auth/refresh'),

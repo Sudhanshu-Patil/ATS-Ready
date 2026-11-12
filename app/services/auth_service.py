@@ -142,3 +142,20 @@ def verify_email_verify_token(token: str) -> Optional[str]:
     if not payload or payload.get("type") != "verify":
         return None
     return payload.get("sub")
+
+
+# ── Google sign-in ────────────────────────────────────────────────────────────
+
+def verify_google_id_token(credential: str) -> dict:
+    """Verify a Google Identity Services ID token (signature, expiry, issuer
+    and that it was issued for OUR client id). Returns the claims; raises
+    ValueError if anything is wrong. Blocking (fetches Google's public keys,
+    cached by google-auth): call via asyncio.to_thread."""
+    from google.auth.transport import requests as g_requests
+    from google.oauth2 import id_token
+
+    if not settings.GOOGLE_CLIENT_ID:
+        raise ValueError("Google sign-in is not configured")
+    return id_token.verify_oauth2_token(
+        credential, g_requests.Request(), settings.GOOGLE_CLIENT_ID
+    )

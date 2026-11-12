@@ -5,6 +5,7 @@ import { Zap, Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import Spinner from '../components/Spinner'
+import GoogleButton from '../components/GoogleButton'
 import ThemeToggle from '../components/ThemeToggle'
 import toast from 'react-hot-toast'
 
@@ -118,6 +119,7 @@ export default function Login() {
               {loading ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          <GoogleButton />
         </motion.div>
 
         <p className="text-center text-sm text-text-secondary mt-5">

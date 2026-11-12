@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Per-IP limits on auth endpoints. Only the e2e suite turns this off (it
     # registers many accounts from one IP); production refuses to start without it.
     RATE_LIMIT_ENABLED: bool = True
+
+    # ── Google sign-in (OAuth client id only; the ID-token flow needs no secret) ──
+    GOOGLE_CLIENT_ID: str = ""
     # Global cap on Apify actor runs per UTC day (protects the free-plan credit).
     APIFY_DAILY_RUN_CAP: int = 30
 

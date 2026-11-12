@@ -7,7 +7,7 @@ import { authAPI } from '../api/client'
 import { useAuthStore } from '../store/auth'
 
 vi.mock('../api/client', () => ({
-  authAPI: { register: vi.fn() },
+  authAPI: { register: vi.fn(), config: vi.fn(() => Promise.resolve({ data: { google_client_id: null } })) },
 }))
 
 const navigateMock = vi.fn()

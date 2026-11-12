@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
@@ -18,6 +19,7 @@ from app.services.auth_service import (
     decode_token,
     hash_password,
     verify_access_token,
+    verify_google_id_token,
     verify_email_verify_token,
     verify_password,
     verify_refresh_token,
@@ -51,6 +53,7 @@ class TokenResponse(BaseModel):
     email: str
     full_name: str
     plan: str
+    is_new: bool = False      # Google sign-in created this account just now
 
 
 # ── Cookie helper ─────────────────────────────────────────────────────────────
@@ -130,6 +133,78 @@ async def register(
         email=user.email,
         full_name=user.full_name or "",
         plan=user.plan,
+    )
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str            # the ID token from Google Identity Services
+
+
+@auth_router.get("/config")
+async def auth_config():
+    """Public client settings the login page needs (no secrets)."""
+    return {"google_client_id": settings.GOOGLE_CLIENT_ID or None}
+
+
+@auth_router.post("/google", response_model=TokenResponse)
+@limiter.limit("20/minute")
+async def google_login(
+    request: Request,
+    data: GoogleLoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign in (or sign up) with a Google ID token.
+
+    Finds the user by Google id, else by verified email (linking the accounts),
+    else creates one. Users keep their data across logins because the account
+    is the same row whichever way they sign in.
+    """
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    try:
+        claims = await asyncio.to_thread(verify_google_id_token, data.credential)
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Google sign-in failed. Please try again.")
+
+    email = (claims.get("email") or "").lower()
+    if not email or not claims.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Your Google email address is not verified.")
+    sub = claims["sub"]
+
+    created = False
+    user = (await db.execute(select(User).where(User.google_id == sub))).scalar_one_or_none()
+    if user is None:
+        user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+        if user is not None:
+            # Link. If the existing account was never email-verified, whoever
+            # registered it may not own the address: drop their password so only
+            # the proven owner (this Google login) can use the account.
+            user.google_id = sub
+            if not user.is_verified:
+                user.hashed_password = None
+            user.is_verified = True
+        else:
+            user = User(
+                email=email, full_name=claims.get("name") or "", google_id=sub,
+                hashed_password=None, is_active=True, is_verified=True, plan="free",
+                created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+            )
+            db.add(user)
+            created = True
+        await db.commit()
+        await db.refresh(user)
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
+
+    return TokenResponse(
+        access_token=_set_auth_cookies(response, user.id),
+        user_id=str(user.id),
+        email=user.email,
+        full_name=user.full_name or "",
+        plan=user.plan,
+        is_new=created,
     )
 
 
