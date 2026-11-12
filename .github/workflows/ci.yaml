@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master, paypal-gateway, production-hardening]
   pull_request:
@@ -125,11 +126,22 @@ jobs:
         working-directory: e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium firefox webkit
+          npx playwright install --with-deps chromium
 
-      - name: Run E2E tests
+      # Branch pushes: full suite on desktop Chrome only (fast feedback).
+      - name: Run E2E tests (Chromium)
         working-directory: e2e
-        run: npx playwright test
+        run: npx playwright test --project=chromium
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:5173
+
+      # main/master and manual runs also cover other engines and phones (auth, a11y, account).
+      - name: Run E2E tests (Firefox, WebKit, Pixel 7, iPhone 14)
+        if: github.ref_name == 'main' || github.ref_name == 'master' || github.event_name == 'workflow_dispatch'
+        working-directory: e2e
+        run: |
+          npx playwright install --with-deps firefox webkit
+          npx playwright test --project=firefox --project=webkit --project=pixel-7 --project=iphone-14
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
 
