@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    Education, ExperienceBullet, PersonalInfo, Project,
-    ProjectBullet, Skill, WorkExperience,
+    Education, PersonalInfo, Project,
+    Skill, WorkExperience,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class MetabaseService:
             "education":  await self._get_education(db, user_id),
         }
         logger.info(
-            "Profile loaded for user %d — %d skills, %d roles, %d projects",
+            "Profile loaded for user %s — %d skills, %d roles, %d projects",
             user_id,
             len(profile["skills"]),
             len(profile["experience"]),

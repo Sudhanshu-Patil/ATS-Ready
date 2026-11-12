@@ -1,0 +1,24 @@
+# ATS-Ready
+
+> ATS-Ready is a web app that tailors a resume to a specific job description, scores it for applicant tracking systems (ATS), and writes cover letters and interview prep.  Paid plans are billed through PayPal.
+
+## What it does
+- Resume tailoring: paste a job description (or a public job-posting URL) and get a resume rewritten around that role's keywords, from a profile you maintain once.
+- ATS score: a 0-100 score with a breakdown (keywords, skills, action verbs, formatting) and the matched and missing skills.
+- Cover letters and interview prep: generated from the same profile and job description.
+- Job suggestions: roles matched to your skills, location and experience.
+- Import: upload an existing PDF or DOCX resume to fill your profile.
+
+## Who it is for
+Job seekers who apply to many roles and want each resume to match the posting without rewriting it by hand.
+
+## Facts
+- Free plan: 3 resumes per month. Paid plans are billed through PayPal.
+- AI output can contain mistakes; users should review every document.
+- Data can be exported or deleted by the user at any time in Settings.
+
+## Pages
+- https://ats-ready.onrender.com/ : overview
+- https://ats-ready.onrender.com/register : create an account
+- https://ats-ready.onrender.com/privacy : privacy policy
+- https://ats-ready.onrender.com/terms : terms of service

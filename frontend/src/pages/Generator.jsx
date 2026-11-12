@@ -1,5 +1,5 @@
-import { useRef, useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, Link as LinkIcon, FileText, ChevronDown, ChevronUp, Download, AlertCircle, Plus, Check, Sparkles } from 'lucide-react'
 import { resumeAPI } from '../api/client'
@@ -9,6 +9,8 @@ import { fadeInUp } from '../lib/motion'
 import ScoreRing, { scoreColorClass } from '../components/ScoreRing'
 import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
+import ResumeHistory from '../components/ResumeHistory'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -19,6 +21,11 @@ const STEPS = [
   'Tailoring resume content…',
   'Scoring ATS compatibility…',
   'Building .docx file…',
+]
+
+const PAGE_TABS = [
+  { id: 'generate', label: 'Generate' },
+  { id: 'history',  label: 'History' },
 ]
 
 const MODE_TABS = [
@@ -37,13 +44,23 @@ export default function Generator() {
 
   const { addPendingJob, updateJob, refresh } = useJobsStore()
   const [breakdownOpen, setBreakdownOpen] = useState(false)
-  const pollRef = useRef(null)
-  const [searchParams] = useSearchParams()
+  const [submitting, setSubmitting] = useState(false)
+  const jobId = useGeneratorStore(s => s.jobId)
+  const finished = useActivityStore(s => (jobId ? s.finished[jobId] : null))
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'history' ? 'history' : 'generate'
+  const setTab = (t) => setSearchParams(t === 'history' ? { tab: 'history' } : {}, { replace: true })
+  const location = useLocation()
 
-  // Pre-fill URL if coming from the Job Recommendations "Generate Resume" button
+  // Pre-fill from the Job Recommendations "Generate Resume" button. Prefer the
+  // listing's own text: LinkedIn/Indeed/Naukri URLs can't be scraped.
   useEffect(() => {
     const urlParam = searchParams.get('url')
-    if (urlParam) {
+    const fromJob = location.state?.jdText
+    if (fromJob) {
+      setMode('text')
+      setJdText(fromJob)
+    } else if (urlParam) {
       setMode('url')
       setJdUrl(urlParam)
     }
@@ -56,8 +73,10 @@ export default function Generator() {
     if (!text && !url) { toast.error('Please provide a job description'); return }
     if (text && text.trim().length < 100) { toast.error('Job description is too short (min 100 characters)'); return }
 
-    // Clear previous result
+    // The result panel follows the newest job; earlier ones keep running in
+    // the background and finish into History (with a toast).
     reset()
+    setSubmitting(true)
     setLoading(true)
     setStep(0)
 
@@ -65,57 +84,49 @@ export default function Generator() {
 
     try {
       const res = await resumeAPI.generate(text, url, emphasisList.length ? emphasisList : null)
-      const jobId = res.data.job_id
-      setJobId(jobId)
-      addPendingJob(jobId)  // Optimistically add to history store
-      startPolling(jobId)
+      const id = res.data.job_id
+      setJobId(id)
+      addPendingJob(id)  // Optimistically add to history store
+      useActivityStore.getState().track('resume', id)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to start generation')
-      toast.error(err.response?.data?.detail || 'Failed to start generation')
+      const msg = err.response?.data?.detail || 'Failed to start generation'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const startPolling = (jobId) => {
-    let stepIdx = 0
-    if (pollRef.current) clearInterval(pollRef.current)
+  // Progress captions are cosmetic (the worker doesn't report stages); the
+  // interval is cleaned up on unmount.
+  useEffect(() => {
+    if (!loading) return undefined
+    const t = setInterval(() => {
+      const s = useGeneratorStore.getState().step
+      if (s < STEPS.length - 1) setStep(s + 1)
+    }, 2500)
+    return () => clearInterval(t)
+  }, [loading])  // eslint-disable-line react-hooks/exhaustive-deps
 
-    pollRef.current = setInterval(async () => {
-      try {
-        if (stepIdx < STEPS.length - 1) {
-          stepIdx++
-          setStep(stepIdx)
-        }
-
-        const res = await resumeAPI.status(jobId)
-        const { status, result: jobResult, error: jobError } = res.data
-
-        if (status === 'done' && jobResult) {
-          clearInterval(pollRef.current)
-          setResult(jobResult)
-          // Update the job in the global store
-          updateJob(jobId, {
-            status:     'done',
-            job_title:  jobResult.job_title,
-            company:    jobResult.company,
-            ats_score:  jobResult.ats_score,
-            download_url: jobResult.download_url,
-          })
-          // Refresh stats (resume count, avg score etc.)
-          refresh()
-          toast.success(`ATS Score: ${jobResult.ats_score?.toFixed(1)}%`)
-        } else if (status === 'failed') {
-          clearInterval(pollRef.current)
-          setError(jobError || 'Generation failed')
-          updateJob(jobId, { status: 'failed', error: jobError })
-          toast.error(jobError || 'Generation failed')
-        }
-      } catch {
-        clearInterval(pollRef.current)
-        setError('Lost connection — please try again')
-        toast.error('Lost connection — please try again')
-      }
-    }, 2000)
-  }
+  // The activity store (server-polled) tells us when OUR job finishes.
+  useEffect(() => {
+    if (!jobId || !finished) return
+    if (finished.status === 'done') {
+      resumeAPI.status(jobId).then((res) => {
+        const r = res.data.result
+        if (!r) return
+        setResult(r)
+        updateJob(jobId, {
+          status: 'done', job_title: r.job_title, company: r.company,
+          ats_score: r.ats_score, download_url: r.download_url,
+        })
+        refresh()
+      }).catch(() => setError('Could not load the result — check History.'))
+    } else {
+      setError(finished.error || 'Generation failed')
+      updateJob(jobId, { status: 'failed', error: finished.error })
+    }
+  }, [finished])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="p-4 sm:p-8 max-w-4xl mx-auto">
@@ -125,6 +136,9 @@ export default function Generator() {
         <p className="text-text-secondary mt-1">Paste a job description and get an ATS-optimized .docx in ~30 seconds.</p>
       </motion.div>
 
+      <Tabs tabs={PAGE_TABS} active={tab} onChange={setTab} className="mb-6" />
+
+      {tab === 'history' ? <ResumeHistory /> : (<>
       {/* Input card */}
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card mb-6">
         <Tabs tabs={MODE_TABS} active={mode} onChange={setMode} className="mb-5" />
@@ -132,11 +146,11 @@ export default function Generator() {
         {mode === 'text' ? (
           <textarea className="input min-h-40 resize-y font-mono text-sm"
             placeholder="Paste the full job description here…"
-            value={jdText} onChange={e => setJdText(e.target.value)} disabled={loading} />
+            value={jdText} onChange={e => setJdText(e.target.value)} disabled={submitting} />
         ) : (
           <input type="url" className="input"
             placeholder="https://jobs.lever.co/company/role-id"
-            value={jdUrl} onChange={e => setJdUrl(e.target.value)} disabled={loading} />
+            value={jdUrl} onChange={e => setJdUrl(e.target.value)} disabled={submitting} />
         )}
 
         <div className="mt-4">
@@ -145,14 +159,14 @@ export default function Generator() {
           </label>
           <input className="input text-sm"
             placeholder="e.g. Kafka, distributed systems, team leadership"
-            value={emphasis} onChange={e => setEmphasis(e.target.value)} disabled={loading} />
+            value={emphasis} onChange={e => setEmphasis(e.target.value)} disabled={submitting} />
         </div>
 
         <div className="flex gap-3 mt-5">
-          <button onClick={handleGenerate} disabled={loading}
+          <button onClick={handleGenerate} disabled={submitting}
             className="btn-primary flex-1 flex items-center justify-center gap-2 py-3">
-            {loading ? <Spinner size="sm" color="white" /> : <Zap size={16} />}
-            {loading ? 'Generating…' : 'Generate Resume'}
+            {submitting ? <Spinner size="sm" color="white" /> : <Zap size={16} />}
+            {submitting ? 'Starting…' : loading ? 'Queue another resume' : 'Generate Resume'}
           </button>
           {(result || error) && !loading && (
             <button onClick={() => { reset(); setBreakdownOpen(false) }}
@@ -303,6 +317,7 @@ export default function Generator() {
           )}
         </motion.div>
       )}
+      </>)}
     </div>
   )
 }

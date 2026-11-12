@@ -19,7 +19,7 @@ async function registerFreshUser(page) {
 test('add a skill, edit it, and see the change persist after reload', async ({ page }) => {
   await registerFreshUser(page)
 
-  await page.getByRole('button', { name: 'Skills' }).click()
+  await page.getByRole('tab', { name: 'Skills' }).click()
   await page.getByPlaceholder('Skill name (e.g. Python)').fill('Rust')
   await page.getByPlaceholder('Category').fill('Programming Languages')
   await page.getByRole('button', { name: 'Add skill' }).click()
@@ -44,7 +44,7 @@ test('add a skill, edit it, and see the change persist after reload', async ({ p
   // Reload — this is the exact regression the user reported: edits used to
   // exist only in local state and vanish (or never apply) on refresh.
   await page.reload()
-  await page.getByRole('button', { name: 'Skills' }).click()
+  await page.getByRole('tab', { name: 'Skills' }).click()
   const skillChipAfterReload = page.locator('div.rounded-lg.border').filter({ hasText: 'Rust' })
   await expect(skillChipAfterReload.getByText('Expert', { exact: true })).toBeVisible({ timeout: 10000 })
 })
@@ -52,7 +52,7 @@ test('add a skill, edit it, and see the change persist after reload', async ({ p
 test('add an experience with a description and see it tied to the UI on edit', async ({ page }) => {
   await registerFreshUser(page)
 
-  await page.getByRole('button', { name: 'Experience' }).click()
+  await page.getByRole('tab', { name: 'Experience' }).click()
   await page.getByPlaceholder('Company').fill('Acme Corp')
   await page.getByPlaceholder('Role').fill('Senior Engineer')
   await page.getByPlaceholder(/start date/i).fill('Jan 2023')

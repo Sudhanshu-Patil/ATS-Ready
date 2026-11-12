@@ -1,13 +1,12 @@
 import logging
-import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,13 +16,16 @@ from app.db.models import (
     Project, ProjectBullet, Skill, User, WorkExperience,
 )
 from app.models.schemas import (
-    ATSBreakdown, GenerateResumeRequest, GenerateResumeResponse,
+    GenerateResumeRequest, GenerateResumeResponse,
     JobStatusResponse, PersonalInfoUpdate, ProjectCreate, ProjectUpdate,
     SkillCreate, SkillOut, SkillUpdate, WorkExperienceCreate, WorkExperienceUpdate,
 )
 from app.services.cache_service import cache_service
 from app.services.storage_service import storage_service
+from app.api.activity_routes import ensure_capacity
+from app.services.scraper import ScraperError, validate_public_url
 from app.api.dependencies import get_current_user
+from app.api.rate_limit import per_user_limit
 from app.api.plan_limits import check_resume_limit
 
 router = APIRouter()
@@ -42,7 +44,8 @@ async def _get_arq_pool():
 # Resume Generation
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/generate-resume", response_model=GenerateResumeResponse, status_code=202)
+@router.post("/generate-resume", response_model=GenerateResumeResponse, status_code=202,
+             dependencies=[Depends(per_user_limit("generate", 10))])
 async def generate_resume(
     request: GenerateResumeRequest,
     db: AsyncSession = Depends(get_db),
@@ -58,6 +61,12 @@ async def generate_resume(
     # Validate: must have URL or text
     if not request.jd_url and not request.jd_text:
         raise HTTPException(status_code=422, detail="Either jd_url or jd_text is required.")
+    if request.jd_url:                       # refuse internal/non-public targets up front
+        try:
+            await validate_public_url(str(request.jd_url))
+        except ScraperError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+    await ensure_capacity(db, user.id)
 
     # Create the JobApplication row in "pending" state NOW so we have an ID
     job_app = JobApplication(
@@ -86,7 +95,7 @@ async def generate_resume(
     job_app.arq_job_id = arq_job.job_id
     await db.commit()
 
-    logger.info("Enqueued generation job %d (arq=%s) for user %d",
+    logger.info("Enqueued generation job %s (arq=%s) for user %s",
                 job_app.id, arq_job.job_id, user.id)
 
     return GenerateResumeResponse(
@@ -639,7 +648,7 @@ def _extract_resume_text(filename: str, data: bytes) -> str:
     raise HTTPException(status_code=422, detail="Upload a .pdf or .docx file")
 
 
-@router.post("/metabase/import-resume")
+@router.post("/metabase/import-resume", dependencies=[Depends(per_user_limit("import", 5))])
 async def import_resume(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -797,7 +806,7 @@ async def import_resume(
 # Job Recommendations
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/recommendations")
+@router.get("/recommendations", dependencies=[Depends(per_user_limit("recs", 12))])
 async def get_recommendations(
     refresh: bool = False,
     db: AsyncSession = Depends(get_db),
@@ -806,41 +815,27 @@ async def get_recommendations(
     """
     Return personalised job recommendations scored against the user's skills.
 
-    Results are cached in Redis for 2 hours. Pass ?refresh=true to bust the
-    cache and fetch fresh listings from all sources.
+    Cached in Redis per profile version for 2 hours (editing skills, roles or
+    location changes the key). ?refresh=true refetches, at most once every
+    5 minutes per user.
 
-    Response: list of jobs sorted by match_score descending (only ≥60% matches).
+    Response: {jobs, total, status}. Jobs are sorted by match_score descending (only ≥60% matches).
+    status is "pending" while a cold fetch runs in the background: poll again in a few seconds.
     """
-    from app.services.job_recommendations import get_recommendations_for_user
-    jobs = await get_recommendations_for_user(user.id, db, refresh=refresh)
-    return {
-        "jobs":    jobs,
-        "total":   len(jobs),
-        "cached":  not refresh,
-    }
+    from app.services.job_recommendations import peek_recommendations, start_refresh
+    jobs = await peek_recommendations(user.id, db, refresh=refresh)
+    if jobs is None:
+        await start_refresh(user.id, refresh=refresh)
+        return {"jobs": [], "total": 0, "status": "pending"}
+    # A fetch still running (e.g. just after "refresh") means these jobs are the previous
+    # set: say so, so the page keeps polling and swaps in the new results.
+    updating = await cache_service.get(f"job_recs_pending:{user.id}") is not None
+    return {"jobs": jobs, "total": len(jobs), "status": "pending" if updating else "ready"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health & Diagnostics
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/health/detailed")
-async def detailed_health(db: AsyncSession = Depends(get_db)):
-    """Extended health check — checks DB, Redis, and storage connectivity."""
-    checks: Dict[str, Any] = {}
-
-    # Database
-    try:
-        await db.execute(select(func.now()))
-        checks["database"] = "ok"
-    except Exception as exc:
-        checks["database"] = f"error: {exc}"
-
-    # Redis / Cache
-    checks["redis"] = "ok" if await cache_service.ping() else "unavailable"
-
-    # Storage
-    checks["storage"] = "s3" if settings.storage_use_s3 else "local"
-
-    overall = "ok" if all(v == "ok" or v in ("s3", "local", "unavailable") for v in checks.values()) else "degraded"
-    return {"status": overall, "checks": checks}
+# Health checks live in main.py (/health, /health/ready): they are public and
+# must not leak internals, so they do not belong behind the API router.

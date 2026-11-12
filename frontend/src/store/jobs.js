@@ -54,7 +54,7 @@ export const useJobsStore = create((set, get) => ({
         total:       jobsRes.data.total || 0,
         initialized: true,
       })
-    } catch {}
+    } catch { /* keep previous list; loading flag resets below */ }
     finally { set({ loading: false }) }
   },
 

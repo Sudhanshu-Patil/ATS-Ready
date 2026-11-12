@@ -101,3 +101,18 @@ scratch_password.py
 # Node
 node_modules/
 frontend/dist/
+# Built frontend: produced by the Dockerfile (and `npm run build`), never committed
+/app/static/dist/
+
+# Lighthouse CI scratch
+frontend/.lighthouseci/
+frontend/dist-lhci/
+
+# e2e scratch
+e2e/test-results/
+e2e/playwright-report/
+frontend/dist-e2e/
+
+# graphify: keep the readable report, ignore the large/regenerable files
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md

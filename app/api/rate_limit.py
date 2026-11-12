@@ -20,10 +20,44 @@ from slowapi.util import get_remote_address
 
 from app.config import settings
 
-_DISABLED = "pytest" in sys.modules
+_DISABLED = "pytest" in sys.modules or not settings.RATE_LIMIT_ENABLED
 
 limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=settings.REDIS_URL,
     enabled=not _DISABLED,
 )
+
+
+# ── Per-user limits for expensive endpoints ──────────────────────────────────
+# slowapi keys on IP; these endpoints need a per-account budget (LLM tokens and
+# Apify credit cost real money). Fixed window in Redis, shared by api replicas.
+# Fails OPEN if Redis is down: an outage must not lock every user out.
+from fastapi import Depends, HTTPException  # noqa: E402
+
+from app.api.dependencies import get_current_user  # noqa: E402
+from app.db.models import User  # noqa: E402
+from app.services.cache_service import cache_service  # noqa: E402
+
+
+def per_user_limit(name: str, limit: int, window_seconds: int = 60):
+    async def _check(user: User = Depends(get_current_user)) -> None:
+        if _DISABLED:
+            return
+        client = await cache_service.client()
+        if client is None:
+            return
+        key = f"rl:{name}:{user.id}"
+        try:
+            count = await client.incr(key)
+            if count == 1:
+                await client.expire(key, window_seconds)
+        except Exception:
+            return
+        if count > limit:
+            raise HTTPException(
+                status_code=429,
+                detail="You're going a little fast. Please wait a minute and try again.",
+                headers={"Retry-After": str(window_seconds)},
+            )
+    return _check

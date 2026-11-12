@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { ExternalLink, RefreshCw, Briefcase, MapPin, Zap, AlertCircle, Sparkles, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -180,6 +180,10 @@ function JobCard({ job }) {
         </div>
       )}
 
+      {job.match_reasons?.length > 0 && (
+        <p className="text-[11px] text-text-muted">Why: {job.match_reasons.join(' · ')}</p>
+      )}
+
       {/* Action buttons */}
       <div className="flex gap-2 mt-auto pt-1">
         <a
@@ -193,7 +197,11 @@ function JobCard({ job }) {
           <ExternalLink size={11} /> View Job
         </a>
         <button
-          onClick={() => navigate(`/generate?url=${encodeURIComponent(job.url)}`)}
+          onClick={() =>
+            (job.description || '').length >= 200
+              ? navigate('/generate', { state: { jdText: `${job.title} at ${job.company}\n\n${job.description}` } })
+              : navigate(`/generate?url=${encodeURIComponent(job.url)}`)
+          }
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
                      bg-brand/10 border border-brand/30 text-xs text-brand font-medium
                      hover:bg-brand/20 transition-colors"
@@ -240,26 +248,41 @@ export default function JobRecommendations() {
   const [total, setTotal]         = useState(0)
   const [filters, setFilters]     = useState(DEFAULT_FILTERS)
 
+  // The server answers at once; a cold fetch (live job-board crawls) continues in the
+  // background and reports status "pending" until it is done, so poll rather than wait.
+  const pollTimer = useRef(null)
+  const polls = useRef(0)
+  const MAX_POLLS = 60            // x 4s: stop after ~4 minutes
+
   const fetchJobs = useCallback(async (forceRefresh = false) => {
-    if (forceRefresh) setRefreshing(true)
-    else setLoading(true)
+    clearTimeout(pollTimer.current)
+    if (forceRefresh) { setRefreshing(true); polls.current = 0 }
+    else if (polls.current === 0) setLoading(true)
     setError(null)
 
     try {
       const { data } = await recommendationsAPI.get(forceRefresh)
       setJobs(data.jobs || [])
       setTotal(data.total || 0)
+      if (data.status === 'pending' && polls.current < MAX_POLLS) {
+        polls.current += 1
+        pollTimer.current = setTimeout(() => fetchJobs(false), 4000)
+        return                                  // keep the loading/refreshing state on
+      }
+      polls.current = 0
       setLastFetched(new Date())
     } catch (err) {
-      const msg = err?.response?.data?.detail || 'Failed to load job recommendations.'
-      setError(msg)
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+      polls.current = 0
+      setError(err?.response?.data?.detail || 'Failed to load job recommendations.')
     }
+    setLoading(false)
+    setRefreshing(false)
   }, [])
 
-  useEffect(() => { fetchJobs() }, [fetchJobs])
+  useEffect(() => {
+    fetchJobs()
+    return () => clearTimeout(pollTimer.current)
+  }, [fetchJobs])
 
   // Filter option lists are derived from whatever's actually in the current
   // fetched set — locations/sources are freeform strings from 6 different

@@ -132,4 +132,4 @@ async def test_change_password_rejects_short_new(client):
         json={"current_password": PASSWORD, "new_password": "short"},
         headers=bearer(reg),
     )
-    assert r.status_code == 400
+    assert r.status_code == 422

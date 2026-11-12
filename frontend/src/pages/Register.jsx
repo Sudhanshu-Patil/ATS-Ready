@@ -5,6 +5,7 @@ import { Zap, Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import Spinner from '../components/Spinner'
+import GoogleButton from '../components/GoogleButton'
 import ThemeToggle from '../components/ThemeToggle'
 import toast from 'react-hot-toast'
 
@@ -116,6 +117,7 @@ export default function Register() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
+                  aria-label={showPass ? "Hide password" : "Show password"}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary"
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -135,6 +137,11 @@ export default function Register() {
               {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
+          <p className="mt-4 text-xs text-text-muted text-center">
+            By creating an account you agree to our <Link to="/terms" className="underline">Terms</Link> and{' '}
+            <Link to="/privacy" className="underline">Privacy policy</Link>.
+          </p>
+          <GoogleButton />
         </motion.div>
 
         <p className="text-center text-sm text-text-secondary mt-5">

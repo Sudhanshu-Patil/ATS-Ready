@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
@@ -148,7 +148,15 @@ function AccountSection({ user, login, accessToken }) {
   )
 }
 
+const PASSWORD_FIELDS = [
+  { key: 'current_password', label: 'Current password', autoComplete: 'current-password' },
+  { key: 'new_password',     label: 'New password',     autoComplete: 'new-password' },
+  { key: 'confirm',          label: 'Confirm new password', autoComplete: 'new-password' },
+]
+
 function SecuritySection() {
+  const { user, logout } = useAuthStore()
+  const navigate = useNavigate()
   const [form, setForm]   = useState({ current_password: '', new_password: '', confirm: '' })
   const [saving, setSaving] = useState(false)
 
@@ -158,34 +166,131 @@ function SecuritySection() {
     setSaving(true)
     try {
       await authAPI.changePassword(form.current_password, form.new_password)
-      toast.success('Password changed')
+      toast.success('Password changed. Other devices were signed out.')
       setForm({ current_password: '', new_password: '', confirm: '' })
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to change password')
     } finally { setSaving(false) }
   }
 
+  const signOutEverywhere = async () => {
+    try {
+      await authAPI.logoutAll()
+      logout()
+      navigate('/login')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not sign out everywhere')
+    }
+  }
+
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card space-y-4">
-      <h2 className="font-semibold text-text-primary">Change password</h2>
-      {['current_password', 'new_password', 'confirm'].map(key => (
-        <div key={key}>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5 capitalize">
-            {key.replace(/_/g, ' ')}
-          </label>
-          <input
-            type="password"
-            className="input"
-            value={form[key]}
-            onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-          />
-        </div>
-      ))}
-      <button onClick={save} disabled={saving} className="btn-primary text-sm flex items-center gap-2">
-        {saving && <Spinner size="sm" color="white" />}
-        {saving ? 'Changing…' : 'Change password'}
-      </button>
+    <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="space-y-6">
+      <form className="card space-y-4" onSubmit={e => { e.preventDefault(); save() }}>
+        <h2 className="font-semibold text-text-primary">Change password</h2>
+        {PASSWORD_FIELDS.map(({ key, label, autoComplete }) => (
+          <div key={key}>
+            <label htmlFor={`pw-${key}`} className="block text-sm font-medium text-text-secondary mb-1.5">
+              {label}
+            </label>
+            <input
+              id={`pw-${key}`}
+              type="password"
+              autoComplete={autoComplete}
+              className="input"
+              value={form[key]}
+              onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+            />
+          </div>
+        ))}
+        <button type="submit" disabled={saving} className="btn-primary text-sm flex items-center gap-2">
+          {saving && <Spinner size="sm" color="white" />}
+          {saving ? 'Changing…' : 'Change password'}
+        </button>
+      </form>
+
+      <div className="card space-y-3">
+        <h2 className="font-semibold text-text-primary">Sessions</h2>
+        <p className="text-sm text-text-secondary">Sign out on every device where you are logged in, including this one.</p>
+        <button onClick={signOutEverywhere} className="btn-ghost text-sm">Sign out everywhere</button>
+      </div>
+
+      <PrivacySection email={user?.email} />
     </motion.div>
+  )
+}
+
+function PrivacySection({ email }) {
+  const [confirming, setConfirming] = useState(false)
+  const [confirmEmail, setConfirmEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const download = async () => {
+    try {
+      const { data } = await authAPI.exportData()
+      const url = URL.createObjectURL(data)
+      const a = Object.assign(document.createElement('a'), { href: url, download: 'ats-ready-data.json' })
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error('Could not export your data')
+    }
+  }
+
+  const remove = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    try {
+      await authAPI.deleteAccount(confirmEmail, password)
+      // A full page load drops every in-memory store; a client-side logout() here races the
+      // protected route, which bounces to /login before the landing page can show.
+      window.location.assign('/')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not delete the account')
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card space-y-4">
+      <h2 className="font-semibold text-text-primary">Your data</h2>
+      <div>
+        <p className="text-sm text-text-secondary mb-2">Download everything we store about you as a JSON file.</p>
+        <button onClick={download} className="btn-ghost text-sm">Download my data</button>
+      </div>
+      <div className="border-t border-bg-border pt-4">
+        <h3 className="text-sm font-medium text-red-400 mb-1">Delete account</h3>
+        <p className="text-sm text-text-secondary mb-3">
+          Permanently deletes your profile, resumes, cover letters, interview prep and generated files. This cannot be undone.
+        </p>
+        {!confirming ? (
+          <button onClick={() => setConfirming(true)} className="btn-ghost text-sm text-red-400">Delete my account…</button>
+        ) : (
+          <form onSubmit={remove} className="space-y-3">
+            <div>
+              <label htmlFor="del-email" className="block text-sm font-medium text-text-secondary mb-1.5">
+                Type your email ({email}) to confirm
+              </label>
+              <input id="del-email" type="email" autoComplete="off" className="input" required
+                     value={confirmEmail} onChange={e => setConfirmEmail(e.target.value)} />
+            </div>
+            <div>
+              <label htmlFor="del-pw" className="block text-sm font-medium text-text-secondary mb-1.5">
+                Password (leave empty if you only use Google)
+              </label>
+              <input id="del-pw" type="password" autoComplete="current-password" className="input"
+                     value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" disabled={busy || !confirmEmail} className="btn-primary text-sm bg-red-600 hover:bg-red-500">
+                {busy ? 'Deleting…' : 'Delete everything'}
+              </button>
+              <button type="button" onClick={() => setConfirming(false)} className="btn-ghost text-sm">Cancel</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
   )
 }
 

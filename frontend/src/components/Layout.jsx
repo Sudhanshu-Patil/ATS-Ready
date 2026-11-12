@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { useOutlet, useLocation, NavLink, useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  LayoutDashboard, FileText, History, Database,
+  LayoutDashboard, FileText, Database,
   Settings, LogOut, Zap, ChevronRight,
-  BrainCircuit, Mail, Menu, X
+  BrainCircuit, Mail, Menu, X, BarChart3
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import ThemeToggle from './ThemeToggle'
+import QueuePanel from './QueuePanel'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -17,7 +19,6 @@ const NAV = [
   { to: '/generate',       icon: Zap,             label: 'Generate Resume' },
   { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
   { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
-  { to: '/history',        icon: History,         label: 'History' },
   { to: '/metabase',       icon: Database,        label: 'Metabase' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]
@@ -50,13 +51,31 @@ export default function Layout() {
   const location = useLocation()
   const element = useOutlet()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    authAPI.me().then((r) => setIsAdmin(!!r.data.is_admin)).catch(() => {})
+  }, [])
 
   // Drawer shouldn't survive a navigation on mobile — otherwise the next
   // page loads underneath it still open.
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
+  // Escape closes the mobile drawer.
+  useEffect(() => {
+    if (!mobileOpen) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setMobileOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
+  // Pick up work already running (reload, other tab) and forget it on logout.
+  useEffect(() => {
+    useActivityStore.getState().refresh()
+    return () => useActivityStore.getState().reset()
+  }, [])
+
   const handleLogout = async () => {
-    try { await authAPI.logout() } catch {}
+    try { await authAPI.logout() } catch { /* logout is best-effort */ }
     logout()
     navigate('/login')
     toast.success('Logged out')
@@ -70,9 +89,13 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-brand focus:text-white">
+        Skip to content
+      </a>
       {/* Backdrop — closes the drawer on outside tap, mobile only */}
       {mobileOpen && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -83,7 +106,7 @@ export default function Layout() {
           tradeoff that keeps .card solid elsewhere doesn't apply here).
           Below `lg` it's an off-canvas drawer (fixed + translate-x); at
           `lg` and up it's the original static column. */}
-      <aside className={clsx(
+      <aside aria-label="Sidebar" className={clsx(
         'w-60 flex-shrink-0 card-glass rounded-none border-y-0 border-l-0 p-0 flex flex-col',
         'fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out',
         'lg:static lg:translate-x-0',
@@ -122,6 +145,7 @@ export default function Layout() {
 
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Manage</p>
           {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
+          {isAdmin && <NavItem to="/admin" icon={BarChart3} label="Admin" onClick={() => setMobileOpen(false)} />}
         </nav>
 
         {/* User block */}
@@ -181,7 +205,7 @@ export default function Layout() {
 
         {/* Main content — route transitions scoped here via useOutlet(), so the
             sidebar above (and its nav pill) never remounts on navigation. */}
-        <main className="flex-1 overflow-hidden">
+        <main id="main" tabIndex={-1} className="flex-1 overflow-hidden outline-none">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
@@ -196,6 +220,7 @@ export default function Layout() {
           </AnimatePresence>
         </main>
       </div>
+      <QueuePanel />
     </div>
   )
 }

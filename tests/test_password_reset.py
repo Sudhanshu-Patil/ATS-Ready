@@ -30,7 +30,6 @@ async def test_forgot_password_identical_response_for_unknown_email(client):
 async def test_reset_password_full_flow_and_single_use(client):
     email = unique_email()
     reg = await register(client, email)
-    user_id = reg.json()["user_id"]
 
     # Mint the token the email link would carry (fingerprint of current hash)
     me = await client.get("/api/auth/me", headers=bearer(reg))
@@ -108,4 +107,4 @@ async def test_checkout_graceful_when_billing_disabled(client, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json()["billing_enabled"] is False
-    assert r.json()["subscription_id"] is None
+    assert r.json()["order_id"] is None

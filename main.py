@@ -4,12 +4,14 @@ main.py — Step 6 update
 Adds content_router for cover letters and interview prep.
 """
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
@@ -17,11 +19,14 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.rate_limit import limiter
 from app.config import settings
+from app.middleware import (BodyLimitMiddleware, RequestLogMiddleware, SecurityHeadersMiddleware,
+                            MAX_BODY_BYTES)
 from app.db.database import close_db, init_db
 from app.services.cache_service import cache_service
 
 structlog.configure(
     processors=[
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
@@ -45,6 +50,9 @@ if settings.SENTRY_DSN:
         integrations=[FastApiIntegration()],
         send_default_pii=False,
     )
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/plain", ".txt")
 
 DIST_DIR = Path(__file__).parent / "app" / "static" / "dist"
 
@@ -102,11 +110,13 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# Serve generated resumes whenever local storage is in use (no S3/R2
-# configured) — production without object storage still needs downloads
-# to work, not just development.
-if not settings.storage_use_s3:
-    app.mount("/outputs", StaticFiles(directory=str(settings.OUTPUT_DIR)), name="outputs")
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestLogMiddleware)      # outermost: logs every response, incl. 413/429
+
+# Generated resumes are NOT served statically: downloads go through the
+# authenticated /api/download/{job_id}, which checks ownership.
 
 # ── API Routes ────────────────────────────────────────────────────────────────
 from app.api.routes import router
@@ -115,6 +125,8 @@ from app.api.sse_routes import sse_router
 from app.api.job_routes import job_router
 from app.api.billing_routes import billing_router
 from app.api.content_routes import content_router
+from app.api.activity_routes import activity_router
+from app.api.admin_routes import admin_router
 
 app.include_router(auth_router,    prefix="/api")
 app.include_router(router,         prefix="/api")
@@ -122,6 +134,8 @@ app.include_router(sse_router,     prefix="/api")
 app.include_router(job_router,     prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
+app.include_router(activity_router, prefix="/api")
+app.include_router(admin_router,    prefix="/api")
 
 
 @app.get("/health", tags=["System"])
@@ -129,22 +143,52 @@ async def health():
     return {"status": "ok", "version": settings.APP_VERSION}
 
 
+@app.get("/health/ready", tags=["System"])
+async def ready():
+    """Readiness: the database must answer. Redis being down only degrades.
+    Reports status words only, never exception text."""
+    from sqlalchemy import text
+    from app.db.database import engine
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception:
+        logger.error("readiness: database check failed", exc_info=True)
+        return JSONResponse(status_code=503, content={"status": "unavailable", "database": "error"})
+    redis_ok = await cache_service.ping()
+    return {"status": "ok" if redis_ok else "degraded", "database": "ok",
+            "redis": "ok" if redis_ok else "unavailable"}
+
+
 # ── Serve React SPA ───────────────────────────────────────────────────────────
 if DIST_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+    class ImmutableAssets(StaticFiles):
+        """Vite fingerprints every file in /assets, so browsers may cache them forever."""
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if resp.status_code == 200:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", ImmutableAssets(directory=str(DIST_DIR / "assets")), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
+        # A mistyped API path must be a JSON 404, not the SPA's HTML with a 200.
+        if full_path.startswith(("api/", "outputs/")) or full_path in ("api", "outputs"):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
         # Real files in dist (favicon.svg, robots.txt, …) are served as-is;
         # anything else falls through to index.html for client-side routing.
         # resolve() + prefix check guards against ../ path traversal.
         if full_path:
             candidate = (DIST_DIR / full_path).resolve()
             if candidate.is_file() and str(candidate).startswith(str(DIST_DIR.resolve())):
-                return FileResponse(str(candidate))
+                # Unhashed public files (icons, robots, sitemap): revalidate daily.
+                return FileResponse(str(candidate), headers={"Cache-Control": "public, max-age=86400"})
         index = DIST_DIR / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            # index.html names the hashed bundles, so it must never be stale.
+            return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
         return {"error": "Frontend not built. Run: cd frontend && npm run build"}
 else:
     @app.get("/", include_in_schema=False)

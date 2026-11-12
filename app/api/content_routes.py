@@ -3,39 +3,35 @@ app/api/content_routes.py
 ──────────────────────────
 Cover letter and interview prep endpoints.
 
-Both follow the same pattern as resume generation:
-  POST → triggers AI generation → returns result + saves to DB
-  GET  → list history
-  GET /{id} → single item
+Same pattern as resume generation:
+  POST → creates a pending row, enqueues an arq job, returns 202 + id
+  GET  → list history / single item (status: pending|running|done|failed)
 
-Generation is synchronous (not ARQ) because:
-  - Cover letters: ~5-10s, acceptable to wait
-  - Interview prep: ~10-15s, acceptable to wait
-  - Both are user-initiated single actions, not bulk operations
-
-If latency becomes an issue, these can be moved to ARQ later.
+Generation runs in the arq worker (app/worker/tasks.py), so the user can leave
+the page or open other tabs; progress is visible via GET /api/activity.
 """
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.activity_routes import ensure_capacity, ensure_profile
+from app.api.rate_limit import per_user_limit
 from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access
 from app.db.database import get_db
-from app.db.models import CoverLetter, InterviewPrep, JobApplication, User
-from app.services.metabase_service import metabase_service
-from app.services.cache_service import cache_service
-from app.agents.ai_agent import ai_agent
-from app.models.schemas import ParsedJD
+from app.db.models import CoverLetter, InterviewPrep, User
+from app.services.queue import enqueue
 
 content_router = APIRouter()
 logger = logging.getLogger(__name__)
+
+TONES = ("professional", "conversational", "enthusiastic")
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────
@@ -68,133 +64,57 @@ class InterviewPrepRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _get_profile_and_jd(
-    jd_text: str,
-    user: User,
-    db: AsyncSession,
-    job_app_id: Optional[str] = None,
-):
-    """
-    Shared setup: fetch candidate profile + parse JD.
-    If job_app_id is provided, reuse already-parsed JD data.
-    """
-    # Get candidate profile (with cache)
-    cached = await cache_service.get_profile(str(user.id))
-    if cached:
-        profile = cached
-    else:
-        profile = await metabase_service.get_full_profile_async(db, user.id)
-        await cache_service.set_profile(str(user.id), profile)
+def _check_jd(jd_text: str) -> None:
+    if len(jd_text.strip()) < 100:
+        raise HTTPException(status_code=422, detail="Job description too short (min 100 chars)")
 
-    if not profile.get("personal"):
-        raise HTTPException(
-            status_code=400,
-            detail="Profile incomplete — fill in Personal Info in Metabase first."
-        )
 
-    # Try to reuse parsed JD from existing job application
-    parsed_jd = None
-    job_app = None
-
-    if job_app_id:
-        try:
-            result = await db.execute(
-                select(JobApplication).where(
-                    JobApplication.id == uuid.UUID(job_app_id),
-                    JobApplication.user_id == user.id,
-                )
-            )
-            job_app = result.scalar_one_or_none()
-            if job_app and job_app.jd_parsed:
-                parsed_jd = ParsedJD(**job_app.jd_parsed)
-                logger.info("Reusing parsed JD from job_app %s", job_app_id)
-        except Exception:
-            pass
-
-    # Parse JD fresh if not reused
-    if not parsed_jd:
-        cached_parse = await cache_service.get_parsed_jd(jd_text)
-        if cached_parse:
-            parsed_jd = ParsedJD(**cached_parse)
-        else:
-            parsed_jd = ai_agent.parse_jd(jd_text)
-            await cache_service.set_parsed_jd(jd_text, parsed_jd.model_dump())
-
-    # Get tailored resume content for context
-    # (Either from existing job_app or generate fresh)
-    tailored = {}
-    if job_app and job_app.ats_breakdown:
-        # Use the stored tailored content if available
-        tailored = job_app.jd_parsed or {}
-    else:
-        tailored = ai_agent.tailor_resume(parsed_jd, profile, None)
-
-    return profile, parsed_jd, tailored, job_app
+async def _enqueue_or_fail(db: AsyncSession, row, function: str, **kwargs) -> None:
+    """Enqueue; if the queue is unreachable, don't leave a row 'pending' forever."""
+    try:
+        await enqueue(function, **kwargs)
+    except Exception:
+        logger.exception("Could not enqueue %s", function)
+        row.status, row.error = "failed", "The job queue is unavailable. Please try again."
+        await db.commit()
+        raise HTTPException(status_code=503, detail="The job queue is unavailable. Please try again.")
 
 
 # ── Cover Letter endpoints ────────────────────────────────────────────────────
 
-@content_router.post("/cover-letter")
+@content_router.post("/cover-letter", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
 async def generate_cover_letter(
     request: CoverLetterRequest,
     db: AsyncSession = Depends(get_db),
-    # Pro/Team gate — was silently unenforced (the dependency existed but was
-    # never wired here), letting free users generate cover letters.
-    # No-op while BILLING_ENABLED=false.
+    # Pro/Team gate. No-op while BILLING_ENABLED=false.
     user: User = Depends(check_cover_letter_access),
 ):
     """
-    Generate a personalized cover letter.
-
-    Provide the job description text. Optionally link to an existing
-    resume job (job_app_id) to reuse the already-parsed JD.
-
-    Takes ~5-10 seconds. Returns the full cover letter immediately.
+    Queue a personalized cover letter. Returns 202 immediately with an id;
+    poll GET /api/activity (or GET /api/cover-letters/{id}) for the result.
     """
-    if len(request.jd_text.strip()) < 100:
-        raise HTTPException(status_code=422, detail="Job description too short (min 100 chars)")
-
-    if request.tone not in ("professional", "conversational", "enthusiastic"):
+    _check_jd(request.jd_text)
+    if request.tone not in TONES:
         raise HTTPException(status_code=422, detail="tone must be professional, conversational, or enthusiastic")
+    await ensure_profile(db, user.id)
+    await ensure_capacity(db, user.id)
 
-    logger.info("Generating cover letter for user %s", user.id)
-
-    profile, parsed_jd, tailored, job_app = await _get_profile_and_jd(
-        request.jd_text, user, db, request.job_app_id
+    row = CoverLetter(
+        user_id=user.id, jd_text=request.jd_text[:3000], body="",
+        tone=request.tone, status="pending", created_at=datetime.utcnow(),
     )
-
-    # Generate cover letter
-    result = ai_agent.generate_cover_letter(parsed_jd, profile, tailored, request.tone)
-
-    # Save to DB
-    cover_letter = CoverLetter(
-        user_id    = user.id,
-        job_app_id = job_app.id if job_app else None,
-        job_title  = parsed_jd.job_title,
-        company    = parsed_jd.company,
-        jd_text    = request.jd_text[:3000],
-        subject    = result.get("subject"),
-        body       = result.get("body", ""),
-        word_count = result.get("word_count"),
-        highlights = result.get("highlights", []),
-        tone       = request.tone,
-        created_at = datetime.utcnow(),
-    )
-    db.add(cover_letter)
+    db.add(row)
     await db.commit()
-    await db.refresh(cover_letter)
+    await db.refresh(row)
 
-    return {
-        "id":         str(cover_letter.id),
-        "job_title":  parsed_jd.job_title,
-        "company":    parsed_jd.company,
-        "subject":    result.get("subject"),
-        "body":       result.get("body"),
-        "word_count": result.get("word_count"),
-        "highlights": result.get("highlights", []),
-        "tone":       request.tone,
-        "created_at": str(cover_letter.created_at),
-    }
+    await _enqueue_or_fail(
+        db, row, "generate_cover_letter_task",
+        letter_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
+        job_app_id=request.job_app_id, tone=request.tone,
+    )
+    logger.info("Queued cover letter %s for user %s", row.id, user.id)
+    return {"id": str(row.id), "status": "pending"}
 
 
 @content_router.get("/cover-letters")
@@ -208,7 +128,6 @@ async def list_cover_letters(
         .where(CoverLetter.user_id == user.id)
         .order_by(CoverLetter.created_at.desc())
     )
-    letters = result.scalars().all()
     return [
         {
             "id":         str(cl.id),
@@ -217,10 +136,25 @@ async def list_cover_letters(
             "subject":    cl.subject,
             "word_count": cl.word_count,
             "tone":       cl.tone,
+            "status":     cl.status,
+            "error":      cl.error,
             "created_at": str(cl.created_at),
         }
-        for cl in letters
+        for cl in result.scalars().all()
     ]
+
+
+async def _own_letter(db: AsyncSession, letter_id: str, user: User) -> CoverLetter:
+    try:
+        lid = uuid.UUID(letter_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Cover letter not found")
+    cl = (await db.execute(
+        select(CoverLetter).where(CoverLetter.id == lid, CoverLetter.user_id == user.id)
+    )).scalar_one_or_none()
+    if not cl:
+        raise HTTPException(status_code=404, detail="Cover letter not found")
+    return cl
 
 
 @content_router.get("/cover-letters/{letter_id}")
@@ -230,15 +164,7 @@ async def get_cover_letter(
     user: User = Depends(get_current_user),
 ):
     """Get full cover letter content."""
-    result = await db.execute(
-        select(CoverLetter).where(
-            CoverLetter.id == uuid.UUID(letter_id),
-            CoverLetter.user_id == user.id,
-        )
-    )
-    cl = result.scalar_one_or_none()
-    if not cl:
-        raise HTTPException(status_code=404, detail="Cover letter not found")
+    cl = await _own_letter(db, letter_id, user)
     return {
         "id":         str(cl.id),
         "job_title":  cl.job_title,
@@ -248,8 +174,29 @@ async def get_cover_letter(
         "word_count": cl.word_count,
         "highlights": cl.highlights,
         "tone":       cl.tone,
+        "status":     cl.status,
+        "error":      cl.error,
         "created_at": str(cl.created_at),
     }
+
+
+@content_router.post("/cover-letters/{letter_id}/retry", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def retry_cover_letter(
+    letter_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """Re-run a failed cover letter with the job description saved on it."""
+    cl = await _own_letter(db, letter_id, user)
+    if cl.status != "failed" or not cl.jd_text:
+        raise HTTPException(status_code=409, detail="Only failed cover letters with a saved job description can be retried")
+    await ensure_capacity(db, user.id)
+    cl.status, cl.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
+                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional")
+    return {"id": str(cl.id), "status": "pending"}
 
 
 @content_router.delete("/cover-letters/{letter_id}")
@@ -258,74 +205,42 @@ async def delete_cover_letter(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(CoverLetter).where(
-            CoverLetter.id == uuid.UUID(letter_id),
-            CoverLetter.user_id == user.id,
-        )
-    )
-    cl = result.scalar_one_or_none()
-    if not cl:
-        raise HTTPException(status_code=404, detail="Cover letter not found")
-    await db.delete(cl)
+    await db.delete(await _own_letter(db, letter_id, user))
     await db.commit()
     return {"message": "Deleted"}
 
 
 # ── Interview Prep endpoints ──────────────────────────────────────────────────
 
-@content_router.post("/interview-prep")
+@content_router.post("/interview-prep", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
 async def generate_interview_prep(
     request: InterviewPrepRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """
-    Generate tailored interview questions and model answers.
-
-    Returns 10 questions across behavioral, technical, situational,
-    and cultural categories — all using the candidate's real experience.
-
-    Takes ~10-15 seconds. Returns the full prep kit immediately.
+    Queue tailored interview questions and model answers (10 questions across
+    behavioral, technical, situational and cultural categories, using the
+    candidate's real experience). Returns 202 immediately with an id.
     """
-    if len(request.jd_text.strip()) < 100:
-        raise HTTPException(status_code=422, detail="Job description too short (min 100 chars)")
+    _check_jd(request.jd_text)
+    await ensure_profile(db, user.id)
+    await ensure_capacity(db, user.id)
 
-    logger.info("Generating interview prep for user %s", user.id)
-
-    profile, parsed_jd, tailored, job_app = await _get_profile_and_jd(
-        request.jd_text, user, db, request.job_app_id
-    )
-
-    # Generate interview prep
-    result = ai_agent.generate_interview_prep(parsed_jd, profile, tailored)
-
-    # Save to DB
-    prep = InterviewPrep(
-        user_id            = user.id,
-        job_app_id         = job_app.id if job_app else None,
-        job_title          = parsed_jd.job_title,
-        company            = parsed_jd.company,
-        questions          = result.get("questions", []),
-        quick_tips         = result.get("quick_tips", []),
-        red_flags_to_avoid = result.get("red_flags_to_avoid", []),
-        questions_to_ask   = result.get("questions_to_ask", []),
-        created_at         = datetime.utcnow(),
-    )
-    db.add(prep)
+    row = InterviewPrep(user_id=user.id, jd_text=request.jd_text[:3000], status="pending",
+                        created_at=datetime.utcnow())
+    db.add(row)
     await db.commit()
-    await db.refresh(prep)
+    await db.refresh(row)
 
-    return {
-        "id":                  str(prep.id),
-        "job_title":           parsed_jd.job_title,
-        "company":             parsed_jd.company,
-        "questions":           result.get("questions", []),
-        "quick_tips":          result.get("quick_tips", []),
-        "red_flags_to_avoid":  result.get("red_flags_to_avoid", []),
-        "questions_to_ask":    result.get("questions_to_ask", []),
-        "created_at":          str(prep.created_at),
-    }
+    await _enqueue_or_fail(
+        db, row, "generate_interview_prep_task",
+        prep_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
+        job_app_id=request.job_app_id,
+    )
+    logger.info("Queued interview prep %s for user %s", row.id, user.id)
+    return {"id": str(row.id), "status": "pending"}
 
 
 @content_router.get("/interview-preps")
@@ -339,17 +254,31 @@ async def list_interview_preps(
         .where(InterviewPrep.user_id == user.id)
         .order_by(InterviewPrep.created_at.desc())
     )
-    preps = result.scalars().all()
     return [
         {
-            "id":            str(p.id),
-            "job_title":     p.job_title,
-            "company":       p.company,
+            "id":             str(p.id),
+            "job_title":      p.job_title,
+            "company":        p.company,
             "question_count": len(p.questions or []),
-            "created_at":    str(p.created_at),
+            "status":         p.status,
+            "error":          p.error,
+            "created_at":     str(p.created_at),
         }
-        for p in preps
+        for p in result.scalars().all()
     ]
+
+
+async def _own_prep(db: AsyncSession, prep_id: str, user: User) -> InterviewPrep:
+    try:
+        pid = uuid.UUID(prep_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Interview prep not found")
+    prep = (await db.execute(
+        select(InterviewPrep).where(InterviewPrep.id == pid, InterviewPrep.user_id == user.id)
+    )).scalar_one_or_none()
+    if not prep:
+        raise HTTPException(status_code=404, detail="Interview prep not found")
+    return prep
 
 
 @content_router.get("/interview-preps/{prep_id}")
@@ -359,15 +288,7 @@ async def get_interview_prep(
     user: User = Depends(get_current_user),
 ):
     """Get full interview prep content."""
-    result = await db.execute(
-        select(InterviewPrep).where(
-            InterviewPrep.id == uuid.UUID(prep_id),
-            InterviewPrep.user_id == user.id,
-        )
-    )
-    prep = result.scalar_one_or_none()
-    if not prep:
-        raise HTTPException(status_code=404, detail="Interview prep not found")
+    prep = await _own_prep(db, prep_id, user)
     return {
         "id":                  str(prep.id),
         "job_title":           prep.job_title,
@@ -376,8 +297,29 @@ async def get_interview_prep(
         "quick_tips":          prep.quick_tips,
         "red_flags_to_avoid":  prep.red_flags_to_avoid,
         "questions_to_ask":    prep.questions_to_ask,
+        "status":              prep.status,
+        "error":               prep.error,
         "created_at":          str(prep.created_at),
     }
+
+
+@content_router.post("/interview-preps/{prep_id}/retry", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def retry_interview_prep(
+    prep_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run a failed interview prep with the job description saved on it."""
+    prep = await _own_prep(db, prep_id, user)
+    if prep.status != "failed" or not prep.jd_text:
+        raise HTTPException(status_code=409, detail="Only failed sessions with a saved job description can be retried")
+    await ensure_capacity(db, user.id)
+    prep.status, prep.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, prep, "generate_interview_prep_task", prep_id=str(prep.id),
+                           user_id=str(user.id), jd_text=prep.jd_text, job_app_id=None)
+    return {"id": str(prep.id), "status": "pending"}
 
 
 @content_router.delete("/interview-preps/{prep_id}")
@@ -386,15 +328,6 @@ async def delete_interview_prep(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    result = await db.execute(
-        select(InterviewPrep).where(
-            InterviewPrep.id == uuid.UUID(prep_id),
-            InterviewPrep.user_id == user.id,
-        )
-    )
-    prep = result.scalar_one_or_none()
-    if not prep:
-        raise HTTPException(status_code=404, detail="Not found")
-    await db.delete(prep)
+    await db.delete(await _own_prep(db, prep_id, user))
     await db.commit()
     return {"message": "Deleted"}

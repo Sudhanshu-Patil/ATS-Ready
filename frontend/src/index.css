@@ -12,7 +12,7 @@
     --color-bg-border:      38 38 47;
     --color-text-primary:   243 241 236;
     --color-text-secondary: 156 160 172;
-    --color-text-muted:     86 90 102;
+    --color-text-muted:     140 145 160;
     /* score shifts hue between themes (vivid mint reads fine on dark, but
        fails contrast as text on a light bg) — muted variant carries its own
        baked-in alpha since it's never used with a Tailwind opacity suffix. */
@@ -32,7 +32,7 @@
     --color-bg-border:      228 225 217;
     --color-text-primary:   28 25 23;
     --color-text-secondary: 87 83 78;
-    --color-text-muted:     138 130 122;
+    --color-text-muted:     112 104 96;
     --color-score:          5 150 105;
     --color-score-muted:    rgba(5, 150, 105, 0.10);
 
@@ -45,7 +45,7 @@
   body {
     background-color: rgb(var(--color-bg));
     color: rgb(var(--color-text-primary));
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
   }
@@ -56,10 +56,14 @@
   ::-webkit-scrollbar-thumb:hover { background: rgb(255 107 53 / 40%); }
 }
 
+/* White text on the brand ember (#FF6B35) is only 2.8:1; this deeper ember passes AA (5.2:1).
+   Brand text on the light theme gets the same treatment. */
+:root[data-theme='light'] .text-brand { color: #B93A0C; }
+
 @layer components {
   /* ── Buttons ─────────────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-brand hover:bg-brand-hover text-white font-semibold px-4 py-2 rounded-lg
+    @apply bg-[#C2410C] hover:bg-[#B93A0C] text-white font-semibold px-4 py-2 rounded-lg
            transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
            shadow-[0_0_0_0_rgba(255,107,53,0)] hover:shadow-[0_0_24px_-4px_rgba(255,107,53,0.5)];
   }

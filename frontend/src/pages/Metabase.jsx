@@ -9,6 +9,7 @@ import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from '../components/ConfirmDialog'
 
 const TABS = [
   { id: 'personal',   label: 'Personal',   icon: User },
@@ -402,7 +403,7 @@ function ExperienceTab() {
   }
 
   const del = async (id) => {
-    if (!confirm('Delete this experience?')) return
+    if (!(await confirmDialog('Delete this experience?'))) return
     try { await metabaseAPI.deleteExperience(id); toast.success('Deleted'); load() }
     catch { toast.error('Delete failed') }
   }
@@ -551,7 +552,7 @@ function ProjectsTab() {
   }
 
   const del = async (id) => {
-    if (!confirm('Delete this project?')) return
+    if (!(await confirmDialog('Delete this project?'))) return
     try { await metabaseAPI.deleteProject(id); toast.success('Deleted'); load() }
     catch { toast.error('Delete failed') }
   }

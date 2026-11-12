@@ -174,7 +174,7 @@ class CacheService:
         key = f"profile:{user_id}"
         result = await self.get(key)
         if result:
-            logger.debug("Cache HIT — profile user_id=%d", user_id)
+            logger.debug("Cache HIT — profile user_id=%s", user_id)
         return result
 
     async def set_profile(self, user_id: int, profile: dict) -> None:
@@ -187,7 +187,7 @@ class CacheService:
         projects, personal info).  Forces a fresh DB fetch on next generation.
         """
         await self.delete(f"profile:{user_id}")
-        logger.debug("Cache INVALIDATED — profile user_id=%d", user_id)
+        logger.debug("Cache INVALIDATED — profile user_id=%s", user_id)
 
     # ── Health check ──────────────────────────────────────────────────────────
 

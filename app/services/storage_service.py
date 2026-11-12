@@ -29,7 +29,6 @@ AWS S3 SETUP:
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional
 
 import boto3
 from botocore.config import Config

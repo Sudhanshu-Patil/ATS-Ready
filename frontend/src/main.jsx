@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { MotionConfig } from 'framer-motion'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
+import '@fontsource-variable/plus-jakarta-sans'
+import '@fontsource-variable/bricolage-grotesque'
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/500.css'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,7 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         that covers every motion.* component in the app. */}
     <MotionConfig reducedMotion="user">
       <BrowserRouter>
-        <App />
+        <ErrorBoundary><App /></ErrorBoundary>
         <Toaster
           position="top-right"
           toastOptions={{
@@ -21,7 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               background: '#13131A',
               color: '#F3F1EC',
               border: '1px solid #26262F',
-              fontFamily: 'Plus Jakarta Sans, sans-serif',
+              fontFamily: 'Plus Jakarta Sans Variable, sans-serif',
             },
             success: { iconTheme: { primary: '#34D399', secondary: '#0A0A0F' } },
             error:   { iconTheme: { primary: '#FF6B35', secondary: '#0A0A0F' } },

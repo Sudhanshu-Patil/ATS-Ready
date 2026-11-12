@@ -7,8 +7,10 @@ import Tabs from '../components/Tabs'
 import EmptyState from '../components/EmptyState'
 import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from '../components/ConfirmDialog'
 
 const TONES = [
   { id: 'professional',   label: 'Professional',   desc: 'Formal, polished, traditional' },
@@ -31,20 +33,35 @@ export default function CoverLetter() {
   const [tab, setTab]         = useState('generate')
   const [jdText, setJdText]   = useState('')
   const [tone, setTone]       = useState('professional')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  // Generation runs in the background; the activity store tells us when it ends.
+  const lastId = useActivityStore(s => s.last.cover_letter)
+  const finished = useActivityStore(s => (lastId ? s.finished[lastId] : null))
+  const recentKey = useActivityStore(s => s.recent.map(i => i.id + i.status).join())
+  const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
+  const [historyState, setHistoryState] = useState('loading')   // loading | ready | error
   const [expanded, setExpanded] = useState(null)
 
   useEffect(() => {
     if (tab === 'history') loadHistory()
-  }, [tab])
+  }, [tab, recentKey])
+
+  useEffect(() => {
+    if (!lastId || !finished) return
+    if (finished.status === 'done') {
+      api.get(`/cover-letters/${lastId}`).then(r => setResult(r.data)).catch(() => {})
+    }
+    useActivityStore.getState().clearLast('cover_letter')
+  }, [finished])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHistory = async () => {
     try {
       const res = await api.get('/cover-letters')
       setHistory(res.data)
-    } catch { toast.error('Failed to load history') }
+      setHistoryState('ready')
+    } catch { setHistoryState('error'); toast.error('Failed to load history') }
   }
 
   const generate = async () => {
@@ -52,16 +69,16 @@ export default function CoverLetter() {
       toast.error('Job description too short (min 100 characters)')
       return
     }
-    setLoading(true)
+    setSubmitting(true)
     setResult(null)
     try {
       const res = await api.post('/cover-letter', { jd_text: jdText, tone })
-      setResult(res.data)
-      toast.success('Cover letter generated!')
+      useActivityStore.getState().track('cover_letter', res.data.id)
+      toast('Writing your cover letter — you can keep working while it runs.')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Generation failed')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
@@ -70,8 +87,19 @@ export default function CoverLetter() {
     toast.success('Copied to clipboard')
   }
 
+  const retryItem = async (id) => {
+    try {
+      await api.post(`/cover-letters/${id}/retry`)
+      useActivityStore.getState().track('cover_letter', id)
+      setHistory(h => h.map(x => (x.id === id ? { ...x, status: 'pending', error: null } : x)))
+      toast('Trying again. You can keep working while it runs.')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not retry')
+    }
+  }
+
   const deleteItem = async (id) => {
-    if (!confirm('Delete this cover letter?')) return
+    if (!(await confirmDialog('Delete this cover letter?'))) return
     try {
       await api.delete(`/cover-letters/${id}`)
       setHistory(h => h.filter(x => x.id !== id))
@@ -105,7 +133,7 @@ export default function CoverLetter() {
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
-              disabled={loading}
+              disabled={submitting}
             />
 
             {/* Tone selector */}
@@ -126,10 +154,10 @@ export default function CoverLetter() {
               ))}
             </div>
 
-            <button onClick={generate} disabled={loading}
+            <button onClick={generate} disabled={submitting}
               className="btn-primary w-full flex items-center justify-center gap-2 py-3">
               {loading ? <Spinner size="sm" color="white" /> : <Sparkles size={16} />}
-              {loading ? 'Writing your cover letter…' : 'Generate Cover Letter'}
+              {submitting ? 'Starting…' : loading ? 'Writing your cover letter…' : 'Generate Cover Letter'}
             </button>
           </motion.div>
 
@@ -192,7 +220,16 @@ export default function CoverLetter() {
 
       {tab === 'history' && (
         <div className="space-y-3">
-          {history.length === 0 ? (
+          {historyState === 'loading' ? (
+            <div className="space-y-3" aria-busy="true" aria-label="Loading history">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            </div>
+          ) : historyState === 'error' ? (
+            <div className="card text-center space-y-3">
+              <p className="text-sm text-text-secondary">We couldn't load your history.</p>
+              <button className="btn-ghost text-sm" onClick={() => { setHistoryState('loading'); loadHistory() }}>Try again</button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="card">
               <EmptyState icon={FileText} title="No cover letters yet — generate one to get started" />
             </div>
@@ -202,17 +239,25 @@ export default function CoverLetter() {
                 <motion.div key={cl.id} variants={fadeInUp} className="card">
                   <div className="flex items-center flex-wrap justify-between gap-3">
                     <div>
-                      <p className="font-medium text-text-primary">{cl.job_title || 'Untitled'}</p>
-                      <p className="text-sm text-text-secondary">{cl.company} · {cl.word_count} words · {cl.tone}</p>
+                      <p className="font-medium text-text-primary">
+                        {cl.status === 'failed' ? 'Failed' : cl.status === 'done' ? (cl.job_title || 'Untitled') : 'Generating…'}
+                      </p>
+                      <p className="text-sm text-text-secondary">
+                        {cl.status === 'failed' ? cl.error : cl.status === 'done' ? `${cl.company || ''} · ${cl.word_count} words · ${cl.tone}` : 'Queued — you can leave this page'}
+                      </p>
                       <p className="text-xs text-text-muted mt-1">{formatDate(cl.created_at)}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <button onClick={() => setExpanded(expanded === cl.id ? null : cl.id)}
+                        disabled={cl.status !== 'done'}
                         className="btn-ghost text-sm flex items-center gap-1 px-3 py-1.5">
                         {expanded === cl.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         {expanded === cl.id ? 'Hide' : 'View'}
                       </button>
-                      <button onClick={() => deleteItem(cl.id)}
+                      {cl.status === 'failed' && (
+                        <button onClick={() => retryItem(cl.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
+                      )}
+                      <button onClick={() => deleteItem(cl.id)} aria-label="Delete cover letter"
                         className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
                         <Trash2 size={15} />
                       </button>

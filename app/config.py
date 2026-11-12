@@ -5,7 +5,6 @@ Central settings loaded from environment variables / .env file.
 All sub-systems import `settings` from here — never read os.environ directly.
 """
 from pathlib import Path
-from typing import Optional
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,14 +34,37 @@ class Settings(BaseSettings):
     # so "low" trades reasoning depth for speed/cost. Empty string omits the
     # param entirely (needed for providers/models that don't support it).
     LLM_REASONING_EFFORT: str = "low"
+    # Returns canned JSON instead of calling the provider. For tests, Playwright
+    # and CI only: no Groq quota is spent and runs are deterministic.
+    # Tried in order when the main model is rate-limited or down (Groq limits
+    # are per model). Comma-separated; empty disables fallback.
+    LLM_FALLBACK_MODELS: str = "openai/gpt-oss-20b,qwen/qwen3.8-27b"
+    LLM_TPM_BUDGET: int = 7500      # tokens/min per model; Groq free tier is 8K. 0 = off
+    LLM_TIMEOUT: float = 60.0       # seconds per request
+    LLM_ROUNDS: int = 3             # passes over all models before giving up
+    LLM_PROFILE_MAX_CHARS: int = 9000   # compact_profile budget (~2.3K tokens)
+    LLM_FAKE: bool = False
+    # Per-IP limits on auth endpoints. Only the e2e suite turns this off (it
+    # registers many accounts from one IP); production refuses to start without it.
+    RATE_LIMIT_ENABLED: bool = True
+
+    # ── Google sign-in (OAuth client id only; the ID-token flow needs no secret) ──
+    GOOGLE_CLIENT_ID: str = ""
+    # Global cap on Apify actor runs per UTC day (protects the free-plan credit).
+    APIFY_DAILY_RUN_CAP: int = 30
+    # LLM spend caps, in tokens per UTC day (0 = off). Groq's free tier allows a
+    # few hundred thousand tokens a day per model, so these leave headroom.
+    LLM_DAILY_TOKEN_CAP: int = 600_000
+    LLM_USER_DAILY_TOKEN_CAP: int = 120_000
+    ADMIN_EMAILS: str = ""          # comma-separated; these accounts can open /admin
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)
-    DATABASE_URL: str = f"postgresql+asyncpg://atsready:secret@127.0.0.1:5432/atsready"
+    DATABASE_URL: str = "postgresql+asyncpg://atsready:secret@127.0.0.1:5432/atsready"
 
     # Sync URL used ONLY by Alembic CLI (psycopg2 driver).
     # Alembic cannot use asyncpg; this is kept separate intentionally.
-    SYNC_DATABASE_URL: str = f"postgresql+psycopg2://atsready:secret@127.0.0.1:5432/atsready"
+    SYNC_DATABASE_URL: str = "postgresql+psycopg2://atsready:secret@127.0.0.1:5432/atsready"
 
     # SQLAlchemy async pool settings
     DB_POOL_SIZE: int = 10
@@ -108,6 +130,7 @@ class Settings(BaseSettings):
 
     # ── Scraper ───────────────────────────────────────────────────────────────
     SCRAPE_TIMEOUT: int = 15
+    SCRAPE_MAX_BYTES: int = 2_000_000     # stop reading a page after this much
     RESPECT_ROBOTS_TXT: bool = True
 
     # ── Auth (Step 2 — defined here so routes can import settings cleanly) ────
@@ -137,6 +160,7 @@ class Settings(BaseSettings):
 
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
+    SENTRY_FRONTEND_DSN: str = ""      # browser DSN (public by design); served via /auth/config
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
     
     # ── Billing ───────────────────────────────────────────────────────────────
@@ -179,6 +203,10 @@ class Settings(BaseSettings):
                     "ENVIRONMENT=production requires a strong JWT_SECRET "
                     "(>=32 chars). Generate one: openssl rand -hex 32"
                 )
+            if not self.RATE_LIMIT_ENABLED:
+                raise ValueError("ENVIRONMENT=production requires RATE_LIMIT_ENABLED=true.")
+            if self.LLM_FAKE:
+                raise ValueError("ENVIRONMENT=production must not run with LLM_FAKE=true.")
             if ":secret@" in self.DATABASE_URL or ":secret@" in self.REDIS_URL:
                 raise ValueError(
                     "ENVIRONMENT=production requires non-default DB/Redis "

@@ -33,8 +33,12 @@ api.interceptors.response.use(
             return res.data.access_token
           })
           .catch(() => {
-            useAuthStore.getState().logout()
-            window.location.href = '/login'
+            // A stray request from a page that was just left (logout, account deletion)
+            // must not yank the user to /login: only redirect if they were signed in.
+            if (useAuthStore.getState().accessToken) {
+              useAuthStore.getState().logout()
+              window.location.href = '/login'
+            }
             return null
           })
           .finally(() => { refreshPromise = null })
@@ -45,10 +49,16 @@ api.interceptors.response.use(
         return api(original)
       }
     }
-    // FastAPI validation errors (422) return `detail` as a list of objects;
-    // pages pass it straight to toast(), and React crashes on non-strings.
-    const d = error.response?.data?.detail
-    if (Array.isArray(d)) error.response.data.detail = d.map((e) => e.msg).join('; ')
+    // `detail` is not always a string: FastAPI validation errors (422) send a
+    // list of objects, and plan-limit errors (402) send {error, message, ...}.
+    // Pages pass it straight to toast(), and React crashes on non-strings, so
+    // flatten here. The original object stays on `data.detail_raw`.
+    const data = error.response?.data
+    const d = data?.detail
+    if (d && typeof d !== 'string') {
+      data.detail_raw = d
+      data.detail = Array.isArray(d) ? d.map((e) => e.msg).join('; ') : d.message || 'Request failed'
+    }
     return Promise.reject(error)
   }
 )
@@ -62,7 +72,13 @@ export const authAPI = {
     }),
   register: (email, password, fullName) =>
     api.post('/auth/register', { email, password, full_name: fullName }),
+  config:   () => api.get('/auth/config'),
+  google:   (credential) => api.post('/auth/google', { credential }),
   logout:   () => api.post('/auth/logout'),
+  logoutAll: () => api.post('/auth/logout-all'),
+  exportData: () => api.get('/auth/me/export', { responseType: 'blob' }),
+  deleteAccount: (confirmEmail, password) =>
+    api.delete('/auth/me', { data: { confirm_email: confirmEmail, password } }),
   me:       () => api.get('/auth/me'),
   refresh:  () => api.post('/auth/refresh'),
   updateMe: (data) => api.patch('/auth/me', data),

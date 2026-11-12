@@ -1,0 +1,35 @@
+name: Smoke test (live site)
+
+# Run after a deploy (or by hand) to confirm the live app answers. Set the repo variable
+# SITE_URL (e.g. https://ats-ready.onrender.com) to enable the schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Site URL to check
+        required: false
+  schedule:
+    - cron: "*/30 * * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check endpoints
+        env:
+          URL: ${{ github.event.inputs.url || vars.SITE_URL }}
+        run: |
+          if [ -z "$URL" ]; then echo "::notice::SITE_URL not set; nothing to check."; exit 0; fi
+          fail=0
+          check() { code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 90 "$URL$1"); \
+                    echo "$1 -> $code"; [ "$code" = "$2" ] || fail=1; }
+          check /health 200
+          check /health/ready 200
+          check / 200
+          check /robots.txt 200
+          check /sitemap.xml 200
+          check /api/billing/plans 200
+          check /api/auth/me 401          # protected routes must refuse anonymous callers
+          check /outputs/x.docx 404       # generated files are never served statically
+          curl -sI "$URL/" | grep -i "content-security-policy" >/dev/null || { echo "missing CSP"; fail=1; }
+          exit $fail

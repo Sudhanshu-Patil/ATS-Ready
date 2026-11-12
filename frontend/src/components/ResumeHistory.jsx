@@ -4,13 +4,13 @@ import { Download, RefreshCw, Trash2, CheckCircle, XCircle, Clock } from 'lucide
 import { useJobsStore } from '../store/jobs'
 import { jobsAPI } from '../api/client'
 import { fadeInUp, staggerContainer } from '../lib/motion'
-import { scoreColorClass } from '../components/ScoreRing'
-import StatusBadge from '../components/StatusBadge'
-import EmptyState from '../components/EmptyState'
-import { SkeletonRow } from '../components/Skeleton'
-import Tabs from '../components/Tabs'
+import { scoreColorClass } from './ScoreRing'
+import StatusBadge from './StatusBadge'
+import EmptyState from './EmptyState'
+import { SkeletonRow } from './Skeleton'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from './ConfirmDialog'
 
 const STATUS_CONFIG = {
   done:    { icon: CheckCircle, color: 'text-score' },
@@ -19,7 +19,7 @@ const STATUS_CONFIG = {
   pending: { icon: Clock,       color: 'text-text-muted' },
 }
 
-const FILTER_TABS = [
+const FILTERS = [
   { id: '',        label: 'All' },
   { id: 'done',    label: 'Done' },
   { id: 'failed',  label: 'Failed' },
@@ -27,18 +27,18 @@ const FILTER_TABS = [
   { id: 'pending', label: 'Pending' },
 ]
 
-export default function History() {
+// Resume history list, embedded in the Generator page's "History" tab
+// (same pattern as Cover Letter / Interview Prep).
+export default function ResumeHistory() {
   const { jobs, total, loading, initialized, fetchAll, removeJob, refresh } = useJobsStore()
   const [filter, setFilter] = useState('')
 
-  // Fetch on first load
   useEffect(() => {
     if (!initialized) fetchAll()
-  }, [initialized])
+  }, [initialized])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // job.id is a stable key across filter views — plain React reconciliation
-  // already avoids remounting matching rows, so filtering feels instant
-  // rather than replaying the entrance animation on every click.
+  // job.id is a stable key across filter views, so React reuses rows instead
+  // of replaying the entrance animation on every filter change.
   const filtered = filter ? jobs.filter(j => j.status === filter) : jobs
 
   const handleRetry = async (jobId) => {
@@ -52,7 +52,7 @@ export default function History() {
   }
 
   const handleDelete = async (jobId) => {
-    if (!confirm('Delete this resume?')) return
+    if (!(await confirmDialog('Delete this resume?'))) return
     try {
       await jobsAPI.delete(jobId)
       removeJob(jobId)
@@ -63,26 +63,27 @@ export default function History() {
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-[1400px] mx-auto">
-      <motion.div initial="hidden" animate="visible" variants={fadeInUp}
-        className="flex items-center justify-between mb-8 flex-wrap gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">History</h1>
-          <p className="text-text-secondary mt-1">{total} resume{total !== 1 ? 's' : ''} generated</p>
-        </div>
-
+    <div>
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <p className="text-sm text-text-secondary">
+          {total} resume{total !== 1 ? 's' : ''} generated
+        </p>
         <div className="flex items-center gap-2">
-          <button
-            onClick={refresh}
-            disabled={loading}
-            className="btn-ghost p-2"
-            title="Refresh"
+          <label htmlFor="history-filter" className="sr-only">Filter by status</label>
+          <select
+            id="history-filter"
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            className="input !py-1.5 !w-auto text-sm"
           >
+            {FILTERS.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+          <button onClick={refresh} disabled={loading} className="btn-ghost p-2"
+            title="Refresh" aria-label="Refresh history">
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
-          <Tabs tabs={FILTER_TABS} active={filter} onChange={setFilter} />
         </div>
-      </motion.div>
+      </div>
 
       {loading && !initialized ? (
         <div className="space-y-2">
@@ -129,21 +130,21 @@ export default function History() {
                   {job.status === 'done' && job.download_url && (
                     <a href={job.download_url}
                       className="p-1.5 rounded-md text-text-muted hover:text-score hover:bg-score/10 transition-colors"
-                      title="Download">
+                      title="Download" aria-label="Download resume">
                       <Download size={15} />
                     </a>
                   )}
                   {job.status === 'failed' && (
                     <button onClick={() => handleRetry(job.id)}
                       className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
-                      title="Retry">
+                      title="Retry" aria-label="Retry generation">
                       <RefreshCw size={15} />
                     </button>
                   )}
                   {job.status !== 'running' && (
                     <button onClick={() => handleDelete(job.id)}
                       className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                      title="Delete">
+                      title="Delete" aria-label="Delete resume">
                       <Trash2 size={15} />
                     </button>
                   )}

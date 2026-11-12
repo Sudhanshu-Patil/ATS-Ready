@@ -1,0 +1,44 @@
+# Render blueprint: env var NAMES only. Secret values are set in the Render dashboard
+# (sync: false), never committed. See PRODUCTION-CHECKLIST.md for what each one is.
+services:
+  - type: web
+    name: ats-ready
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - { key: ENVIRONMENT, value: production }
+      - { key: DEBUG, value: "false" }
+      - { key: FRONTEND_URL, value: https://ats-ready.onrender.com }
+      - { key: BILLING_ENABLED, value: "true" }
+      - { key: PAYPAL_API, value: https://api-m.sandbox.paypal.com }
+      - { key: LLM_BASE_URL, value: https://api.groq.com/openai/v1 }
+      - { key: MODEL, value: openai/gpt-oss-120b }
+      - { key: LLM_FALLBACK_MODELS, value: "openai/gpt-oss-20b,qwen/qwen3.8-27b" }
+      - { key: LLM_TPM_BUDGET, value: "7500" }
+      - { key: ARQ_POLL_DELAY, value: "10" }
+      - { key: DATABASE_URL, sync: false }          # Neon, postgresql+asyncpg://...?ssl=require
+      - { key: SYNC_DATABASE_URL, sync: false }     # Neon, postgresql+psycopg2://...?sslmode=require
+      - { key: REDIS_URL, sync: false }             # Upstash, rediss://...
+      - { key: JWT_SECRET, generateValue: true }
+      - { key: LLM_API_KEY, sync: false }
+      - { key: APIFY_API_TOKEN, sync: false }
+      - { key: PAYPAL_CLIENT_ID, sync: false }
+      - { key: PAYPAL_CLIENT_SECRET, sync: false }
+      - { key: GOOGLE_CLIENT_ID, sync: false }
+      - { key: SENTRY_DSN, sync: false }
+      - { key: SENTRY_FRONTEND_DSN, sync: false }
+      - { key: ADMIN_EMAILS, sync: false }
+      - { key: SMTP_HOST, sync: false }
+      - { key: SMTP_PORT, value: "587" }
+      - { key: SMTP_USER, sync: false }
+      - { key: SMTP_PASSWORD, sync: false }
+      - { key: SMTP_TLS, value: "true" }
+      - { key: EMAIL_FROM, sync: false }
+      - { key: S3_ENDPOINT_URL, sync: false }
+      - { key: S3_ACCESS_KEY_ID, sync: false }
+      - { key: S3_SECRET_ACCESS_KEY, sync: false }
+      - { key: S3_BUCKET_NAME, sync: false }

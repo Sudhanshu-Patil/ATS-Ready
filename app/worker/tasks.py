@@ -26,20 +26,24 @@ ADDING A NEW TASK:
   2. Add it to WorkerSettings.functions list at the bottom.
   3. Enqueue it from a route: `await pool.enqueue_job("my_task", arg1, arg2)`
 """
+import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from sqlalchemy import select, update
+from arq import cron
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
-from app.db.models import JobApplication
+from app.services.usage import mark_failed, tracked
+from app.db.models import CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
+from app.services.content_service import build_context, friendly_error
+from app.services.compaction import local_ats_score
 from app.services.metabase_service import metabase_service
 from app.services.resume_builder import resume_builder
 from app.services.scraper import ScraperError, RobotsBlocked, scraper_service
@@ -67,13 +71,14 @@ async def _update_job_status(
         update(JobApplication).where(JobApplication.id == job_id).values(**values)
     )
     await db.commit()
-    logger.info("Job %d → status=%s", job_id, status)
+    logger.info("Job %s → status=%s", job_id, status)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main task: generate_resume
 # ─────────────────────────────────────────────────────────────────────────────
 
+@tracked("resume")
 async def generate_resume(
     ctx: Dict,                    # ARQ injects this — contains pool, redis, etc.
     job_app_id,                   # ID of the JobApplication row created in the route
@@ -151,7 +156,7 @@ async def generate_resume(
             cached_profile = await cache_service.get_profile(user_id)
             if cached_profile:
                 profile = cached_profile
-                logger.info("Profile cache HIT for user %d", user_id)
+                logger.info("Profile cache HIT for user %s", user_id)
             else:
                 profile = await metabase_service.get_full_profile_async(db, user_id)
                 await cache_service.set_profile(user_id, profile)
@@ -171,7 +176,7 @@ async def generate_resume(
                 score_data = ai_agent.score_resume(parsed_jd, tailored)
             except Exception as exc:
                 logger.warning("ATS scoring failed (non-fatal): %s", exc)
-                score_data = _default_score()
+                score_data = local_ats_score(parsed_jd.keywords, parsed_jd.required_skills, tailored)
 
             # ── Step 6: Build .docx ───────────────────────────────────────────
             company_slug = _slugify(parsed_jd.company or "company", 20)
@@ -217,15 +222,96 @@ async def generate_resume(
                 "message":        f"✅ Resume generated! ATS Score: {score_data.get('total_score', 0):.1f}"
                                   + (f"\n{scrape_warning}" if scrape_warning else ""),
             }
-            logger.info("Job %d completed — ATS score=%.1f", job_app_id, result["ats_score"])
+            logger.info("Job %s completed — ATS score=%.1f", job_app_id, result["ats_score"])
             return result
 
         except Exception as exc:
             error_msg = str(exc)
-            logger.error("Job %d FAILED: %s", job_app_id, error_msg, exc_info=True)
+            logger.error("Job %s FAILED: %s", job_app_id, error_msg, exc_info=True)
             await _update_job_status(db, job_app_id, "failed", {"error_message": error_msg})
             # Re-raise so ARQ records the failure and can retry
             raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cover letter / interview prep tasks
+# ─────────────────────────────────────────────────────────────────────────────
+
+@tracked("cover_letter")
+async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone):
+    """Fill in a pending CoverLetter row. Failures are recorded on the row (no
+    arq retry: the user sees the error and can resubmit)."""
+    async with AsyncSessionLocal() as db:
+        row = await db.get(CoverLetter, uuid.UUID(letter_id))
+        if row is None:
+            return
+        row.status = "running"
+        await db.commit()
+        try:
+            profile, parsed_jd, tailored, job_app = await build_context(
+                jd_text, uuid.UUID(user_id), db, job_app_id)
+            result = await asyncio.to_thread(
+                ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone)
+            row.job_app_id = job_app.id if job_app else None
+            row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
+            row.subject = result.get("subject")
+            row.body = result.get("body") or ""
+            row.word_count = result.get("word_count")
+            row.highlights = result.get("highlights", [])
+            row.status = "done"
+        except Exception as exc:
+            logger.error("Cover letter %s FAILED: %s", letter_id, exc, exc_info=True)
+            row.status, row.error = "failed", friendly_error(exc)
+            mark_failed()
+        await db.commit()
+
+
+@tracked("interview_prep")
+async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_id):
+    async with AsyncSessionLocal() as db:
+        row = await db.get(InterviewPrep, uuid.UUID(prep_id))
+        if row is None:
+            return
+        row.status = "running"
+        await db.commit()
+        try:
+            profile, parsed_jd, tailored, job_app = await build_context(
+                jd_text, uuid.UUID(user_id), db, job_app_id)
+            result = await asyncio.to_thread(
+                ai_agent.generate_interview_prep, parsed_jd, profile, tailored)
+            row.job_app_id = job_app.id if job_app else None
+            row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
+            row.questions = result.get("questions", [])
+            row.quick_tips = result.get("quick_tips", [])
+            row.red_flags_to_avoid = result.get("red_flags_to_avoid", [])
+            row.questions_to_ask = result.get("questions_to_ask", [])
+            row.status = "done"
+        except Exception as exc:
+            logger.error("Interview prep %s FAILED: %s", prep_id, exc, exc_info=True)
+            row.status, row.error = "failed", friendly_error(exc)
+            mark_failed()
+        await db.commit()
+
+
+# Longer than any legitimate queue wait or run (JOB_TIMEOUT is per run).
+STALE_AFTER = timedelta(seconds=max(2 * settings.JOB_TIMEOUT, 900))
+
+
+async def reap_stale_jobs(ctx):
+    """Cron: rows stuck in pending/running (worker crash, lost job) -> failed,
+    so the UI never spins forever and the per-user active cap frees up."""
+    cutoff = datetime.utcnow() - STALE_AFTER
+    async with AsyncSessionLocal() as db:
+        for model, col in ((JobApplication, "error_message"), (CoverLetter, "error"),
+                           (InterviewPrep, "error")):
+            res = await db.execute(
+                update(model)
+                .where(model.status.in_(("pending", "running")), model.created_at < cutoff)
+                .values(status="failed", **{col: "Timed out. Please try again."})
+            )
+            if res.rowcount:
+                logger.warning("Reaped %d stale %s rows", res.rowcount, model.__tablename__)
+        await db.commit()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -240,21 +326,6 @@ def _slugify(text: str, max_len: int) -> str:
     # treats as a subdirectory that was never created, breaking the save.
     slug = re.sub(r'[^a-z0-9]+', '_', text.lower()).strip('_')
     return (slug or 'untitled')[:max_len]
-
-
-def _default_score() -> Dict[str, Any]:
-    return {
-        "keyword_score": 75.0,
-        "skills_score": 70.0,
-        "action_verb_score": 80.0,
-        "format_score": 85.0,
-        "total_score": 75.0,
-        "matched_keywords": [],
-        "missing_keywords": [],
-        "matched_skills": [],
-        "missing_skills": [],
-        "suggestions": [],
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -276,7 +347,10 @@ class WorkerSettings:
     redis_settings = _RS.from_dsn(settings.REDIS_URL)
 
     # Every async function listed here becomes an enqueueable task
-    functions = [generate_resume]
+    functions = [generate_resume, generate_cover_letter_task, generate_interview_prep_task]
+
+    # Every 5 minutes: fail jobs stuck in pending/running
+    cron_jobs = [cron(reap_stale_jobs, minute=set(range(0, 60, 5)), run_at_startup=True)]
 
     # Max number of jobs this worker will run simultaneously
     max_jobs = settings.WORKER_CONCURRENCY

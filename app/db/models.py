@@ -32,16 +32,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import relationship
 from app.db.base import Base
-import uuid
 
 def _now(): return datetime.utcnow()
 def _uuid(): return uuid.uuid4()
 
-from app.db.base import Base
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +68,7 @@ class User(Base):
     github_id              = Column(String(100), unique=True, nullable=True)
     is_active              = Column(Boolean, default=True, nullable=False)
     is_verified            = Column(Boolean, default=False, nullable=False)
+    token_version          = Column(Integer, default=0, server_default="0", nullable=False)
 
     # subscription — provider-neutral names (currently PayPal order id):
     # payment_customer_id     = the provider's customer reference
@@ -301,6 +297,9 @@ class CoverLetter(Base):
     word_count  = Column(Integer(), nullable=True)
     highlights  = Column(JSONB, default=list)
     tone        = Column(String(30), default="professional")
+    # pending -> running -> done | failed (generated in the arq worker)
+    status      = Column(String(20), default="done", server_default="done", nullable=False)
+    error       = Column(Text, nullable=True)
 
     created_at  = Column(DateTime, default=_now, nullable=False)
 
@@ -317,11 +316,31 @@ class InterviewPrep(Base):
     job_title          = Column(String(300), nullable=True)
     company            = Column(String(200), nullable=True)
 
+    jd_text            = Column(Text, nullable=True)          # kept (truncated) so a failed run can be retried
     questions          = Column(JSONB, default=list)
     quick_tips         = Column(JSONB, default=list)
     red_flags_to_avoid = Column(JSONB, default=list)
     questions_to_ask   = Column(JSONB, default=list)
+    status             = Column(String(20), default="done", server_default="done", nullable=False)
+    error              = Column(Text, nullable=True)
 
     created_at         = Column(DateTime, default=_now, nullable=False)
 
     user               = relationship("User", backref="interview_preps")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage events (admin analytics + spend caps)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind        = Column(String(30), nullable=False)          # resume | cover_letter | interview_prep
+    tokens      = Column(Integer, default=0, nullable=False)  # LLM tokens actually billed
+    llm_calls   = Column(Integer, default=0, nullable=False)
+    duration_ms = Column(Integer, default=0, nullable=False)
+    ok          = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime, default=_now, nullable=False, index=True)

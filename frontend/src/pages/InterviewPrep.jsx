@@ -8,8 +8,10 @@ import EmptyState from '../components/EmptyState'
 import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
 import StatusBadge from '../components/StatusBadge'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from '../components/ConfirmDialog'
 
 // Lucide icons replacing the previous emoji glyphs — keeps icon sourcing
 // consistent with the rest of the app instead of mixing emoji with lucide.
@@ -35,20 +37,34 @@ const TAB_ITEMS = [
 export default function InterviewPrep() {
   const [tab, setTab]         = useState('generate')
   const [jdText, setJdText]   = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const lastId = useActivityStore(s => s.last.interview_prep)
+  const finished = useActivityStore(s => (lastId ? s.finished[lastId] : null))
+  const recentKey = useActivityStore(s => s.recent.map(i => i.id + i.status).join())
+  const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
+  const [historyState, setHistoryState] = useState('loading')   // loading | ready | error
   const [openQ, setOpenQ]     = useState(null)
 
   useEffect(() => {
     if (tab === 'history') loadHistory()
-  }, [tab])
+  }, [tab, recentKey])
+
+  useEffect(() => {
+    if (!lastId || !finished) return
+    if (finished.status === 'done') {
+      api.get(`/interview-preps/${lastId}`).then(r => setResult(r.data)).catch(() => {})
+    }
+    useActivityStore.getState().clearLast('interview_prep')
+  }, [finished])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHistory = async () => {
     try {
       const res = await api.get('/interview-preps')
       setHistory(res.data)
-    } catch { toast.error('Failed to load history') }
+      setHistoryState('ready')
+    } catch { setHistoryState('error'); toast.error('Failed to load history') }
   }
 
   const generate = async () => {
@@ -56,22 +72,33 @@ export default function InterviewPrep() {
       toast.error('Job description too short (min 100 characters)')
       return
     }
-    setLoading(true)
+    setSubmitting(true)
     setResult(null)
     setOpenQ(null)
     try {
       const res = await api.post('/interview-prep', { jd_text: jdText })
-      setResult(res.data)
-      toast.success(`${res.data.questions?.length || 10} interview questions ready!`)
+      useActivityStore.getState().track('interview_prep', res.data.id)
+      toast('Preparing your interview kit — you can keep working while it runs.')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Generation failed')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
+    }
+  }
+
+  const retryItem = async (id) => {
+    try {
+      await api.post(`/interview-preps/${id}/retry`)
+      useActivityStore.getState().track('interview_prep', id)
+      setHistory(h => h.map(x => (x.id === id ? { ...x, status: 'pending', error: null } : x)))
+      toast('Trying again. You can keep working while it runs.')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not retry')
     }
   }
 
   const deleteItem = async (id) => {
-    if (!confirm('Delete this prep session?')) return
+    if (!(await confirmDialog('Delete this prep session?'))) return
     try {
       await api.delete(`/interview-preps/${id}`)
       setHistory(h => h.filter(x => x.id !== id))
@@ -104,17 +131,17 @@ export default function InterviewPrep() {
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
-              disabled={loading}
+              disabled={submitting}
             />
-            <button onClick={generate} disabled={loading}
+            <button onClick={generate} disabled={submitting}
               className={clsx(
                 'w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-white transition-all',
-                loading
+                submitting
                   ? 'bg-brand opacity-50 cursor-not-allowed'
                   : 'bg-gradient-to-r from-brand to-accent-magenta hover:shadow-[0_0_24px_-4px_rgba(255,61,119,0.5)]'
               )}>
               {loading ? <Spinner size="sm" color="white" /> : <BrainCircuit size={16} />}
-              {loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
+              {submitting ? 'Starting…' : loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
             </button>
           </motion.div>
 
@@ -124,14 +151,23 @@ export default function InterviewPrep() {
 
       {tab === 'history' && (
         <div className="space-y-3">
-          {history.length === 0 ? (
+          {historyState === 'loading' ? (
+            <div className="space-y-3" aria-busy="true" aria-label="Loading history">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            </div>
+          ) : historyState === 'error' ? (
+            <div className="card text-center space-y-3">
+              <p className="text-sm text-text-secondary">We couldn't load your history.</p>
+              <button className="btn-ghost text-sm" onClick={() => { setHistoryState('loading'); loadHistory() }}>Try again</button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="card">
               <EmptyState icon={BrainCircuit} title="No prep sessions yet — generate one to get started" />
             </div>
           ) : (
             <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-3">
               {history.map(p => (
-                <HistoryItem key={p.id} item={p} onDelete={deleteItem} />
+                <HistoryItem key={p.id} item={p} onDelete={deleteItem} onRetry={retryItem} />
               ))}
             </motion.div>
           )}
@@ -294,7 +330,7 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
   )
 }
 
-function HistoryItem({ item, onDelete }) {
+function HistoryItem({ item, onDelete, onRetry }) {
   const [expanded, setExpanded] = useState(false)
   const [data, setData]         = useState(null)
   const [openQ, setOpenQ]       = useState(null)
@@ -316,16 +352,23 @@ function HistoryItem({ item, onDelete }) {
     <motion.div variants={fadeInUp} className="card">
       <div className="flex items-center flex-wrap justify-between gap-3">
         <div>
-          <p className="font-medium text-text-primary">{item.job_title || 'Untitled'}</p>
-          <p className="text-sm text-text-secondary">{item.company} · {item.question_count} questions</p>
+          <p className="font-medium text-text-primary">
+            {item.status === 'failed' ? 'Failed' : item.status === 'done' ? (item.job_title || 'Untitled') : 'Generating…'}
+          </p>
+          <p className="text-sm text-text-secondary">
+            {item.status === 'failed' ? item.error : item.status === 'done' ? `${item.company || ''} · ${item.question_count} questions` : 'Queued — you can leave this page'}
+          </p>
           <p className="text-xs text-text-muted mt-1">{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={expand} className="btn-ghost text-sm flex items-center gap-1 px-3 py-1.5">
+          <button onClick={expand} disabled={item.status !== 'done'} className="btn-ghost text-sm flex items-center gap-1 px-3 py-1.5">
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             {expanded ? 'Hide' : 'View'}
           </button>
-          <button onClick={() => onDelete(item.id)} className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+          {item.status === 'failed' && (
+            <button onClick={() => onRetry(item.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
+          )}
+          <button onClick={() => onDelete(item.id)} aria-label="Delete prep session" className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
             <Trash2 size={15} />
           </button>
         </div>

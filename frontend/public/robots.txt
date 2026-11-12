@@ -1,0 +1,22 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /generate
+Disallow: /cover-letter
+Disallow: /interview-prep
+Disallow: /metabase
+Disallow: /settings
+Disallow: /admin
+
+# AI answer engines may read the public pages and the plain-text summary.
+User-agent: GPTBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+
+Sitemap: https://ats-ready.onrender.com/sitemap.xml

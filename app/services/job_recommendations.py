@@ -31,22 +31,28 @@ SOURCES:
   Requires APIFY_API_TOKEN; all three sources degrade to [] gracefully if
   unset, same pattern as every other source in this file.
 
-SCORING (keyword-overlap, no AI cost):
-  - Skill match   60% : how many user skills appear in job text
-  - Title match   20% : job title words vs user's current role
-  - Seniority     20% : junior/mid/senior alignment
+SCORING (keyword-overlap, no AI cost). Earned / possible points, as a 0-100%:
+  - Skills     50 : user skills (with aliases) found in the job text. Jobs with
+                    no description (LinkedIn list mode) only get 20, from the title.
+  - Title      25 : user's role words vs job title (generic words weigh less)
+  - Seniority  10 : from title words, else years of experience
+  - Location   15 : remote, or the user's city/country appears in the job location
+  An axis with no signal (no user location / no titles) is left out of both sides.
 
 CACHING:
-  Key  : job_recs:{user_id}
-  TTL  : 7200s (2 hours)
-  Bust : pass refresh=True to get_recommendations_for_user()
+  Key  : job_recs:{user_id}:{profile_hash}  (profile edits change the key)
+  TTL  : 7200s (2 hours); empty results are never cached
+  Bust : refresh=True, rate-limited to one refetch per REFRESH_COOLDOWN
 """
 import asyncio
+import hashlib
 import logging
 import re
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import UUID
 
 import httpx
@@ -56,7 +62,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 
 from app.config import settings
-from app.db.models import Skill, WorkExperience
+from app.db.models import PersonalInfo, Skill, WorkExperience
 from app.services.cache_service import cache_service
 
 
@@ -92,7 +98,9 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 CACHE_TTL = 7_200          # 2 hours
-MIN_MATCH_SCORE = 35.0     # only show jobs above this threshold
+MIN_MATCH_SCORE = 60.0     # only show jobs above this threshold
+MAX_AGE_DAYS = 30          # drop listings with a known posting date older than this
+REFRESH_COOLDOWN = 300     # seconds between forced refetches per user
 MAX_RESULTS = 60           # cap the returned list — kept generous (vs. the ~20
                            # actually displayed by default) so the frontend's
                            # location/date/source filters have enough matched
@@ -102,7 +110,7 @@ MAX_RESULTS = 60           # cap the returned list — kept generous (vs. the ~2
 # credit on that axis, regardless of how many skills are on the profile.
 # Uncapped, the ratio divides by the user's total skill count, so richer
 # profiles (more skills) become mathematically harder to match — backwards.
-SKILL_MATCH_CAP = 8
+SKILL_MATCH_CAP = 6
 REQUEST_TIMEOUT = 10       # seconds per HTTP call
 APIFY_TIMEOUT = 180        # Apify actor runs are a live scrape, not a fast JSON
                            # API — needs much more headroom than REQUEST_TIMEOUT.
@@ -121,16 +129,34 @@ HEADERS = {
 # Seniority keyword buckets for level alignment scoring
 SENIOR_WORDS   = {"senior", "sr", "lead", "principal", "staff", "architect", "head", "director"}
 JUNIOR_WORDS   = {"junior", "jr", "entry", "associate", "intern", "graduate", "trainee", "fresher"}
-MID_WORDS      = {"mid", "intermediate", "engineer", "developer", "analyst", "specialist"}
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
+
+def _strip_html(text: str) -> str:
+    if "<" in text:
+        text = BeautifulSoup(text, "html.parser").get_text(separator=" ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+_TRACKING_PARAM = re.compile(r"^(utm_|ref$|refid|source$|gh_src|trk|tracking|fbclid|gclid)", re.I)
+
+
+def _clean_url(url: str) -> str:
+    """Drop tracking query params so the same job isn't listed twice."""
+    try:
+        p = urlparse(url)
+        q = [(k, v) for k, v in parse_qsl(p.query) if not _TRACKING_PARAM.match(k)]
+        return urlunparse(p._replace(query=urlencode(q), fragment=""))
+    except ValueError:
+        return url
+
 
 class JobListing:
     __slots__ = (
         "title", "company", "location", "url", "source",
         "tags", "description", "posted_at",
-        "match_score", "matched_skills",
+        "match_score", "matched_skills", "match_reasons",
     )
 
     def __init__(
@@ -147,13 +173,14 @@ class JobListing:
         self.title = title
         self.company = company
         self.location = location
-        self.url = url
+        self.url = _clean_url(url)
         self.source = source
         self.tags = [t.lower().strip() for t in tags if t]
-        self.description = description.lower()
+        self.description = _strip_html(description or "")   # plain text, original case
         self.posted_at = posted_at
         self.match_score: float = 0.0
         self.matched_skills: List[str] = []
+        self.match_reasons: List[str] = []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -166,81 +193,229 @@ class JobListing:
             "posted_at":      self.posted_at,
             "match_score":    round(self.match_score, 1),
             "matched_skills": self.matched_skills,
+            "match_reasons":  self.match_reasons,
+            # Lets the "Generate Resume" button send the text itself instead of
+            # a LinkedIn/Indeed/Naukri URL the scraper cannot fetch.
+            "description":    self.description[:6000],
         }
+
+
+@dataclass
+class UserProfile:
+    skills: List[str] = field(default_factory=list)   # best first
+    titles: List[str] = field(default_factory=list)   # current/most recent first
+    years: Optional[float] = None                     # years of experience
+    location: str = ""
+
+    def fingerprint(self) -> str:
+        raw = "|".join([",".join(self.skills), ",".join(self.titles),
+                        str(self.years), self.location])
+        return hashlib.sha1(raw.encode()).hexdigest()[:10]
 
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
 
+# Applied before stripping punctuation, so "C++" stays distinct from "C".
+_TOKEN_FIXES = (
+    ("c++", "cpp"), ("c#", "csharp"), ("f#", "fsharp"), ("asp.net", "aspdotnet"),
+    (".net", "dotnet"), ("node.js", "nodejs"), ("vue.js", "vuejs"),
+    ("next.js", "nextjs"), ("react.js", "reactjs"), ("express.js", "expressjs"),
+)
+
+
 def _normalise(text: str) -> str:
-    return re.sub(r"[^a-z0-9\s]", " ", text.lower())
+    t = text.lower()
+    for a, b in _TOKEN_FIXES:
+        t = t.replace(a, b)
+    return re.sub(r"[^a-z0-9\s]", " ", t)
 
 
-def score_job(job: JobListing, user_skills: List[str], user_titles: List[str]) -> None:
-    """
-    Compute match_score (0–100) in-place. Three components:
-      60% — skill keyword overlap
-      20% — job title keyword match
-      20% — seniority level alignment
-    """
-    searchable = f"{job.title} {job.company} {' '.join(job.tags)} {job.description}"
-    searchable = _normalise(searchable)
-
-    # 1. Skill overlap (60 pts)
-    matched = []
-    for skill in user_skills:
-        skill_norm = _normalise(skill)
-        # check whole-word or tag match
-        if re.search(r"\b" + re.escape(skill_norm) + r"\b", searchable):
-            matched.append(skill)
-    skill_ratio = min(len(matched) / SKILL_MATCH_CAP, 1.0)
-    skill_pts = skill_ratio * 60.0
-
-    # 2. Title alignment (20 pts)
-    title_norm = _normalise(job.title)
-    title_pts = 0.0
-    for t in user_titles:
-        t_words = _normalise(t).split()
-        hits = sum(1 for w in t_words if len(w) > 3 and w in title_norm)
-        if hits:
-            title_pts = min(20.0, hits * 7.0)
-            break
-
-    # 3. Seniority alignment (20 pts)
-    # Determine user seniority from their titles
-    user_level = _infer_seniority(user_titles)
-    job_level  = _infer_seniority([job.title])
-    if user_level == job_level:
-        seniority_pts = 20.0
-    elif user_level == "mid" or job_level == "mid":
-        seniority_pts = 12.0   # mid is compatible with either end
-    else:
-        seniority_pts = 5.0    # senior applying to junior or vice versa
-
-    job.match_score    = min(100.0, skill_pts + title_pts + seniority_pts)
-    job.matched_skills = matched
+_ALIAS_GROUPS = [
+    {"javascript", "js", "ecmascript"}, {"typescript", "ts"},
+    {"postgresql", "postgres", "psql"}, {"kubernetes", "k8s"},
+    {"nodejs", "node js", "node"}, {"react", "reactjs", "react js"},
+    {"vuejs", "vue js", "vue"}, {"nextjs", "next js"}, {"expressjs", "express js"},
+    {"go", "golang"}, {"amazon web services", "aws"},
+    {"google cloud", "gcp", "google cloud platform"}, {"machine learning", "ml"},
+    {"ci cd", "cicd", "continuous integration"}, {"mongodb", "mongo"},
+    {"cpp", "c plus plus"}, {"dotnet", "net core", "dotnet core"},
+    {"artificial intelligence", "ai"}, {"natural language processing", "nlp"},
+]
+# Too short/common to trust in free text: only count them in the title or tags.
+_AMBIGUOUS = {"go", "r", "c", "d", "j", "ci", "ai", "ml", "ts", "js", "node"}
 
 
-def _infer_seniority(titles: List[str]) -> str:
-    combined = " ".join(titles).lower()
-    words    = set(combined.split())
+@lru_cache(maxsize=2048)
+def _skill_variants(skill: str) -> tuple:
+    n = _normalise(skill).strip()
+    if not n:
+        return ()
+    out = {n}
+    for group in _ALIAS_GROUPS:
+        if n in group:
+            out |= group
+    return tuple(sorted(out))
+
+
+@lru_cache(maxsize=4096)
+def _word_re(term: str) -> "re.Pattern[str]":
+    return re.compile(r"\b" + re.escape(term) + r"\b")
+
+
+def _has(term: str, text: str) -> bool:
+    return bool(_word_re(term).search(text))
+
+
+_GENERIC_TITLE = {"engineer", "developer", "software", "manager", "specialist", "analyst"}
+_TITLE_SYN = {"developer": "engineer", "programmer": "engineer", "swe": "engineer",
+              "dev": "engineer", "sde": "engineer"}
+_TITLE_STOP = {"and", "the", "of", "for", "with", "ii", "iii", "iv"}
+
+
+def _title_words(title: str) -> set:
+    words = set()
+    for w in _normalise(title).split():
+        if len(w) < 2 or w in _TITLE_STOP or w in SENIOR_WORDS or w in JUNIOR_WORDS:
+            continue
+        words.add(_TITLE_SYN.get(w, w))
+    return words
+
+
+def _title_similarity(user_title: str, job_title: str) -> float:
+    """0-1: specific words (backend, data) count double vs generic ones (engineer)."""
+    u, j = _title_words(user_title), _title_words(job_title)
+    if not u:
+        return 0.0
+    weight = lambda ws: sum(1 if w in _GENERIC_TITLE else 2 for w in ws)
+    return weight(u & j) / weight(u)
+
+
+def _infer_seniority(titles: List[str]) -> Optional[str]:
+    """'senior' / 'junior' from title words, None when the title doesn't say."""
+    words = set(re.findall(r"[a-z]+", " ".join(titles).lower()))
     if words & SENIOR_WORDS:
         return "senior"
     if words & JUNIOR_WORDS:
         return "junior"
-    return "mid"
+    return None
+
+
+def _level_from_years(years: Optional[float]) -> str:
+    if years is None:
+        return "mid"
+    return "junior" if years < 2 else "mid" if years < 6 else "senior"
+
+
+def score_job(
+    job: JobListing,
+    user_skills: List[str],
+    user_titles: List[str],
+    user_years: Optional[float] = None,
+    user_location: str = "",
+) -> None:
+    """Compute match_score (0-100) and matched_skills in place."""
+    head = _normalise(f"{job.title} {' '.join(job.tags)}")
+    thin = not job.description and not job.tags
+    full = head if thin else f"{head} {_normalise(job.description)}"
+
+    # 1. Skills (50, or 20 when the listing has no description)
+    matched = []
+    for skill in user_skills:
+        for v in _skill_variants(skill):
+            haystack = head if v in _AMBIGUOUS else full
+            if _has(v, haystack):
+                matched.append(skill)
+                break
+    cap = max(3, min(SKILL_MATCH_CAP, len(user_skills)))
+    skill_possible = 20.0 if thin else 50.0
+    earned = min(len(matched) / cap, 1.0) * skill_possible
+    possible = skill_possible
+
+    # 2. Title (25)
+    titles = [t for t in user_titles if t]
+    reasons: List[str] = []
+    if titles:
+        best_title = max(titles, key=lambda t: _title_similarity(t, job.title))
+        sim = _title_similarity(best_title, job.title)
+        earned += 25.0 * sim
+        possible += 25.0
+        if sim >= 0.5:
+            reasons.append(f"Title is close to your {best_title} role")
+
+    # 3. Seniority (10): the title wins, years of experience decide otherwise
+    user_level = _infer_seniority(titles) or _level_from_years(user_years)
+    job_level = _infer_seniority([job.title])
+    if job_level is None:
+        earned += 6.0                       # listing doesn't say: neutral
+    elif job_level == user_level:
+        earned += 10.0
+        reasons.append(f"Fits your {user_level} level")
+    elif "mid" == user_level:
+        earned += 6.0
+    possible += 10.0
+
+    # 4. Location (15)
+    if user_location.strip():
+        loc = _normalise(f"{job.location} {job.title}")
+        user_tokens = [t for t in _normalise(user_location).split() if len(t) > 2]
+        if "remote" in loc or any(_has(t, loc) for t in user_tokens):
+            earned += 15.0
+            reasons.append("Remote" if "remote" in loc else "In your area")
+        elif not job.location.strip() or "flexible" in loc:
+            earned += 7.0
+        possible += 15.0
+
+    job.match_score = min(100.0, 100.0 * earned / possible)
+    job.matched_skills = matched
+    job.match_reasons = reasons
+
+
+def _age_days(posted_at: Any) -> Optional[float]:
+    """Days since posting, or None when the date is unknown/unparseable."""
+    if not posted_at:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(posted_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 86400
+
+
+def _dedupe(jobs: List[JobListing]) -> List[JobListing]:
+    """Keep the best-scored copy of each job (same title + company, or same URL)."""
+    seen: set = set()
+    out = []
+    for job in sorted(jobs, key=lambda j: j.match_score, reverse=True):
+        key = (_normalise(job.title).split(), _normalise(job.company).split())
+        key = (" ".join(key[0]), " ".join(key[1])) if key[1] else job.url
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(job)
+    return out
 
 
 # ── Source fetchers ───────────────────────────────────────────────────────────
 
-async def _fetch_remotive(client: httpx.AsyncClient) -> List[JobListing]:
-    """Remotive public JSON API — no key needed."""
+async def _fetch_remotive(client: httpx.AsyncClient, queries: List[str]) -> List[JobListing]:
+    """Remotive public JSON API — no key needed. One search per query."""
     try:
-        r = await _get_with_retry(
-            client,
-            "https://remotive.com/api/remote-jobs",
-            params={"limit": 100, "category": "software-dev"},
-        )
-        jobs = r.json().get("jobs", [])
+        responses = await asyncio.gather(*(
+            _get_with_retry(
+                client,
+                "https://remotive.com/api/remote-jobs",
+                params={"limit": 50, "category": "software-dev", "search": q},
+            )
+            for q in queries
+        ), return_exceptions=True)
+        jobs = []
+        for resp in responses:
+            if isinstance(resp, Exception):
+                logger.warning("Remotive query failed: %r", resp)
+            else:
+                jobs.extend(resp.json().get("jobs", []))
         return [
             JobListing(
                 title=j.get("title", ""),
@@ -263,8 +438,15 @@ async def _fetch_remotive(client: httpx.AsyncClient) -> List[JobListing]:
 async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
     """Arbeitnow public JSON API — no key needed."""
     try:
-        r = await _get_with_retry(client, "https://www.arbeitnow.com/api/job-board-api")
-        jobs = r.json().get("data", [])
+        pages = await asyncio.gather(*(
+            _get_with_retry(client, "https://www.arbeitnow.com/api/job-board-api",
+                            params={"page": n})
+            for n in (1, 2)
+        ), return_exceptions=True)
+        jobs = []
+        for resp in pages:
+            if not isinstance(resp, Exception):
+                jobs.extend(resp.json().get("data", []))
         return [
             JobListing(
                 title=j.get("title", ""),
@@ -274,7 +456,9 @@ async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
                 source="Arbeitnow",
                 tags=j.get("tags", []),
                 description=j.get("description", ""),
-                posted_at=j.get("created_at"),
+                # created_at is a unix epoch; the frontend date filters need ISO.
+                posted_at=(datetime.fromtimestamp(j["created_at"], timezone.utc).isoformat()
+                           if isinstance(j.get("created_at"), (int, float)) else None),
             )
             for j in jobs
             if j.get("title") and j.get("url")
@@ -287,12 +471,15 @@ async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
 async def _fetch_themuse(client: httpx.AsyncClient) -> List[JobListing]:
     """The Muse public JSON API — no key needed."""
     try:
-        r = await _get_with_retry(
-            client,
-            "https://www.themuse.com/api/public/jobs",
-            params={"page": 0, "per_page": 100, "category": "Engineering"},
-        )
-        jobs = r.json().get("results", [])
+        pages = await asyncio.gather(*(
+            _get_with_retry(client, "https://www.themuse.com/api/public/jobs",
+                            params={"page": n, "category": "Engineering"})
+            for n in (0, 1)
+        ), return_exceptions=True)
+        jobs = []
+        for resp in pages:
+            if not isinstance(resp, Exception):
+                jobs.extend(resp.json().get("results", []))
         listings = []
         for j in jobs:
             refs = j.get("refs", {})
@@ -323,17 +510,20 @@ async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
     Finds the most recent thread, parses top-level comments as job listings.
     """
     try:
-        # Find the latest "Ask HN: Who is Hiring?" post
+        # Latest monthly thread, posted by the "whoishiring" account. Sorted by
+        # date (plain /search ranks by relevance and can return an old thread
+        # or the "Who wants to be hired?" one).
         search = await _get_with_retry(
             client,
-            "https://hn.algolia.com/api/v1/search",
+            "https://hn.algolia.com/api/v1/search_by_date",
             params={
-                "tags":       "ask_hn",
-                "query":      "Ask HN: Who is hiring",
-                "hitsPerPage": 1,
+                "tags":        "story,author_whoishiring",
+                "query":       "Ask HN: Who is hiring?",
+                "hitsPerPage": 5,
             },
         )
-        hits = search.json().get("hits", [])
+        hits = [h for h in search.json().get("hits", [])
+                if "who is hiring" in (h.get("title") or "").lower()]
         if not hits:
             return []
 
@@ -376,6 +566,25 @@ async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
         return []
 
 
+async def _apify_run_allowed() -> bool:
+    """Global daily budget for Apify runs (they spend the free plan's credit)."""
+    r = await cache_service.client()
+    if not r:
+        return True
+    key = f"apify_runs:{datetime.now(timezone.utc):%Y%m%d}"
+    try:
+        n = await r.incr(key)
+        if n == 1:
+            await r.expire(key, 90_000)
+    except Exception as exc:  # Redis down: don't block recommendations
+        logger.warning("Apify cap counter failed: %r", exc)
+        return True
+    if n > settings.APIFY_DAILY_RUN_CAP:
+        logger.warning("Apify daily run cap (%d) reached", settings.APIFY_DAILY_RUN_CAP)
+        return False
+    return True
+
+
 async def _apify_crawl_html(client: httpx.AsyncClient, url: str) -> Optional[str]:
     """
     Shared helper: crawl a single URL via Apify's official, genuinely-free
@@ -396,7 +605,7 @@ async def _apify_crawl_html(client: httpx.AsyncClient, url: str) -> Optional[str
     Returns None if APIFY_API_TOKEN is unset, the run times out, or fails —
     callers degrade gracefully, same pattern as every other source here.
     """
-    if not settings.APIFY_API_TOKEN:
+    if not settings.APIFY_API_TOKEN or not await _apify_run_allowed():
         return None
     try:
         r = await client.post(
@@ -429,7 +638,7 @@ async def _apify_crawl_html(client: httpx.AsyncClient, url: str) -> Optional[str
         return None
 
 
-async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, title_query: str) -> List[JobListing]:
+async def _fetch_apify_linkedin(client: httpx.AsyncClient, title_query: str, location: str) -> List[JobListing]:
     """
     LinkedIn jobs via the purpose-built forward_dinosaur/linkedin-job-scraper
     actor (free — platform compute only). Unlike the generic HTML crawl used
@@ -445,7 +654,7 @@ async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, tit
     (verified against build anu3bs1kzhwFd6SgP):
       remote: "1"=on-site "2"=remote "3"=hybrid · contract_type: "F"=full-time
     """
-    if not settings.APIFY_API_TOKEN:
+    if not settings.APIFY_API_TOKEN or not await _apify_run_allowed():
         return []
     try:
         r = await client.post(
@@ -453,7 +662,7 @@ async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, tit
             params={"token": settings.APIFY_API_TOKEN},
             json={
                 "query":         title_query,
-                "location":      "India",   # primary market; other sources cover global/remote
+                "location":      location,
                 "delay":         200,
                 "max_results":   15,        # runtime scales with result count —
                                             # 15 keeps the run well under
@@ -479,17 +688,18 @@ async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, tit
             if not title or not link or title == "N/A":
                 continue
             # This actor returns no per-job location, and description is "N/A"
-            # in list mode — tag the listing with the skills that FOUND it so
-            # keyword scoring has real signal instead of an empty description.
+            # in list mode. Do NOT tag the listing with the query that found it:
+            # that made every result "match" the user's own skills. Such thin
+            # listings are scored on title/seniority/location only (score_job).
             desc = item.get("description", "") or ""
             company = item.get("company") or ""
             listings.append(JobListing(
                 title=title,
                 company="" if company == "N/A" else company,
-                location="India",
+                location=location,
                 url=link,
                 source="LinkedIn",
-                tags=[skill_query],
+                tags=[],
                 description="" if desc == "N/A" else desc,
                 # The actor's "date" is the SCRAPE timestamp, not the posting
                 # date — passing it through made every LinkedIn job claim
@@ -508,7 +718,8 @@ async def _fetch_apify_linkedin(client: httpx.AsyncClient, skill_query: str, tit
 
 
 async def _fetch_apify_naukri(client: httpx.AsyncClient, skill_query: str) -> List[JobListing]:
-    """Naukri (Indian market jobs), crawled via Apify (see _apify_crawl_html)."""
+    """Naukri (Indian market jobs), crawled via Apify (see _apify_crawl_html).
+    `skill_query` is the user's current role title."""
     # Collapse any run of non-alphanumeric characters to one hyphen — skill
     # names like "CI/CD" or "Node.js" otherwise leak "/" or "." straight into
     # the URL path, silently turning it into a different, invalid nested URL
@@ -533,7 +744,7 @@ async def _fetch_apify_naukri(client: httpx.AsyncClient, skill_query: str) -> Li
                 location=loc_el.get_text(strip=True) if loc_el else "India",
                 url=title_el.get("href"),
                 source="Naukri",
-                tags=[skill_query],
+                tags=[],
                 description=card.get_text(separator=" ", strip=True),
                 # Naukri only exposes relative text ("2 days ago"), not a
                 # parseable date — left None like other best-effort sources.
@@ -546,9 +757,9 @@ async def _fetch_apify_naukri(client: httpx.AsyncClient, skill_query: str) -> Li
         return []
 
 
-async def _fetch_apify_indeed(client: httpx.AsyncClient, skill_query: str) -> List[JobListing]:
+async def _fetch_apify_indeed(client: httpx.AsyncClient, title_query: str, location: str) -> List[JobListing]:
     """Indeed jobs, crawled via Apify (see _apify_crawl_html)."""
-    url = f"https://www.indeed.com/jobs?q={quote(skill_query, safe='')}&l=remote"
+    url = f"https://www.indeed.com/jobs?q={quote(title_query, safe='')}&l={quote(location, safe='')}"
     html = await _apify_crawl_html(client, url)
     if not html:
         return []
@@ -582,7 +793,7 @@ async def _fetch_apify_indeed(client: httpx.AsyncClient, skill_query: str) -> Li
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-async def _fetch_all_jobs(skill_query: str, title_query: str = "Software Engineer") -> List[JobListing]:
+async def _fetch_all_jobs(profile: UserProfile) -> List[JobListing]:
     """
     Fetch from all sources CONCURRENTLY — including the 3 Apify-backed ones.
     Concurrency is safe because each website-content-crawler run is capped at
@@ -592,6 +803,11 @@ async def _fetch_all_jobs(skill_query: str, title_query: str = "Software Enginee
     not sum — required to stay under Render's ~100s request timeout on the
     first uncached dashboard load.
     """
+    title_query = profile.titles[0] if profile.titles else "Software Engineer"
+    # Remotive searches by text: try the role and the strongest skill.
+    queries = [title_query] + profile.skills[:1]
+    location = profile.location or "India"   # default market of the first users
+
     all_jobs: List[JobListing] = []
 
     async with httpx.AsyncClient(
@@ -600,13 +816,13 @@ async def _fetch_all_jobs(skill_query: str, title_query: str = "Software Enginee
         follow_redirects=True,
     ) as client:
         results = await asyncio.gather(
-            _fetch_remotive(client),
+            _fetch_remotive(client, queries),
             _fetch_arbeitnow(client),
             _fetch_themuse(client),
             _fetch_hn_hiring(client),
-            _fetch_apify_linkedin(client, skill_query, title_query),
-            _fetch_apify_naukri(client, skill_query),
-            _fetch_apify_indeed(client, skill_query),
+            _fetch_apify_linkedin(client, title_query, location),
+            _fetch_apify_naukri(client, title_query),
+            _fetch_apify_indeed(client, title_query, location),
             return_exceptions=True,
         )
         for r in results:
@@ -614,15 +830,69 @@ async def _fetch_all_jobs(skill_query: str, title_query: str = "Software Enginee
                 all_jobs.extend(r)
             elif isinstance(r, Exception):
                 logger.warning("Source fetch raised exception: %r", r)
+    return all_jobs
 
-    # De-duplicate by URL
-    seen: set = set()
-    unique = []
-    for job in all_jobs:
-        if job.url and job.url not in seen:
-            seen.add(job.url)
-            unique.append(job)
-    return unique
+
+_PROFICIENCY_RANK = {"expert": 3, "advanced": 2, "intermediate": 1, "beginner": 0}
+_YEAR_RE = re.compile(r"(19|20)\d{2}")
+
+
+def _year(s: Optional[str]) -> int:
+    m = _YEAR_RE.search(s or "")
+    return int(m.group()) if m else 0
+
+
+async def load_user_profile(user_id: UUID, db: AsyncSession) -> UserProfile:
+    """Skills best-first; roles current-first; years of experience; location."""
+    skills = (await db.execute(select(Skill).where(Skill.user_id == user_id))).scalars().all()
+    skills = sorted(
+        skills,
+        key=lambda s: (bool(s.is_primary),
+                       _PROFICIENCY_RANK.get((s.proficiency or "").lower(), 1),
+                       s.years_experience or 0.0),
+        reverse=True,
+    )
+    exps = (await db.execute(
+        select(WorkExperience).where(WorkExperience.user_id == user_id)
+    )).scalars().all()
+    exps = sorted(exps, key=lambda e: (bool(e.is_current), _year(e.end_date), _year(e.start_date)),
+                  reverse=True)
+    starts = [y for y in (_year(e.start_date) for e in exps) if y]
+    info = (await db.execute(
+        select(PersonalInfo).where(PersonalInfo.user_id == user_id)
+    )).scalar_one_or_none()
+    return UserProfile(
+        skills=[str(s.name) for s in skills],
+        titles=[str(e.role) for e in exps if e.role],
+        years=float(datetime.now().year - min(starts)) if starts else None,
+        location=str(info.location) if info and info.location else "",
+    )
+
+
+def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
+    """Score, drop stale and weak matches, dedupe, best first."""
+    for job in jobs:
+        score_job(job, profile.skills, profile.titles, profile.years, profile.location)
+    def keep(j: JobListing) -> bool:
+        age = _age_days(j.posted_at)          # None = unknown date: keep
+        return bool(j.url) and j.match_score >= MIN_MATCH_SCORE and (age is None or age <= MAX_AGE_DAYS)
+
+    return _dedupe([j for j in jobs if keep(j)])
+
+
+# One fetch per user at a time: a double-click or two tabs share the same run
+# instead of each spawning Apify jobs.
+_inflight: Dict[str, "asyncio.Future[List[Dict[str, Any]]]"] = {}
+
+
+async def _compute(cache_key: str, last_key: str, profile: UserProfile) -> List[Dict[str, Any]]:
+    all_jobs = await _fetch_all_jobs(profile)
+    logger.info("Total jobs fetched across all sources: %d", len(all_jobs))
+    result = [j.to_dict() for j in rank_jobs(all_jobs, profile)[:MAX_RESULTS]]
+    if result:                      # an outage must not pin an empty list for 2h
+        await cache_service.set(cache_key, result, ttl=CACHE_TTL)
+    await cache_service.set(last_key, 1, ttl=REFRESH_COOLDOWN)
+    return result
 
 
 async def get_recommendations_for_user(
@@ -632,64 +902,83 @@ async def get_recommendations_for_user(
 ) -> List[Dict[str, Any]]:
     """
     Main entry point. Returns a list of job dicts sorted by match_score desc.
-    Results are cached in Redis for CACHE_TTL seconds.
+    Cached per profile version, so editing skills/roles/location (or importing
+    a resume) is reflected immediately instead of after the 2h TTL.
     """
-    cache_key = f"job_recs:{user_id}"
-
-    # Cache check
-    if not refresh:
-        cached = await cache_service.get(cache_key)
-        if cached is not None:
-            logger.info("job_recs cache HIT for user %s (%d jobs)", user_id, len(cached))
-            return cached
-
-    # 1. Load user skills from DB
-    skills_result = await db.execute(
-        select(Skill).where(Skill.user_id == user_id)
-    )
-    skills: List[Skill] = skills_result.scalars().all()
-
-    if not skills:
+    profile = await load_user_profile(user_id, db)
+    if not profile.skills:
         logger.info("User %s has no skills — returning empty recommendations", user_id)
         return []
 
-    skill_names  = [s.name for s in skills]
-    # Build a comma-joined query string for scraping fallbacks
-    primary_skills = [s.name for s in skills if s.is_primary][:5]
-    skill_query  = ", ".join(primary_skills or skill_names[:5])
+    cache_key = f"job_recs:{user_id}:{profile.fingerprint()}"
+    last_key = f"job_recs_last:{user_id}"
 
-    # 2. Load user's work experience titles (for title + seniority scoring)
-    exp_result = await db.execute(
-        select(WorkExperience).where(WorkExperience.user_id == user_id)
-    )
-    experiences: List[WorkExperience] = exp_result.scalars().all()
-    user_titles = [e.role for e in experiences if e.role] or ["Software Engineer"]
+    cached = await cache_service.get(cache_key)
+    if cached is not None:
+        # A forced refresh inside the cooldown is served from cache.
+        if not refresh or await cache_service.get(last_key) is not None:
+            logger.info("job_recs cache HIT for user %s (%d jobs)", user_id, len(cached))
+            return cached
 
-    # LinkedIn's search chokes on the comma-joined skill blob (treats it as
-    # one phrase → 0 results) — it gets a title-style query instead. The
-    # current/most-recent role reads exactly like a LinkedIn search.
-    title_query = user_titles[0]
+    task = _inflight.get(cache_key)
+    if task is None:
+        logger.info("Fetching jobs for user %s (skills: %s | titles: %s)",
+                    user_id, profile.skills[:5], profile.titles[:2])
+        task = asyncio.ensure_future(_compute(cache_key, last_key, profile))
+        _inflight[cache_key] = task
+        task.add_done_callback(lambda _t: _inflight.pop(cache_key, None))
+    return await asyncio.shield(task)
 
-    # 3. Fetch all jobs concurrently
-    logger.info("Fetching jobs for user %s (skills: %s | title: %s)",
-                user_id, skill_query, title_query)
-    all_jobs = await _fetch_all_jobs(skill_query, title_query)
-    logger.info("Total jobs fetched across all sources: %d", len(all_jobs))
 
-    # 4. Score and filter
-    for job in all_jobs:
-        score_job(job, skill_names, user_titles)
+# ── Non-blocking refresh ─────────────────────────────────────────────────────
+# A cold fetch includes live Apify crawls (up to minutes), longer than a proxy allows a request
+# to live. The route answers at once with status "pending" and the fetch continues in this
+# process; the page polls. (Not the arq worker: it runs one LLM job at a time, and a crawl
+# there would stall everyone's resumes.)
+_background: set = set()
+PENDING_TTL = 240
+EMPTY_TTL = 600
 
-    matched = [j for j in all_jobs if j.match_score >= MIN_MATCH_SCORE]
-    matched.sort(key=lambda j: j.match_score, reverse=True)
-    top = matched[:MAX_RESULTS]
 
-    result = [j.to_dict() for j in top]
-    logger.info(
-        "Returning %d recommendations for user %s (≥%.0f%% match)",
-        len(result), user_id, MIN_MATCH_SCORE,
-    )
+async def peek_recommendations(user_id: UUID, db: AsyncSession, refresh: bool = False):
+    """Cached result for the current profile, or None when a fetch is needed."""
+    profile = await load_user_profile(user_id, db)
+    if not profile.skills:
+        return []
+    key = f"job_recs:{user_id}:{profile.fingerprint()}"
+    cached = await cache_service.get(key)
+    if cached is not None and (not refresh or await cache_service.get(f"job_recs_last:{user_id}") is not None):
+        return cached
+    if await cache_service.get(f"job_recs_empty:{user_id}:{profile.fingerprint()}") is not None:
+        return []          # a recent fetch found nothing; don't loop on it
+    return None
 
-    # 5. Cache and return
-    await cache_service.set(cache_key, result, ttl=CACHE_TTL)
-    return result
+
+async def start_refresh(user_id: UUID, refresh: bool = False) -> None:
+    """Begin a fetch in the background unless one is already running for this user."""
+    from app.db.database import AsyncSessionLocal
+
+    pending_key = f"job_recs_pending:{user_id}"
+    client = await cache_service.client()
+    if client is not None:
+        try:
+            if not await client.set(pending_key, "1", nx=True, ex=PENDING_TTL):
+                return
+        except Exception:
+            pass
+
+    async def run() -> None:
+        try:
+            async with AsyncSessionLocal() as db:
+                profile = await load_user_profile(user_id, db)
+                jobs = await get_recommendations_for_user(user_id, db, refresh=refresh)
+            if not jobs:
+                await cache_service.set(f"job_recs_empty:{user_id}:{profile.fingerprint()}", 1, ttl=EMPTY_TTL)
+        except Exception:
+            logger.exception("Background job-recommendation fetch failed for %s", user_id)
+        finally:
+            await cache_service.delete(pending_key)
+
+    task = asyncio.ensure_future(run())
+    _background.add(task)
+    task.add_done_callback(_background.discard)

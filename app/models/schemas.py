@@ -12,7 +12,7 @@ CHANGES vs. original:
 import uuid
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, HttpUrl, field_validator
+from pydantic import BaseModel, field_validator
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JD Parsing
