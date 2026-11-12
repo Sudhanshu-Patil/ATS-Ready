@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { MotionConfig } from 'framer-motion'
 import App from './App'
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -13,7 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         that covers every motion.* component in the app. */}
     <MotionConfig reducedMotion="user">
       <BrowserRouter>
-        <App />
+        <ErrorBoundary><App /></ErrorBoundary>
         <Toaster
           position="top-right"
           toastOptions={{

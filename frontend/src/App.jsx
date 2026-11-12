@@ -19,6 +19,9 @@ import Metabase from './pages/Metabase'
 import Settings from './pages/Settings'
 import CoverLetter from './pages/CoverLetter'
 import InterviewPrep from './pages/InterviewPrep'
+import NotFound from './pages/NotFound'
+import CookieNotice from './components/CookieNotice'
+import { Privacy, Terms } from './pages/Legal'
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore()
@@ -75,8 +78,11 @@ export default function App() {
         {/* Public cinematic landing — logged-in users see auth-aware CTAs
             instead of being force-redirected (session restore is async). */}
         <Route path="/"  element={<Landing />} />
-        <Route path="*"  element={<Navigate to="/dashboard" replace />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms"   element={<Terms />} />
+        <Route path="*"  element={<NotFound />} />
       </Routes>
+      <CookieNotice />
     </>
   )
 }

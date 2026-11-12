@@ -136,6 +136,10 @@ export default function Register() {
               {loading ? 'Creating account…' : 'Create account'}
             </button>
           </form>
+          <p className="mt-4 text-xs text-text-muted text-center">
+            By creating an account you agree to our <Link to="/terms" className="underline">Terms</Link> and{' '}
+            <Link to="/privacy" className="underline">Privacy policy</Link>.
+          </p>
           <GoogleButton />
         </motion.div>
 
