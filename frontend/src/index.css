@@ -56,10 +56,14 @@
   ::-webkit-scrollbar-thumb:hover { background: rgb(255 107 53 / 40%); }
 }
 
+/* White text on the brand ember (#FF6B35) is only 2.8:1; this deeper ember passes AA (5.2:1).
+   Brand text on the light theme gets the same treatment. */
+:root[data-theme='light'] .text-brand { color: #B93A0C; }
+
 @layer components {
   /* ── Buttons ─────────────────────────────────────────────────────────────── */
   .btn-primary {
-    @apply bg-brand hover:bg-brand-hover text-white font-semibold px-4 py-2 rounded-lg
+    @apply bg-[#C2410C] hover:bg-[#B93A0C] text-white font-semibold px-4 py-2 rounded-lg
            transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
            shadow-[0_0_0_0_rgba(255,107,53,0)] hover:shadow-[0_0_24px_-4px_rgba(255,107,53,0.5)];
   }

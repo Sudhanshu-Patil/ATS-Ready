@@ -68,7 +68,7 @@ test('history is a tab inside Generate, not a nav item', async ({ page }) => {
   await expect(page.getByRole('link', { name: 'History' })).toHaveCount(0)
 
   await page.goto('/generate')
-  await page.getByRole('button', { name: 'History' }).click()
+  await page.getByRole('tab', { name: 'History' }).click()
   await expect(page).toHaveURL(/tab=history/)
   await expect(page.getByText(/resume.* generated/)).toBeVisible()
 

@@ -11,6 +11,7 @@ import StatusBadge from '../components/StatusBadge'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from '../components/ConfirmDialog'
 
 // Lucide icons replacing the previous emoji glyphs — keeps icon sourcing
 // consistent with the rest of the app instead of mixing emoji with lucide.
@@ -84,7 +85,7 @@ export default function InterviewPrep() {
   }
 
   const deleteItem = async (id) => {
-    if (!confirm('Delete this prep session?')) return
+    if (!(await confirmDialog('Delete this prep session?'))) return
     try {
       await api.delete(`/interview-preps/${id}`)
       setHistory(h => h.filter(x => x.id !== id))

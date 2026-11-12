@@ -10,6 +10,7 @@ import EmptyState from './EmptyState'
 import { SkeletonRow } from './Skeleton'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from './ConfirmDialog'
 
 const STATUS_CONFIG = {
   done:    { icon: CheckCircle, color: 'text-score' },
@@ -51,7 +52,7 @@ export default function ResumeHistory() {
   }
 
   const handleDelete = async (jobId) => {
-    if (!confirm('Delete this resume?')) return
+    if (!(await confirmDialog('Delete this resume?'))) return
     try {
       await jobsAPI.delete(jobId)
       removeJob(jobId)

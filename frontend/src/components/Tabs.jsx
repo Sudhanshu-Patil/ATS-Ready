@@ -12,12 +12,14 @@ export default function Tabs({ tabs, active, onChange, className }) {
   const uid = useId()
 
   return (
-    <div className={clsx('flex gap-1 p-1 bg-bg-card border border-bg-border rounded-xl w-fit max-w-full overflow-x-auto', className)}>
+    <div role="tablist" className={clsx('flex gap-1 p-1 bg-bg-card border border-bg-border rounded-xl w-fit max-w-full overflow-x-auto', className)}>
       {tabs.map(({ id, label, icon: Icon }) => {
         const isActive = active === id
         return (
           <button
             key={id}
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onChange(id)}
             className={clsx(
               'relative px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 flex-shrink-0 whitespace-nowrap',

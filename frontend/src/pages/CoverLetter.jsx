@@ -10,6 +10,7 @@ import Spinner from '../components/Spinner'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import { confirmDialog } from '../components/ConfirmDialog'
 
 const TONES = [
   { id: 'professional',   label: 'Professional',   desc: 'Formal, polished, traditional' },
@@ -85,7 +86,7 @@ export default function CoverLetter() {
   }
 
   const deleteItem = async (id) => {
-    if (!confirm('Delete this cover letter?')) return
+    if (!(await confirmDialog('Delete this cover letter?'))) return
     try {
       await api.delete(`/cover-letters/${id}`)
       setHistory(h => h.filter(x => x.id !== id))

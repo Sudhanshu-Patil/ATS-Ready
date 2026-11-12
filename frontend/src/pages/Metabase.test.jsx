@@ -54,7 +54,7 @@ describe('Metabase — Skills edit flow', () => {
     metabaseAPI.updateSkill.mockResolvedValue({ data: { ...SKILL, proficiency: 'Expert' } })
 
     render(<Metabase />)
-    await userEvent.click(screen.getByRole('button', { name: 'Skills' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Skills' }))
 
     const skillRow = (await screen.findByText('Python')).closest('div').parentElement
     await userEvent.click(within(skillRow).getByRole('button', { name: 'Edit' }))
@@ -92,7 +92,7 @@ describe('Metabase — Experience edit flow', () => {
     metabaseAPI.updateExperience.mockResolvedValue({ data: { ...EXPERIENCE, description: 'Led platform work' } })
 
     render(<Metabase />)
-    await userEvent.click(screen.getByRole('button', { name: 'Experience' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Experience' }))
     await screen.findByText('Acme')
 
     await userEvent.click(screen.getByTitle('Edit experience'))

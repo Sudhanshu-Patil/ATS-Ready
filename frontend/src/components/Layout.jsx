@@ -56,6 +56,14 @@ export default function Layout() {
   // page loads underneath it still open.
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
+  // Escape closes the mobile drawer.
+  useEffect(() => {
+    if (!mobileOpen) return undefined
+    const onKey = (e) => { if (e.key === 'Escape') setMobileOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
   // Pick up work already running (reload, other tab) and forget it on logout.
   useEffect(() => {
     useActivityStore.getState().refresh()
@@ -77,9 +85,13 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:px-3 focus:py-2 focus:rounded-lg focus:bg-brand focus:text-white">
+        Skip to content
+      </a>
       {/* Backdrop — closes the drawer on outside tap, mobile only */}
       {mobileOpen && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 bg-black/50 z-40 lg:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -90,7 +102,7 @@ export default function Layout() {
           tradeoff that keeps .card solid elsewhere doesn't apply here).
           Below `lg` it's an off-canvas drawer (fixed + translate-x); at
           `lg` and up it's the original static column. */}
-      <aside className={clsx(
+      <aside aria-label="Sidebar" className={clsx(
         'w-60 flex-shrink-0 card-glass rounded-none border-y-0 border-l-0 p-0 flex flex-col',
         'fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out',
         'lg:static lg:translate-x-0',
@@ -188,7 +200,7 @@ export default function Layout() {
 
         {/* Main content — route transitions scoped here via useOutlet(), so the
             sidebar above (and its nav pill) never remounts on navigation. */}
-        <main className="flex-1 overflow-hidden">
+        <main id="main" tabIndex={-1} className="flex-1 overflow-hidden outline-none">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}

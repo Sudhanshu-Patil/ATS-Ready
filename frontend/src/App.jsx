@@ -21,6 +21,7 @@ import CoverLetter from './pages/CoverLetter'
 import InterviewPrep from './pages/InterviewPrep'
 import NotFound from './pages/NotFound'
 import CookieNotice from './components/CookieNotice'
+import ConfirmHost from './components/ConfirmDialog'
 import { Privacy, Terms } from './pages/Legal'
 
 export default function App() {
@@ -83,6 +84,7 @@ export default function App() {
         <Route path="*"  element={<NotFound />} />
       </Routes>
       <CookieNotice />
+      <ConfirmHost />
     </>
   )
 }
