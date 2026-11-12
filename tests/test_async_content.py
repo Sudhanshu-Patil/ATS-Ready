@@ -171,3 +171,23 @@ async def test_retry_is_owner_only(client, stub):
     await _fail_row(CoverLetter, cl)
     other = bearer(await register(client, unique_email()))
     assert (await client.post(f"/api/cover-letters/{cl}/retry", headers=other)).status_code == 404
+
+
+async def test_interview_prep_is_a_pro_feature(client, stub, monkeypatch):
+    monkeypatch.setattr(settings, "BILLING_ENABLED", True)
+    h = await user_with_profile(client)
+
+    r = await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})
+    assert r.status_code == 402
+    assert r.json()["detail"]["message"] == "Interview prep is a Pro feature."
+    assert not stub                                              # nothing was queued
+
+    from app.db.models import User
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as db:
+        me = (await client.get("/api/auth/me", headers=h)).json()["email"]
+        u = (await db.execute(select(User).where(User.email == me))).scalar_one()
+        u.plan = "pro"
+        await db.commit()
+    ok = await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})
+    assert ok.status_code == 202 and stub[0][0] == "generate_interview_prep_task"

@@ -328,7 +328,7 @@ function PlanSection({ user }) {
 
   const plans = [
     { id: 'free', label: 'Free', price: '$0', features: ['3 resumes/month', 'ATS scoring', 'DOCX download'], current: user?.plan === 'free' },
-    { id: 'pro',  label: 'Pro',  price: '$19/mo', features: ['Unlimited resumes', 'Cover letters', 'Priority AI'], current: user?.plan === 'pro' },
+    { id: 'pro',  label: 'Pro',  price: '$19/mo', features: ['Unlimited resumes', 'Cover letters', 'Interview prep', 'Priority AI'], current: user?.plan === 'pro' },
     { id: 'team', label: 'Team', price: '$49/mo', features: ['Everything in Pro', 'API access', '5 seats'], current: user?.plan === 'team' },
   ]
 

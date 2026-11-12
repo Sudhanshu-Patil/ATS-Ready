@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.api.rate_limit import per_user_limit
 from app.api.dependencies import get_current_user
-from app.api.plan_limits import check_cover_letter_access
+from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
 from app.services.queue import enqueue
@@ -217,7 +217,7 @@ async def delete_cover_letter(
 async def generate_interview_prep(
     request: InterviewPrepRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(check_interview_prep_access),
 ):
     """
     Queue tailored interview questions and model answers (10 questions across
@@ -308,7 +308,7 @@ async def get_interview_prep(
 async def retry_interview_prep(
     prep_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(check_interview_prep_access),
 ):
     """Re-run a failed interview prep with the job description saved on it."""
     prep = await _own_prep(db, prep_id, user)

@@ -285,9 +285,9 @@ export default function ScrollJourney() {
                   className="absolute inset-0 flex items-center justify-between gap-4"
                 >
                   <div className="min-w-0">
-                    <h3 className={`text-base font-semibold ${phase === 2 ? 'text-score' : phase === 1 ? 'text-brand' : 'text-text-primary'}`}>
+                    <p className={`text-base font-semibold ${phase === 2 ? 'text-score' : phase === 1 ? 'text-brand' : 'text-text-primary'}`}>
                       {phase + 1}. {PHASES[phase].title}
-                    </h3>
+                    </p>
                     <p className="text-xs text-text-secondary mt-1 line-clamp-2">{PHASES[phase].desc}</p>
                   </div>
                   {phase === 2 && (
