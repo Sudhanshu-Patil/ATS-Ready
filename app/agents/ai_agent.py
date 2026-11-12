@@ -379,10 +379,10 @@ Responsibilities: {json.dumps(parsed_jd.responsibilities[:4])}
 === CANDIDATE ===
 Name: {personal.get("full_name", "Candidate")}
 Current Role Summary: {tailored_resume.get("professional_summary", "")}
-Top Skills: {", ".join([s["items"][0] if s.get("items") else "" for s in tailored_resume.get("skills", [])[:3]])}
+Top Skills: {", ".join([str(s["items"][0]) for s in tailored_resume.get("skills", [])[:3] if isinstance(s, dict) and s.get("items")])}
 Most Relevant Experience: {json.dumps([
-    {{"role": e["role"], "company": e["company"], "highlight": e["bullets"][0] if e.get("bullets") else ""}}
-    for e in tailored_resume.get("work_experience", [])[:2]
+    {"role": e.get("role", ""), "company": e.get("company", ""), "highlight": (e.get("bullets") or [""])[0]}
+    for e in tailored_resume.get("work_experience", [])[:2] if isinstance(e, dict)
 ], default=str)}
 
 === INSTRUCTIONS ===
@@ -473,12 +473,12 @@ Responsibilities: {json.dumps(parsed_jd.responsibilities[:5])}
 Name: {personal.get("full_name", "Candidate")}
 Summary: {tailored_resume.get("professional_summary", "")}
 Experience: {json.dumps([
-    {{"role": e["role"], "company": e["company"], "bullets": e["bullets"][:2]}}
-    for e in tailored_resume.get("work_experience", [])[:3]
+    {"role": e.get("role", ""), "company": e.get("company", ""), "bullets": (e.get("bullets") or [])[:2]}
+    for e in tailored_resume.get("work_experience", [])[:3] if isinstance(e, dict)
 ], default=str)}
 Skills: {json.dumps([
-    {{"category": s["category"], "items": s["items"][:4]}}
-    for s in tailored_resume.get("skills", [])[:4]
+    {"category": s.get("category", ""), "items": (s.get("items") or [])[:4]}
+    for s in tailored_resume.get("skills", [])[:4] if isinstance(s, dict)
 ], default=str)}
 Skill gaps (prepare for): {", ".join(skills_missing[:5]) if skills_missing else "none identified"}
 
