@@ -4,6 +4,24 @@ Automatically tailors your resume to any job description using LLM pipelines, ma
 
 ---
 
+## Status and docs
+
+Production-hardened on the free stack (Render, Neon, Upstash, Groq). Where to look:
+
+| Topic | File |
+|---|---|
+| Architecture, commands, conventions (for contributors and AI assistants) | [CLAUDE.md](CLAUDE.md) |
+| What to configure, monitoring, spend caps, backups, rollback | [PRODUCTION-CHECKLIST.md](PRODUCTION-CHECKLIST.md) |
+| Render + Neon + Upstash walkthrough (no card) | [DEPLOYMENT-NOCARD.md](DEPLOYMENT-NOCARD.md) |
+| Oracle Cloud walkthrough | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Render blueprint (env var names) | [render.yaml](render.yaml) |
+| Model quality and prompt-injection evals | [evals/](evals/) (`python -m evals.run_evals`) |
+
+Quick start: `docker compose up` (API, worker, Postgres, Redis, Mailpit, Vite), then open http://localhost:5173.
+Tests: `pytest` (backend), `cd frontend && npm test`, `cd e2e && npx playwright test`.
+
+---
+
 ## 🏗️ Project Structure
 
 ```

@@ -1,5 +1,5 @@
 # Render blueprint: env var NAMES only. Secret values are set in the Render dashboard
-# (sync: false), never committed. See DEPLOYMENT.md for what each one is.
+# (sync: false), never committed. See PRODUCTION-CHECKLIST.md for what each one is.
 services:
   - type: web
     name: ats-ready

@@ -112,3 +112,7 @@ frontend/dist-lhci/
 e2e/test-results/
 e2e/playwright-report/
 frontend/dist-e2e/
+
+# graphify: keep the readable report, ignore the large/regenerable files
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
