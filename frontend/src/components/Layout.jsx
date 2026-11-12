@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useOutlet, useLocation, NavLink, useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  LayoutDashboard, FileText, History, Database,
+  LayoutDashboard, FileText, Database,
   Settings, LogOut, Zap, ChevronRight,
   BrainCircuit, Mail, Menu, X
 } from 'lucide-react'
@@ -17,7 +17,6 @@ const NAV = [
   { to: '/generate',       icon: Zap,             label: 'Generate Resume' },
   { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
   { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
-  { to: '/history',        icon: History,         label: 'History' },
   { to: '/metabase',       icon: Database,        label: 'Metabase' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]

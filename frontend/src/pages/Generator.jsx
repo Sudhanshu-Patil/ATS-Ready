@@ -9,6 +9,7 @@ import { fadeInUp } from '../lib/motion'
 import ScoreRing, { scoreColorClass } from '../components/ScoreRing'
 import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
+import ResumeHistory from '../components/ResumeHistory'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -19,6 +20,11 @@ const STEPS = [
   'Tailoring resume content…',
   'Scoring ATS compatibility…',
   'Building .docx file…',
+]
+
+const PAGE_TABS = [
+  { id: 'generate', label: 'Generate' },
+  { id: 'history',  label: 'History' },
 ]
 
 const MODE_TABS = [
@@ -38,7 +44,9 @@ export default function Generator() {
   const { addPendingJob, updateJob, refresh } = useJobsStore()
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const pollRef = useRef(null)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'history' ? 'history' : 'generate'
+  const setTab = (t) => setSearchParams(t === 'history' ? { tab: 'history' } : {}, { replace: true })
   const location = useLocation()
 
   // Pre-fill from the Job Recommendations "Generate Resume" button. Prefer the
@@ -131,6 +139,9 @@ export default function Generator() {
         <p className="text-text-secondary mt-1">Paste a job description and get an ATS-optimized .docx in ~30 seconds.</p>
       </motion.div>
 
+      <Tabs tabs={PAGE_TABS} active={tab} onChange={setTab} className="mb-6" />
+
+      {tab === 'history' ? <ResumeHistory /> : (<>
       {/* Input card */}
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card mb-6">
         <Tabs tabs={MODE_TABS} active={mode} onChange={setMode} className="mb-5" />
@@ -309,6 +320,7 @@ export default function Generator() {
           )}
         </motion.div>
       )}
+      </>)}
     </div>
   )
 }

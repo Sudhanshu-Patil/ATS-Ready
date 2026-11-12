@@ -68,7 +68,7 @@ export default function Dashboard() {
               <p className="eyebrow mb-1">Recent activity</p>
               <h2 className="font-semibold text-text-primary">Recent Resumes</h2>
             </div>
-            <Link to="/history" className="text-xs text-brand hover:text-brand-hover flex items-center gap-1">
+            <Link to="/generate?tab=history" className="text-xs text-brand hover:text-brand-hover flex items-center gap-1">
               View all <ChevronRight size={12} />
             </Link>
           </div>

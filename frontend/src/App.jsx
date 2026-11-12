@@ -15,7 +15,6 @@ import ResetPassword from './pages/ResetPassword'
 import VerifyEmail from './pages/VerifyEmail'
 import Dashboard from './pages/Dashboard'
 import Generator from './pages/Generator'
-import History from './pages/History'
 import Metabase from './pages/Metabase'
 import Settings from './pages/Settings'
 import CoverLetter from './pages/CoverLetter'
@@ -68,7 +67,7 @@ export default function App() {
           <Route path="/generate"       element={<Generator />} />
           <Route path="/cover-letter"   element={<CoverLetter />} />
           <Route path="/interview-prep" element={<InterviewPrep />} />
-          <Route path="/history"        element={<History />} />
+          <Route path="/history"        element={<Navigate to="/generate?tab=history" replace />} />
           <Route path="/metabase"       element={<Metabase />} />
           <Route path="/settings"       element={<Settings />} />
         </Route>
