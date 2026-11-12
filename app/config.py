@@ -5,7 +5,6 @@ Central settings loaded from environment variables / .env file.
 All sub-systems import `settings` from here — never read os.environ directly.
 """
 from pathlib import Path
-from typing import Optional
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,11 +60,11 @@ class Settings(BaseSettings):
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)
-    DATABASE_URL: str = f"postgresql+asyncpg://atsready:secret@127.0.0.1:5432/atsready"
+    DATABASE_URL: str = "postgresql+asyncpg://atsready:secret@127.0.0.1:5432/atsready"
 
     # Sync URL used ONLY by Alembic CLI (psycopg2 driver).
     # Alembic cannot use asyncpg; this is kept separate intentionally.
-    SYNC_DATABASE_URL: str = f"postgresql+psycopg2://atsready:secret@127.0.0.1:5432/atsready"
+    SYNC_DATABASE_URL: str = "postgresql+psycopg2://atsready:secret@127.0.0.1:5432/atsready"
 
     # SQLAlchemy async pool settings
     DB_POOL_SIZE: int = 10

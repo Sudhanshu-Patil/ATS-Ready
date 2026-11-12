@@ -7,7 +7,7 @@ from sqlalchemy import update
 
 from app.config import settings
 from app.db.database import AsyncSessionLocal
-from app.db.models import CoverLetter, InterviewPrep
+from app.db.models import CoverLetter
 from app.worker import tasks
 from tests.conftest import unique_email
 from tests.test_metabase_experience import bearer, register

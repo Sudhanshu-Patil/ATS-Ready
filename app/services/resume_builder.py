@@ -4,16 +4,15 @@ Resume Builder Service — 1-Page ATS-Optimised DOCX
 Tight spacing, compact fonts, max content density.
 ATS rules: single column, no tables for layout, no graphics, standard fonts.
 """
-import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn, nsmap
+from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
 

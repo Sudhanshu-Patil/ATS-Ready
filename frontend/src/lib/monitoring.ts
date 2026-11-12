@@ -3,9 +3,10 @@ import { authAPI } from '../api/client'
 // Error tracking + web vitals. The DSN comes from the server at runtime
 // (/auth/config), so enabling Sentry needs no rebuild. The SDK is loaded lazily
 // and only when a DSN is configured, so it costs nothing otherwise.
-let sentry = null
+type SentryModule = typeof import('@sentry/react')
+let sentry: SentryModule | null = null
 
-export async function initMonitoring() {
+export async function initMonitoring(): Promise<void> {
   try {
     const { data } = await authAPI.config()
     if (!data.sentry_dsn) return
@@ -15,7 +16,6 @@ export async function initMonitoring() {
       environment: data.environment,
       integrations: [sentry.browserTracingIntegration()],
       tracesSampleRate: 0.1,
-      sendDefaultPii: false,
       // Never attach request bodies or user data: resumes are personal.
       beforeSend(event) {
         if (event.request) delete event.request.data
@@ -27,6 +27,6 @@ export async function initMonitoring() {
   }
 }
 
-export function captureException(error) {
+export function captureException(error: unknown): void {
   try { sentry?.captureException(error) } catch { /* ignore */ }
 }

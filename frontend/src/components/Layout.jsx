@@ -75,7 +75,7 @@ export default function Layout() {
   }, [])
 
   const handleLogout = async () => {
-    try { await authAPI.logout() } catch {}
+    try { await authAPI.logout() } catch { /* logout is best-effort */ }
     logout()
     navigate('/login')
     toast.success('Logged out')

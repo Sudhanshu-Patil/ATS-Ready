@@ -11,8 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    Education, ExperienceBullet, PersonalInfo, Project,
-    ProjectBullet, Skill, WorkExperience,
+    Education, PersonalInfo, Project,
+    Skill, WorkExperience,
 )
 
 logger = logging.getLogger(__name__)

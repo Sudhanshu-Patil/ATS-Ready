@@ -1,13 +1,12 @@
 import logging
-import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,7 +16,7 @@ from app.db.models import (
     Project, ProjectBullet, Skill, User, WorkExperience,
 )
 from app.models.schemas import (
-    ATSBreakdown, GenerateResumeRequest, GenerateResumeResponse,
+    GenerateResumeRequest, GenerateResumeResponse,
     JobStatusResponse, PersonalInfoUpdate, ProjectCreate, ProjectUpdate,
     SkillCreate, SkillOut, SkillUpdate, WorkExperienceCreate, WorkExperienceUpdate,
 )

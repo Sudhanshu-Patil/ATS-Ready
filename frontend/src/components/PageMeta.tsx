@@ -6,7 +6,7 @@ const DEFAULT_TITLE = 'ATS-Ready | AI Resume Tailoring, ATS Score and Cover Lett
 
 // path -> [title, indexable]. Signed-in app screens are noindex; the sitemap
 // lists only the indexable public pages.
-const PAGES = {
+const PAGES: Record<string, [string, boolean]> = {
   '/':                [DEFAULT_TITLE, true],
   '/login':           ['Log in | ATS-Ready', true],
   '/register':        ['Create your account | ATS-Ready', true],
@@ -24,7 +24,7 @@ const PAGES = {
   '/admin':           ['Admin | ATS-Ready', false],
 }
 
-function setMeta(name, content) {
+function setMeta(name: string, content: string): void {
   let el = document.head.querySelector(`meta[name="${name}"]`)
   if (!el) {
     el = document.createElement('meta')
@@ -35,7 +35,7 @@ function setMeta(name, content) {
 }
 
 // Keeps <title>, robots and the canonical URL right on every client-side navigation.
-export default function PageMeta() {
+export default function PageMeta(): null {
   const { pathname } = useLocation()
   useEffect(() => {
     const known = PAGES[pathname]

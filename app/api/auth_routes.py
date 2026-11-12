@@ -20,7 +20,6 @@ from app.services.auth_service import (
     create_reset_token,
     decode_token,
     hash_password,
-    verify_access_token,
     verify_google_id_token,
     verify_email_verify_token,
     verify_password,

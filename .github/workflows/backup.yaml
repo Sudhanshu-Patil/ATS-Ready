@@ -1,0 +1,41 @@
+name: Database backup
+
+# Nightly encrypted pg_dump kept as a 30-day artifact. The repo is public, so the
+# dump is encrypted with a passphrase BEFORE upload; without BACKUP_PASSPHRASE it is unreadable.
+# Needs repo secrets: BACKUP_DATABASE_URL (a plain postgresql://... Neon URL) and BACKUP_PASSPHRASE.
+# Neon's own point-in-time restore stays the first line of defence; this is the second.
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        env:
+          URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$PASS" ]; then
+            echo "::warning::BACKUP_DATABASE_URL / BACKUP_PASSPHRASE not set; skipping backup."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      - name: Dump and encrypt
+        if: env.SKIP != '1'
+        env:
+          URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          sudo apt-get install -y -q postgresql-client >/dev/null
+          pg_dump "$URL" --no-owner --format=custom \
+            | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:PASS -out backup.dump.enc
+          ls -l backup.dump.enc
+      - name: Upload
+        if: env.SKIP != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup.dump.enc
+          retention-days: 30

@@ -11,7 +11,7 @@ removed at all; only low-relevance bullets and long free text are.
 import copy
 import json
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 
 def estimate_tokens(text: str) -> int:

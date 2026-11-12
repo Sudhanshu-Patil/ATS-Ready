@@ -32,16 +32,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import relationship
 from app.db.base import Base
-import uuid
 
 def _now(): return datetime.utcnow()
 def _uuid(): return uuid.uuid4()
 
-from app.db.base import Base
 
 
 # ─────────────────────────────────────────────────────────────────────────────

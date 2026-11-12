@@ -7,12 +7,12 @@ Added in Step 3 to give users control over their job history and handle
 the common case of a failed job (transient AI errors, network timeouts).
 """
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.activity_routes import ensure_capacity

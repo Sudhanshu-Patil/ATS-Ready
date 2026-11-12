@@ -41,6 +41,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements-dev.txt
       - run: pip-audit -r requirements.txt --progress-spinner off --ignore-vuln CVE-2026-114605  # dnspython: fix 2.9.0 not on PyPI yet
+      - run: ruff check app main.py tests scripts
       - run: alembic upgrade head
       - run: pytest -q
 
@@ -58,7 +59,38 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
+      - run: npm run lint
+      - run: npm run typecheck
       - run: npm run test
+      - run: npm run build   # the production bundle must compile
+
+  # Performance, accessibility, SEO and best-practice budgets (frontend/lighthouserc.json).
+  lighthouse:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx vite build --outDir dist-lhci --emptyOutDir
+      - run: npx -y @lhci/cli@0.14.0 autorun
+
+  # Committed secrets: scans the whole history.
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Heavier (full docker-compose stack + browser) — only on pushes to
   # main/master so PR feedback stays fast and CI minutes stay controlled;

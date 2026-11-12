@@ -31,11 +31,10 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from arq import cron
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
