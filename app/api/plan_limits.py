@@ -61,7 +61,9 @@ async def check_resume_limit(
         # Unlimited plan — no check needed
         return user
 
-    # Count completed resumes this calendar month.
+    # Count resumes this calendar month, INCLUDING queued/running ones: counting
+    # only finished jobs let a free user enqueue unlimited jobs before the first
+    # one completed.
     # NAIVE UTC on purpose: created_at is TIMESTAMP WITHOUT TIME ZONE (written
     # via datetime.utcnow() everywhere) — asyncpg rejects tz-aware parameters
     # against naive columns, which crashed every free-plan generation.
@@ -71,7 +73,7 @@ async def check_resume_limit(
     result = await db.execute(
         select(func.count(JobApplication.id)).where(
             JobApplication.user_id == user.id,
-            JobApplication.status == "done",
+            JobApplication.status.in_(("done", "pending", "running")),
             JobApplication.created_at >= month_start,
         )
     )

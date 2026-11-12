@@ -115,6 +115,7 @@ from app.api.sse_routes import sse_router
 from app.api.job_routes import job_router
 from app.api.billing_routes import billing_router
 from app.api.content_routes import content_router
+from app.api.activity_routes import activity_router
 
 app.include_router(auth_router,    prefix="/api")
 app.include_router(router,         prefix="/api")
@@ -122,6 +123,7 @@ app.include_router(sse_router,     prefix="/api")
 app.include_router(job_router,     prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
+app.include_router(activity_router, prefix="/api")
 
 
 @app.get("/health", tags=["System"])

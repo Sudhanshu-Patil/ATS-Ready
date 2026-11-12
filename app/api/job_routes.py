@@ -15,7 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.activity_routes import ensure_capacity
 from app.api.dependencies import get_current_user
+from app.api.plan_limits import check_resume_limit
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import JobApplication, User
@@ -142,7 +144,7 @@ async def get_job(
 async def retry_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(check_resume_limit),   # a retry spends quota like a new job
 ):
     """
     Retry a failed job.
@@ -157,6 +159,7 @@ async def retry_job(
             status_code=400,
             detail=f"Only failed jobs can be retried. This job has status='{job.status}'.",
         )
+    await ensure_capacity(db, user.id)
     if not job.jd_text and not job.jd_url:
         raise HTTPException(
             status_code=400,

@@ -301,6 +301,9 @@ class CoverLetter(Base):
     word_count  = Column(Integer(), nullable=True)
     highlights  = Column(JSONB, default=list)
     tone        = Column(String(30), default="professional")
+    # pending -> running -> done | failed (generated in the arq worker)
+    status      = Column(String(20), default="done", server_default="done", nullable=False)
+    error       = Column(Text, nullable=True)
 
     created_at  = Column(DateTime, default=_now, nullable=False)
 
@@ -321,6 +324,8 @@ class InterviewPrep(Base):
     quick_tips         = Column(JSONB, default=list)
     red_flags_to_avoid = Column(JSONB, default=list)
     questions_to_ask   = Column(JSONB, default=list)
+    status             = Column(String(20), default="done", server_default="done", nullable=False)
+    error              = Column(Text, nullable=True)
 
     created_at         = Column(DateTime, default=_now, nullable=False)
 

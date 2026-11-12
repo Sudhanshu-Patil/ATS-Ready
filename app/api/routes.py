@@ -23,6 +23,7 @@ from app.models.schemas import (
 )
 from app.services.cache_service import cache_service
 from app.services.storage_service import storage_service
+from app.api.activity_routes import ensure_capacity
 from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_resume_limit
 
@@ -58,6 +59,7 @@ async def generate_resume(
     # Validate: must have URL or text
     if not request.jd_url and not request.jd_text:
         raise HTTPException(status_code=422, detail="Either jd_url or jd_text is required.")
+    await ensure_capacity(db, user.id)
 
     # Create the JobApplication row in "pending" state NOW so we have an ID
     job_app = JobApplication(

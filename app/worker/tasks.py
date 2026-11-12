@@ -26,20 +26,23 @@ ADDING A NEW TASK:
   2. Add it to WorkerSettings.functions list at the bottom.
   3. Enqueue it from a route: `await pool.enqueue_job("my_task", arg1, arg2)`
 """
+import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from arq import cron
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
-from app.db.models import JobApplication
+from app.db.models import CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
+from app.services.content_service import build_context, friendly_error
 from app.services.compaction import local_ats_score
 from app.services.metabase_service import metabase_service
 from app.services.resume_builder import resume_builder
@@ -230,6 +233,83 @@ async def generate_resume(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Cover letter / interview prep tasks
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone):
+    """Fill in a pending CoverLetter row. Failures are recorded on the row (no
+    arq retry: the user sees the error and can resubmit)."""
+    async with AsyncSessionLocal() as db:
+        row = await db.get(CoverLetter, uuid.UUID(letter_id))
+        if row is None:
+            return
+        row.status = "running"
+        await db.commit()
+        try:
+            profile, parsed_jd, tailored, job_app = await build_context(
+                jd_text, uuid.UUID(user_id), db, job_app_id)
+            result = await asyncio.to_thread(
+                ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone)
+            row.job_app_id = job_app.id if job_app else None
+            row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
+            row.subject = result.get("subject")
+            row.body = result.get("body") or ""
+            row.word_count = result.get("word_count")
+            row.highlights = result.get("highlights", [])
+            row.status = "done"
+        except Exception as exc:
+            logger.error("Cover letter %s FAILED: %s", letter_id, exc, exc_info=True)
+            row.status, row.error = "failed", friendly_error(exc)
+        await db.commit()
+
+
+async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_id):
+    async with AsyncSessionLocal() as db:
+        row = await db.get(InterviewPrep, uuid.UUID(prep_id))
+        if row is None:
+            return
+        row.status = "running"
+        await db.commit()
+        try:
+            profile, parsed_jd, tailored, job_app = await build_context(
+                jd_text, uuid.UUID(user_id), db, job_app_id)
+            result = await asyncio.to_thread(
+                ai_agent.generate_interview_prep, parsed_jd, profile, tailored)
+            row.job_app_id = job_app.id if job_app else None
+            row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
+            row.questions = result.get("questions", [])
+            row.quick_tips = result.get("quick_tips", [])
+            row.red_flags_to_avoid = result.get("red_flags_to_avoid", [])
+            row.questions_to_ask = result.get("questions_to_ask", [])
+            row.status = "done"
+        except Exception as exc:
+            logger.error("Interview prep %s FAILED: %s", prep_id, exc, exc_info=True)
+            row.status, row.error = "failed", friendly_error(exc)
+        await db.commit()
+
+
+# Longer than any legitimate queue wait or run (JOB_TIMEOUT is per run).
+STALE_AFTER = timedelta(seconds=max(2 * settings.JOB_TIMEOUT, 900))
+
+
+async def reap_stale_jobs(ctx):
+    """Cron: rows stuck in pending/running (worker crash, lost job) -> failed,
+    so the UI never spins forever and the per-user active cap frees up."""
+    cutoff = datetime.utcnow() - STALE_AFTER
+    async with AsyncSessionLocal() as db:
+        for model, col in ((JobApplication, "error_message"), (CoverLetter, "error"),
+                           (InterviewPrep, "error")):
+            res = await db.execute(
+                update(model)
+                .where(model.status.in_(("pending", "running")), model.created_at < cutoff)
+                .values(status="failed", **{col: "Timed out. Please try again."})
+            )
+            if res.rowcount:
+                logger.warning("Reaped %d stale %s rows", res.rowcount, model.__tablename__)
+        await db.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Utility helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -262,7 +342,10 @@ class WorkerSettings:
     redis_settings = _RS.from_dsn(settings.REDIS_URL)
 
     # Every async function listed here becomes an enqueueable task
-    functions = [generate_resume]
+    functions = [generate_resume, generate_cover_letter_task, generate_interview_prep_task]
+
+    # Every 5 minutes: fail jobs stuck in pending/running
+    cron_jobs = [cron(reap_stale_jobs, minute=set(range(0, 60, 5)), run_at_startup=True)]
 
     # Max number of jobs this worker will run simultaneously
     max_jobs = settings.WORKER_CONCURRENCY

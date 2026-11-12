@@ -12,13 +12,19 @@ set -e
 echo "[start-combined] applying database migrations…"
 alembic upgrade head
 
-echo "[start-combined] starting ARQ worker (background)…"
-arq app.worker.tasks.WorkerSettings &
-WORKER_PID=$!
+echo "[start-combined] starting ARQ worker (background, auto-restart)…"
+# Restart the worker if it crashes, so queued jobs keep draining while the API
+# stays up. 5s back-off avoids a tight crash loop.
+(
+  while true; do
+    arq app.worker.tasks.WorkerSettings || echo "[start-combined] worker exited ($?), restarting in 5s"
+    sleep 5
+  done
+) &
+SUPERVISOR_PID=$!
 
-# If either process dies, take the container down so the platform restarts it
-# cleanly rather than running half a stack.
-trap 'kill $WORKER_PID 2>/dev/null' EXIT
+# When the API exits, take the whole container down so the platform restarts it.
+trap 'kill $SUPERVISOR_PID 2>/dev/null' EXIT
 
 echo "[start-combined] starting API on port ${PORT:-8000}…"
 exec uvicorn main:app \
