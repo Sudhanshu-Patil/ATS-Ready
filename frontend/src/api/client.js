@@ -71,6 +71,10 @@ export const authAPI = {
   config:   () => api.get('/auth/config'),
   google:   (credential) => api.post('/auth/google', { credential }),
   logout:   () => api.post('/auth/logout'),
+  logoutAll: () => api.post('/auth/logout-all'),
+  exportData: () => api.get('/auth/me/export', { responseType: 'blob' }),
+  deleteAccount: (confirmEmail, password) =>
+    api.delete('/auth/me', { data: { confirm_email: confirmEmail, password } }),
   me:       () => api.get('/auth/me'),
   refresh:  () => api.post('/auth/refresh'),
   updateMe: (data) => api.patch('/auth/me', data),
