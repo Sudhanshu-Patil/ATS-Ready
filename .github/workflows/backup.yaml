@@ -34,7 +34,7 @@ jobs:
           ls -l backup.dump.enc
       - name: Upload
         if: env.SKIP != '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: db-backup-${{ github.run_id }}
           path: backup.dump.enc
