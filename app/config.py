@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     # so "low" trades reasoning depth for speed/cost. Empty string omits the
     # param entirely (needed for providers/models that don't support it).
     LLM_REASONING_EFFORT: str = "low"
+    # Returns canned JSON instead of calling the provider. For tests, Playwright
+    # and CI only: no Groq quota is spent and runs are deterministic.
+    LLM_FAKE: bool = False
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)

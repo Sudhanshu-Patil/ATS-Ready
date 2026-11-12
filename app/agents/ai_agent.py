@@ -46,6 +46,9 @@ class AIAgent:
         output, so JSON Object Mode is requested directly rather than relying
         purely on prompt instructions — reasoning models can otherwise leak
         chain-of-thought text into the response body."""
+        if settings.LLM_FAKE:
+            return self._fake_response(system)
+
         extra_body = {}
         if settings.LLM_REASONING_EFFORT:
             extra_body["reasoning_effort"] = settings.LLM_REASONING_EFFORT
@@ -61,6 +64,40 @@ class AIAgent:
             extra_body=extra_body,
         )
         return response.choices[0].message.content
+
+    def _fake_response(self, system: str) -> str:
+        """Canned JSON per pipeline stage, keyed on the system prompt."""
+        if system == self.SYSTEM_JD_PARSER:
+            data = {
+                "job_title": "Backend Engineer", "company": "Acme", "seniority": "Mid",
+                "industry": "Software", "required_skills": ["Python", "FastAPI"],
+                "preferred_skills": ["Docker"], "responsibilities": ["Build APIs"],
+                "qualifications": ["BSc"], "keywords": ["Python", "FastAPI", "Docker"],
+            }
+        elif system == self.SYSTEM_RESUME_PARSER:
+            data = {"personal": {"full_name": "Test User"}, "skills": [],
+                    "work_experience": [], "projects": [], "education": []}
+        elif system == self.SYSTEM_RESUME_TAILOR:
+            data = {
+                "professional_summary": "Backend engineer with Python and FastAPI experience.",
+                "skills": [{"category": "Languages", "items": ["Python"]}],
+                "work_experience": [{"company": "Acme", "role": "Engineer", "location": "",
+                                     "start_date": "Jan 2022", "end_date": "Present",
+                                     "bullets": ["Built FastAPI services."]}],
+                "projects": [], "keywords_injected": ["Python"], "keywords_missing": [],
+            }
+        elif system == self.SYSTEM_ATS_SCORER:
+            data = {"keyword_score": 80, "skills_score": 80, "action_verb_score": 80,
+                    "format_score": 80, "total_score": 80, "matched_keywords": ["Python"],
+                    "missing_keywords": [], "matched_skills": ["Python"],
+                    "missing_skills": [], "suggestions": []}
+        elif system == self.SYSTEM_COVER_LETTER:
+            data = {"subject": "Application for Backend Engineer", "body": "Dear team,\n\nHello.",
+                    "word_count": 3, "highlights": ["Python"]}
+        else:
+            data = {"questions": [], "quick_tips": [], "red_flags_to_avoid": [],
+                    "questions_to_ask": []}
+        return json.dumps(data)
 
     # ─── Stage 1: JD Analysis ─────────────────────────────────────────────────
 

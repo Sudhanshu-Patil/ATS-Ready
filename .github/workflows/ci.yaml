@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, paypal-gateway, production-hardening]
   pull_request:
 
 jobs:
@@ -31,6 +31,7 @@ jobs:
       SYNC_DATABASE_URL: postgresql+psycopg2://atsready:secret@localhost:5432/atsready
       REDIS_URL: redis://localhost:6379/0
       ENVIRONMENT: development
+      LLM_FAKE: "true"
       JWT_SECRET: ci-only-secret-never-used-outside-github-actions-runners
     steps:
       - uses: actions/checkout@v4
@@ -38,12 +39,7 @@ jobs:
         with:
           python-version: "3.12"   # matches the Dockerfile base image
           cache: pip
-      - run: pip install -r requirements.txt
-      # pytest/pytest-asyncio are dev-only (installed inline in the
-      # Dockerfile's development stage, not in requirements.txt) — CI needs
-      # them added explicitly since it doesn't build that image. Version
-      # pinned to match the Dockerfile exactly — keep both in sync.
-      - run: pip install pytest==9.1.1 pytest-asyncio==1.4.0
+      - run: pip install -r requirements-dev.txt
       - run: alembic upgrade head
       - run: pytest -q
 
