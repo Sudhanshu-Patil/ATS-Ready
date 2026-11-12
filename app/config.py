@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     LLM_REASONING_EFFORT: str = "low"
     # Returns canned JSON instead of calling the provider. For tests, Playwright
     # and CI only: no Groq quota is spent and runs are deterministic.
+    # Tried in order when the main model is rate-limited or down (Groq limits
+    # are per model). Comma-separated; empty disables fallback.
+    LLM_FALLBACK_MODELS: str = "openai/gpt-oss-20b,qwen/qwen3.8-27b"
+    LLM_TPM_BUDGET: int = 7500      # tokens/min per model; Groq free tier is 8K. 0 = off
+    LLM_TIMEOUT: float = 60.0       # seconds per request
+    LLM_ROUNDS: int = 3             # passes over all models before giving up
+    LLM_PROFILE_MAX_CHARS: int = 9000   # compact_profile budget (~2.3K tokens)
     LLM_FAKE: bool = False
     # Global cap on Apify actor runs per UTC day (protects the free-plan credit).
     APIFY_DAILY_RUN_CAP: int = 30

@@ -35,7 +35,7 @@ class MetabaseService:
             "education":  await self._get_education(db, user_id),
         }
         logger.info(
-            "Profile loaded for user %d — %d skills, %d roles, %d projects",
+            "Profile loaded for user %s — %d skills, %d roles, %d projects",
             user_id,
             len(profile["skills"]),
             len(profile["experience"]),

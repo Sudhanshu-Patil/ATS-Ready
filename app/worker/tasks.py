@@ -40,6 +40,7 @@ from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
 from app.db.models import JobApplication
 from app.services.cache_service import cache_service
+from app.services.compaction import local_ats_score
 from app.services.metabase_service import metabase_service
 from app.services.resume_builder import resume_builder
 from app.services.scraper import ScraperError, RobotsBlocked, scraper_service
@@ -67,7 +68,7 @@ async def _update_job_status(
         update(JobApplication).where(JobApplication.id == job_id).values(**values)
     )
     await db.commit()
-    logger.info("Job %d → status=%s", job_id, status)
+    logger.info("Job %s → status=%s", job_id, status)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -151,7 +152,7 @@ async def generate_resume(
             cached_profile = await cache_service.get_profile(user_id)
             if cached_profile:
                 profile = cached_profile
-                logger.info("Profile cache HIT for user %d", user_id)
+                logger.info("Profile cache HIT for user %s", user_id)
             else:
                 profile = await metabase_service.get_full_profile_async(db, user_id)
                 await cache_service.set_profile(user_id, profile)
@@ -171,7 +172,7 @@ async def generate_resume(
                 score_data = ai_agent.score_resume(parsed_jd, tailored)
             except Exception as exc:
                 logger.warning("ATS scoring failed (non-fatal): %s", exc)
-                score_data = _default_score()
+                score_data = local_ats_score(parsed_jd.keywords, parsed_jd.required_skills, tailored)
 
             # ── Step 6: Build .docx ───────────────────────────────────────────
             company_slug = _slugify(parsed_jd.company or "company", 20)
@@ -217,12 +218,12 @@ async def generate_resume(
                 "message":        f"✅ Resume generated! ATS Score: {score_data.get('total_score', 0):.1f}"
                                   + (f"\n{scrape_warning}" if scrape_warning else ""),
             }
-            logger.info("Job %d completed — ATS score=%.1f", job_app_id, result["ats_score"])
+            logger.info("Job %s completed — ATS score=%.1f", job_app_id, result["ats_score"])
             return result
 
         except Exception as exc:
             error_msg = str(exc)
-            logger.error("Job %d FAILED: %s", job_app_id, error_msg, exc_info=True)
+            logger.error("Job %s FAILED: %s", job_app_id, error_msg, exc_info=True)
             await _update_job_status(db, job_app_id, "failed", {"error_message": error_msg})
             # Re-raise so ARQ records the failure and can retry
             raise
@@ -240,21 +241,6 @@ def _slugify(text: str, max_len: int) -> str:
     # treats as a subdirectory that was never created, breaking the save.
     slug = re.sub(r'[^a-z0-9]+', '_', text.lower()).strip('_')
     return (slug or 'untitled')[:max_len]
-
-
-def _default_score() -> Dict[str, Any]:
-    return {
-        "keyword_score": 75.0,
-        "skills_score": 70.0,
-        "action_verb_score": 80.0,
-        "format_score": 85.0,
-        "total_score": 75.0,
-        "matched_keywords": [],
-        "missing_keywords": [],
-        "matched_skills": [],
-        "missing_skills": [],
-        "suggestions": [],
-    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

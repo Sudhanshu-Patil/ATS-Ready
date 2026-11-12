@@ -15,6 +15,7 @@ Generation is synchronous (not ARQ) because:
 
 If latency becomes an issue, these can be moved to ARQ later.
 """
+import asyncio
 import logging
 import uuid
 from datetime import datetime
@@ -32,6 +33,9 @@ from app.db.models import CoverLetter, InterviewPrep, JobApplication, User
 from app.services.metabase_service import metabase_service
 from app.services.cache_service import cache_service
 from app.agents.ai_agent import ai_agent
+from app.services.compaction import compact_profile, profile_as_tailored
+from app.services.llm_client import LLMContextTooLarge, LLMUnavailable
+from app.config import settings
 from app.models.schemas import ParsedJD
 
 content_router = APIRouter()
@@ -117,19 +121,30 @@ async def _get_profile_and_jd(
         if cached_parse:
             parsed_jd = ParsedJD(**cached_parse)
         else:
-            parsed_jd = ai_agent.parse_jd(jd_text)
+            parsed_jd = await _llm(ai_agent.parse_jd, jd_text)
             await cache_service.set_parsed_jd(jd_text, parsed_jd.model_dump())
 
-    # Get tailored resume content for context
-    # (Either from existing job_app or generate fresh)
-    tailored = {}
-    if job_app and job_app.ats_breakdown:
-        # Use the stored tailored content if available
-        tailored = job_app.jd_parsed or {}
-    else:
-        tailored = ai_agent.tailor_resume(parsed_jd, profile, None)
+    # Context for the prompts: the candidate's own profile, shrunk locally to
+    # what this JD cares about. No extra LLM call (this used to re-run the whole
+    # resume tailor on every cover letter / interview prep).
+    profile = compact_profile(
+        profile,
+        list(parsed_jd.keywords) + list(parsed_jd.required_skills),
+        settings.LLM_PROFILE_MAX_CHARS // 2,
+    )
+    tailored = profile_as_tailored(profile)
 
     return profile, parsed_jd, tailored, job_app
+
+
+async def _llm(fn, *args):
+    """Run a blocking LLM call off the event loop; map provider failures to 503."""
+    try:
+        return await asyncio.to_thread(fn, *args)
+    except LLMUnavailable:
+        raise HTTPException(status_code=503, detail="The AI service is busy. Please try again in a minute.")
+    except LLMContextTooLarge:
+        raise HTTPException(status_code=413, detail="That job description is too long. Please shorten it.")
 
 
 # ── Cover Letter endpoints ────────────────────────────────────────────────────
@@ -164,7 +179,7 @@ async def generate_cover_letter(
     )
 
     # Generate cover letter
-    result = ai_agent.generate_cover_letter(parsed_jd, profile, tailored, request.tone)
+    result = await _llm(ai_agent.generate_cover_letter, parsed_jd, profile, tailored, request.tone)
 
     # Save to DB
     cover_letter = CoverLetter(
@@ -298,7 +313,7 @@ async def generate_interview_prep(
     )
 
     # Generate interview prep
-    result = ai_agent.generate_interview_prep(parsed_jd, profile, tailored)
+    result = await _llm(ai_agent.generate_interview_prep, parsed_jd, profile, tailored)
 
     # Save to DB
     prep = InterviewPrep(

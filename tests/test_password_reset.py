@@ -108,4 +108,4 @@ async def test_checkout_graceful_when_billing_disabled(client, monkeypatch):
     )
     assert r.status_code == 200
     assert r.json()["billing_enabled"] is False
-    assert r.json()["subscription_id"] is None
+    assert r.json()["order_id"] is None

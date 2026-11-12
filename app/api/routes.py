@@ -86,7 +86,7 @@ async def generate_resume(
     job_app.arq_job_id = arq_job.job_id
     await db.commit()
 
-    logger.info("Enqueued generation job %d (arq=%s) for user %d",
+    logger.info("Enqueued generation job %s (arq=%s) for user %s",
                 job_app.id, arq_job.job_id, user.id)
 
     return GenerateResumeResponse(
