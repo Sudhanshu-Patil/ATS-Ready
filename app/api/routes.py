@@ -832,23 +832,5 @@ async def get_recommendations(
 # Health & Diagnostics
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/health/detailed")
-async def detailed_health(db: AsyncSession = Depends(get_db)):
-    """Extended health check — checks DB, Redis, and storage connectivity."""
-    checks: Dict[str, Any] = {}
-
-    # Database
-    try:
-        await db.execute(select(func.now()))
-        checks["database"] = "ok"
-    except Exception as exc:
-        checks["database"] = f"error: {exc}"
-
-    # Redis / Cache
-    checks["redis"] = "ok" if await cache_service.ping() else "unavailable"
-
-    # Storage
-    checks["storage"] = "s3" if settings.storage_use_s3 else "local"
-
-    overall = "ok" if all(v == "ok" or v in ("s3", "local", "unavailable") for v in checks.values()) else "degraded"
-    return {"status": overall, "checks": checks}
+# Health checks live in main.py (/health, /health/ready): they are public and
+# must not leak internals, so they do not belong behind the API router.
