@@ -13,7 +13,7 @@
 Job seekers who apply to many roles and want each resume to match the posting without rewriting it by hand.
 
 ## Facts
-- Free plan: 3 resumes per month. Paid plans are billed through PayPal.
+- Free plan: 3 resumes per month. Cover letters and interview prep are Pro features. Paid plans are billed through PayPal.
 - AI output can contain mistakes; users should review every document.
 - Data can be exported or deleted by the user at any time in Settings.
 

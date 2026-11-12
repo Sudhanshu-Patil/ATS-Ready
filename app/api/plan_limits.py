@@ -118,6 +118,27 @@ async def check_cover_letter_access(
     return user
 
 
+async def check_interview_prep_access(
+    user: User = Depends(get_current_user),
+) -> User:
+    """Enforce interview prep access: Pro and Team plans only."""
+    if not settings.BILLING_ENABLED:
+        return user
+
+    limits = PLAN_LIMITS.get(user.plan, PLAN_LIMITS["free"])
+    if not limits["interview_prep"]:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error":        "feature_not_available",
+                "message":      "Interview prep is a Pro feature.",
+                "current_plan": user.plan,
+                "upgrade_url":  f"{settings.FRONTEND_URL}/settings?section=plan",
+            },
+        )
+    return user
+
+
 async def check_api_access(
     user: User = Depends(get_current_user),
 ) -> User:

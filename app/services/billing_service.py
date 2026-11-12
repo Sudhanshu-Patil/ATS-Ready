@@ -37,6 +37,7 @@ PLAN_LIMITS = {
     "free": {
         "resumes_per_month": 3,
         "cover_letters":     False,
+        "interview_prep":    False,
         "api_access":        False,
         "label":             "Free",
         "price_monthly":     0,
@@ -44,6 +45,7 @@ PLAN_LIMITS = {
     "pro": {
         "resumes_per_month": -1,      # -1 = unlimited
         "cover_letters":     True,
+        "interview_prep":    True,
         "api_access":        False,
         "label":             "Pro",
         "price_monthly":     19,
@@ -51,6 +53,7 @@ PLAN_LIMITS = {
     "team": {
         "resumes_per_month": -1,
         "cover_letters":     True,
+        "interview_prep":    True,
         "api_access":        True,
         "label":             "Team",
         "price_monthly":     49,

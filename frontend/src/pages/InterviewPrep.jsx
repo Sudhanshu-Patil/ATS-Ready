@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { BrainCircuit, ChevronDown, ChevronUp, Trash2, Lightbulb, AlertTriangle, MessageSquare, Target, Wrench, Puzzle, Handshake, TrendingUp } from 'lucide-react'
 import api from '../api/client'
@@ -44,6 +45,7 @@ export default function InterviewPrep() {
   const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
+  const [needsUpgrade, setNeedsUpgrade] = useState(false)
   const [historyState, setHistoryState] = useState('loading')   // loading | ready | error
   const [openQ, setOpenQ]     = useState(null)
 
@@ -80,6 +82,7 @@ export default function InterviewPrep() {
       useActivityStore.getState().track('interview_prep', res.data.id)
       toast('Preparing your interview kit — you can keep working while it runs.')
     } catch (err) {
+      if (err.response?.status === 402) setNeedsUpgrade(true)
       toast.error(err.response?.data?.detail || 'Generation failed')
     } finally {
       setSubmitting(false)
@@ -143,6 +146,12 @@ export default function InterviewPrep() {
               {loading ? <Spinner size="sm" color="white" /> : <BrainCircuit size={16} />}
               {submitting ? 'Starting…' : loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
             </button>
+            {needsUpgrade && (
+              <p role="status" className="mt-3 text-sm text-text-secondary">
+                Interview prep is a Pro feature.{' '}
+                <Link to="/settings?section=plan" className="text-brand underline">See plans</Link>
+              </p>
+            )}
           </motion.div>
 
           {result && <PrepResult result={result} openQ={openQ} setOpenQ={setOpenQ} onNew={() => { setResult(null); setJdText('') }} />}

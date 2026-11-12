@@ -59,6 +59,7 @@ async def list_plans():
                 "price_monthly":      info["price_monthly"],
                 "resumes_per_month":  info["resumes_per_month"],
                 "cover_letters":      info["cover_letters"],
+                "interview_prep":     info["interview_prep"],
                 "api_access":         info["api_access"],
             }
             for plan_id, info in PLAN_LIMITS.items()
@@ -97,6 +98,7 @@ async def billing_status(
         "resumes_this_month":  resumes_this_month,
         "resumes_limit":       limits["resumes_per_month"],  # -1 = unlimited
         "cover_letters":       limits["cover_letters"],
+        "interview_prep":      limits["interview_prep"],
         "api_access":          limits["api_access"],
         "plan_expires_at":     str(user.plan_expires_at) if user.plan_expires_at else None,
         "has_subscription":    bool(user.payment_subscription_id),
