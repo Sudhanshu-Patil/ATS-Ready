@@ -193,7 +193,11 @@ function JobCard({ job }) {
           <ExternalLink size={11} /> View Job
         </a>
         <button
-          onClick={() => navigate(`/generate?url=${encodeURIComponent(job.url)}`)}
+          onClick={() =>
+            (job.description || '').length >= 200
+              ? navigate('/generate', { state: { jdText: `${job.title} at ${job.company}\n\n${job.description}` } })
+              : navigate(`/generate?url=${encodeURIComponent(job.url)}`)
+          }
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
                      bg-brand/10 border border-brand/30 text-xs text-brand font-medium
                      hover:bg-brand/20 transition-colors"

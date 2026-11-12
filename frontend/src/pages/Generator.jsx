@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Zap, Link as LinkIcon, FileText, ChevronDown, ChevronUp, Download, AlertCircle, Plus, Check, Sparkles } from 'lucide-react'
 import { resumeAPI } from '../api/client'
@@ -39,11 +39,17 @@ export default function Generator() {
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const pollRef = useRef(null)
   const [searchParams] = useSearchParams()
+  const location = useLocation()
 
-  // Pre-fill URL if coming from the Job Recommendations "Generate Resume" button
+  // Pre-fill from the Job Recommendations "Generate Resume" button. Prefer the
+  // listing's own text: LinkedIn/Indeed/Naukri URLs can't be scraped.
   useEffect(() => {
     const urlParam = searchParams.get('url')
-    if (urlParam) {
+    const fromJob = location.state?.jdText
+    if (fromJob) {
+      setMode('text')
+      setJdText(fromJob)
+    } else if (urlParam) {
       setMode('url')
       setJdUrl(urlParam)
     }

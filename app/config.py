@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     # Returns canned JSON instead of calling the provider. For tests, Playwright
     # and CI only: no Groq quota is spent and runs are deterministic.
     LLM_FAKE: bool = False
+    # Global cap on Apify actor runs per UTC day (protects the free-plan credit).
+    APIFY_DAILY_RUN_CAP: int = 30
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)

@@ -806,8 +806,9 @@ async def get_recommendations(
     """
     Return personalised job recommendations scored against the user's skills.
 
-    Results are cached in Redis for 2 hours. Pass ?refresh=true to bust the
-    cache and fetch fresh listings from all sources.
+    Cached in Redis per profile version for 2 hours (editing skills, roles or
+    location changes the key). ?refresh=true refetches, at most once every
+    5 minutes per user.
 
     Response: list of jobs sorted by match_score descending (only ≥60% matches).
     """
@@ -816,7 +817,6 @@ async def get_recommendations(
     return {
         "jobs":    jobs,
         "total":   len(jobs),
-        "cached":  not refresh,
     }
 
 
