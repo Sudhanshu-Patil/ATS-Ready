@@ -101,3 +101,5 @@ scratch_password.py
 # Node
 node_modules/
 frontend/dist/
+# Built frontend: produced by the Dockerfile (and `npm run build`), never committed
+/app/static/dist/

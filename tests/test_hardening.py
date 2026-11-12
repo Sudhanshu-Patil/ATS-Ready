@@ -37,3 +37,11 @@ async def test_detailed_health_and_static_outputs_are_gone(client):
     for path in ("/api/health/detailed", "/outputs/anything.docx"):
         r = await client.get(path)
         assert r.status_code == 404 and "json" in r.headers["content-type"]
+
+
+async def test_spa_caching_and_unknown_api_path(client):
+    from main import DIST_DIR
+    if not DIST_DIR.exists():
+        return
+    assert (await client.get("/login")).headers["cache-control"] == "no-cache"
+    assert (await client.get("/favicon.svg")).headers["cache-control"] == "public, max-age=86400"

@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { captureException } from '../lib/monitoring'
 
 // Last line of defence: a render error shows a recoverable screen, not a blank page.
 export default class ErrorBoundary extends Component {
@@ -8,6 +9,7 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('UI crash', error, info?.componentStack)
+    captureException(error)
   }
 
   render() {

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, Database,
   Settings, LogOut, Zap, ChevronRight,
-  BrainCircuit, Mail, Menu, X
+  BrainCircuit, Mail, Menu, X, BarChart3
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
@@ -51,6 +51,10 @@ export default function Layout() {
   const location = useLocation()
   const element = useOutlet()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  useEffect(() => {
+    authAPI.me().then((r) => setIsAdmin(!!r.data.is_admin)).catch(() => {})
+  }, [])
 
   // Drawer shouldn't survive a navigation on mobile — otherwise the next
   // page loads underneath it still open.
@@ -141,6 +145,7 @@ export default function Layout() {
 
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Manage</p>
           {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
+          {isAdmin && <NavItem to="/admin" icon={BarChart3} label="Admin" onClick={() => setMobileOpen(false)} />}
         </nav>
 
         {/* User block */}

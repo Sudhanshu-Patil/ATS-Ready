@@ -27,8 +27,8 @@ def build_csp() -> str:
     return "; ".join([
         "default-src 'self'",
         f"script-src {script}",
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
-        "font-src 'self' https://fonts.gstatic.com data:",
+        "style-src 'self' 'unsafe-inline' https://accounts.google.com",
+        "font-src 'self' data:",
         "img-src 'self' data: https:",
         "connect-src 'self' https://accounts.google.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
         "frame-src https://accounts.google.com",

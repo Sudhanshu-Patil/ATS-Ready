@@ -30,5 +30,14 @@ export default defineConfig({
     // Output to FastAPI's static directory so it can serve the SPA
     outDir: '../app/static/dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Stable vendor chunks cache across deploys and keep route chunks small.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
   },
 })

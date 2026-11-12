@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/auth'
 import { useJobsStore } from './store/jobs'
@@ -7,22 +7,27 @@ import { authAPI } from './api/client'
 import AuroraBackground from './components/AuroraBackground'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
-import Landing from './pages/Landing'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import ForgotPassword from './pages/ForgotPassword'
-import ResetPassword from './pages/ResetPassword'
-import VerifyEmail from './pages/VerifyEmail'
-import Dashboard from './pages/Dashboard'
-import Generator from './pages/Generator'
-import Metabase from './pages/Metabase'
-import Settings from './pages/Settings'
-import CoverLetter from './pages/CoverLetter'
-import InterviewPrep from './pages/InterviewPrep'
-import NotFound from './pages/NotFound'
+const Landing = lazy(() => import('./pages/Landing'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const Generator = lazy(() => import('./pages/Generator'))
+const Metabase = lazy(() => import('./pages/Metabase'))
+const Settings = lazy(() => import('./pages/Settings'))
+const CoverLetter = lazy(() => import('./pages/CoverLetter'))
+const InterviewPrep = lazy(() => import('./pages/InterviewPrep'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 import CookieNotice from './components/CookieNotice'
 import ConfirmHost from './components/ConfirmDialog'
-import { Privacy, Terms } from './pages/Legal'
+const Privacy = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Privacy })))
+const Terms = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Terms })))
+const Admin = lazy(() => import('./pages/Admin'))
+import PageMeta from './components/PageMeta'
+import Spinner from './components/Spinner'
+import { initMonitoring } from './lib/monitoring'
 
 export default function App() {
   const { login, logout, setLoading } = useAuthStore()
@@ -47,6 +52,7 @@ export default function App() {
       }
     }
     restoreSession()
+    initMonitoring()
   }, [])
 
   return (
@@ -59,6 +65,8 @@ export default function App() {
           the wrapping route's element, so keying at this level would remount
           the sidebar on every navigation. Route-level transitions live inside
           Layout.jsx instead, via useOutlet(). */}
+      <PageMeta />
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Spinner size="lg" /></div>}>
       <Routes>
         <Route path="/login"           element={<Login />} />
         <Route path="/register"        element={<Register />} />
@@ -74,6 +82,7 @@ export default function App() {
           <Route path="/history"        element={<Navigate to="/generate?tab=history" replace />} />
           <Route path="/metabase"       element={<Metabase />} />
           <Route path="/settings"       element={<Settings />} />
+          <Route path="/admin"          element={<Admin />} />
         </Route>
 
         {/* Public cinematic landing — logged-in users see auth-aware CTAs
@@ -83,6 +92,7 @@ export default function App() {
         <Route path="/terms"   element={<Terms />} />
         <Route path="*"  element={<NotFound />} />
       </Routes>
+      </Suspense>
       <CookieNotice />
       <ConfirmHost />
     </>

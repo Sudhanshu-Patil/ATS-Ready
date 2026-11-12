@@ -145,7 +145,9 @@ class GoogleLoginRequest(BaseModel):
 @auth_router.get("/config")
 async def auth_config():
     """Public client settings the login page needs (no secrets)."""
-    return {"google_client_id": settings.GOOGLE_CLIENT_ID or None}
+    return {"google_client_id": settings.GOOGLE_CLIENT_ID or None,
+            "sentry_dsn": settings.SENTRY_FRONTEND_DSN or None,
+            "environment": settings.ENVIRONMENT}
 
 
 @auth_router.post("/google", response_model=TokenResponse)

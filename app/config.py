@@ -161,6 +161,7 @@ class Settings(BaseSettings):
 
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
+    SENTRY_FRONTEND_DSN: str = ""      # browser DSN (public by design); served via /auth/config
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
     
     # ── Billing ───────────────────────────────────────────────────────────────

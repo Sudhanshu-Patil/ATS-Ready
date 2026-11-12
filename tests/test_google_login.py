@@ -98,12 +98,13 @@ async def test_invalid_token_rejected(client, monkeypatch):
 async def test_not_configured_returns_503(client, monkeypatch):
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
     assert (await google(client)).status_code == 503
-    assert (await client.get("/api/auth/config")).json() == {"google_client_id": None}
+    assert (await client.get("/api/auth/config")).json() == {"google_client_id": None, "sentry_dsn": None, "environment": settings.ENVIRONMENT}
 
 
 async def test_config_exposes_only_the_client_id(client):
     assert (await client.get("/api/auth/config")).json() == {
-        "google_client_id": "test-client.apps.googleusercontent.com"}
+        "google_client_id": "test-client.apps.googleusercontent.com",
+        "sentry_dsn": None, "environment": settings.ENVIRONMENT}
 
 
 async def test_google_only_user_cannot_change_password_without_one(client, monkeypatch):

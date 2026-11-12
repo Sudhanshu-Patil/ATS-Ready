@@ -4,6 +4,7 @@ main.py — Step 6 update
 Adds content_router for cover letters and interview prep.
 """
 import logging
+import mimetypes
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -49,6 +50,9 @@ if settings.SENTRY_DSN:
         integrations=[FastApiIntegration()],
         send_default_pii=False,
     )
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+mimetypes.add_type("text/plain", ".txt")
 
 DIST_DIR = Path(__file__).parent / "app" / "static" / "dist"
 
@@ -158,7 +162,15 @@ async def ready():
 
 # ── Serve React SPA ───────────────────────────────────────────────────────────
 if DIST_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
+    class ImmutableAssets(StaticFiles):
+        """Vite fingerprints every file in /assets, so browsers may cache them forever."""
+        async def get_response(self, path, scope):
+            resp = await super().get_response(path, scope)
+            if resp.status_code == 200:
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return resp
+
+    app.mount("/assets", ImmutableAssets(directory=str(DIST_DIR / "assets")), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
@@ -171,10 +183,12 @@ if DIST_DIR.exists():
         if full_path:
             candidate = (DIST_DIR / full_path).resolve()
             if candidate.is_file() and str(candidate).startswith(str(DIST_DIR.resolve())):
-                return FileResponse(str(candidate))
+                # Unhashed public files (icons, robots, sitemap): revalidate daily.
+                return FileResponse(str(candidate), headers={"Cache-Control": "public, max-age=86400"})
         index = DIST_DIR / "index.html"
         if index.exists():
-            return FileResponse(str(index))
+            # index.html names the hashed bundles, so it must never be stale.
+            return FileResponse(str(index), headers={"Cache-Control": "no-cache"})
         return {"error": "Frontend not built. Run: cd frontend && npm run build"}
 else:
     @app.get("/", include_in_schema=False)

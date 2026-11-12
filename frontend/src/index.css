@@ -45,7 +45,7 @@
   body {
     background-color: rgb(var(--color-bg));
     color: rgb(var(--color-text-primary));
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.2s ease, color 0.2s ease;
   }

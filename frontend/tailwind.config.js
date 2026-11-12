@@ -52,9 +52,9 @@ export default {
         },
       },
       fontFamily: {
-        sans:    ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+        sans:    ['Plus Jakarta Sans Variable', 'system-ui', 'sans-serif'],
         mono:    ['JetBrains Mono', 'monospace'],
-        display: ['Bricolage Grotesque', 'Plus Jakarta Sans', 'system-ui', 'sans-serif'],
+        display: ['Bricolage Grotesque Variable', 'Plus Jakarta Sans Variable', 'system-ui', 'sans-serif'],
       },
       keyframes: {
         // Blob position/opacity only — never animate blur radius itself
