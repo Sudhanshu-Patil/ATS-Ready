@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Optional
 import uuid
 
@@ -66,6 +67,13 @@ async def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
+
+    # A paid plan lapses when its period ends (PayPal orders are one-off, no
+    # webhook cancels them). Downgrade lazily on the next authenticated request.
+    if user.plan != "free" and user.plan_expires_at and user.plan_expires_at < datetime.utcnow():
+        user.plan = "free"
+        user.plan_expires_at = None
+        await db.commit()
 
     return user
 

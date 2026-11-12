@@ -67,3 +67,28 @@ async def test_delete_requires_confirmation_then_removes_everything(client):
         assert (await db.execute(select(User).where(User.email == email))).scalar_one_or_none() is None
     login = await client.post("/api/auth/login", data={"username": email, "password": PW})
     assert login.status_code == 401
+
+
+async def test_expired_paid_plan_falls_back_to_free(client):
+    from datetime import datetime, timedelta
+    email = unique_email()
+    r = await register(client, email)
+    async with AsyncSessionLocal() as db:
+        u = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        u.plan, u.plan_expires_at = "pro", datetime.utcnow() - timedelta(days=1)
+        await db.commit()
+    assert (await client.get("/api/auth/me", headers=bearer(r))).json()["plan"] == "free"
+    async with AsyncSessionLocal() as db:
+        u = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        assert u.plan == "free" and u.plan_expires_at is None
+
+
+async def test_active_paid_plan_is_kept(client):
+    from datetime import datetime, timedelta
+    email = unique_email()
+    r = await register(client, email)
+    async with AsyncSessionLocal() as db:
+        u = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        u.plan, u.plan_expires_at = "pro", datetime.utcnow() + timedelta(days=5)
+        await db.commit()
+    assert (await client.get("/api/auth/me", headers=bearer(r))).json()["plan"] == "pro"

@@ -17,10 +17,12 @@ async def test_oversized_body_rejected_by_content_length(client):
 
 async def test_oversized_chunked_body_rejected(client):
     async def chunks():
+        yield b'{"email": "a@b.co", "password": "'
         for _ in range(7):
             yield b"x" * (1024 * 1024)
-    r = await client.post("/api/auth/login", content=chunks(),
-                          headers={"content-type": "application/x-www-form-urlencoded"})
+        yield b'"}'
+    r = await client.post("/api/auth/register", content=chunks(),
+                          headers={"content-type": "application/json"})
     assert r.status_code == 413
 
 

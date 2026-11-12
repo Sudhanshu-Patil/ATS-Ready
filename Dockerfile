@@ -51,7 +51,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 
 # ── Frontend build (assets baked into the production image) ──────────────────
-FROM node:20-alpine AS frontend-build
+FROM node:22-alpine AS frontend-build
 WORKDIR /fe
 COPY frontend/package*.json ./
 RUN npm ci
