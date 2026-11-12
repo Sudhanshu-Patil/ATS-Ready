@@ -13,10 +13,24 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173',
+    // Pre-dismiss the cookie notice so it never covers buttons; its own test clears this.
+    storageState: {
+      cookies: [],
+      origins: [{
+        origin: new URL(process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173').origin,
+        localStorage: [{ name: 'cookie-notice-seen', value: '1' }],
+      }],
+    },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [
+    // Full suite on desktop Chrome.
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    // Other engines and phones: public pages, auth and accessibility only (fast, no LLM flow).
+    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /(auth|a11y|account)\.spec/ },
+    { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /(auth|a11y|account)\.spec/ },
+    { name: 'pixel-7', use: { ...devices['Pixel 7'] }, testMatch: /(auth|a11y|account)\.spec/ },
+    { name: 'iphone-14', use: { ...devices['iPhone 14'] }, testMatch: /(auth|a11y|account)\.spec/ },
   ],
 })

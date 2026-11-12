@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { logout } from './helpers.js'
 
 function uniqueEmail() {
   return `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@atsready-tests.dev`
@@ -18,7 +19,7 @@ test('register, logout, and log back in', async ({ page }) => {
   await expect(page).toHaveURL(/\/metabase/, { timeout: 15000 })
   await expect(page.getByRole('heading', { name: 'Metabase' })).toBeVisible()
 
-  await page.getByTitle('Log out').click()
+  await logout(page)
   await expect(page).toHaveURL(/\/login/, { timeout: 10000 })
 
   await page.getByPlaceholder('you@example.com').fill(email)

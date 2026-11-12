@@ -36,7 +36,8 @@ function setMeta(name: string, content: string): void {
 
 // Keeps <title>, robots and the canonical URL right on every client-side navigation.
 export default function PageMeta(): null {
-  const { pathname } = useLocation()
+  const { pathname: raw } = useLocation()
+  const pathname = raw === '/index.html' ? '/' : raw   // static hosts serve the landing page here too
   useEffect(() => {
     const known = PAGES[pathname]
     const [title, indexable] = known || ['Page not found | ATS-Ready', false]

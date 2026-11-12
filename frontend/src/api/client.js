@@ -33,8 +33,12 @@ api.interceptors.response.use(
             return res.data.access_token
           })
           .catch(() => {
-            useAuthStore.getState().logout()
-            window.location.href = '/login'
+            // A stray request from a page that was just left (logout, account deletion)
+            // must not yank the user to /login: only redirect if they were signed in.
+            if (useAuthStore.getState().accessToken) {
+              useAuthStore.getState().logout()
+              window.location.href = '/login'
+            }
             return null
           })
           .finally(() => { refreshPromise = null })

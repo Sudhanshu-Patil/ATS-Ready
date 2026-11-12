@@ -89,6 +89,9 @@ def tracked(kind: str):
                 ok = not tally["failed"]
                 return result
             finally:
-                await record_usage(args[1], kind, tally, started, ok)
+                # enqueue() passes keyword arguments; direct calls pass (ctx, row_id, user_id, ...).
+                user_id = kwargs.get("user_id", args[1] if len(args) > 1 else None)
+                if user_id is not None:
+                    await record_usage(user_id, kind, tally, started, ok)
         return wrapper
     return deco

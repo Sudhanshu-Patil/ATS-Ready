@@ -220,8 +220,6 @@ function SecuritySection() {
 }
 
 function PrivacySection({ email }) {
-  const { logout } = useAuthStore()
-  const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
   const [confirmEmail, setConfirmEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -244,9 +242,9 @@ function PrivacySection({ email }) {
     setBusy(true)
     try {
       await authAPI.deleteAccount(confirmEmail, password)
-      logout()
-      toast.success('Your account and data were deleted')
-      navigate('/')
+      // A full page load drops every in-memory store; a client-side logout() here races the
+      // protected route, which bounces to /login before the landing page can show.
+      window.location.assign('/')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Could not delete the account')
       setBusy(false)

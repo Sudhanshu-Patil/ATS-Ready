@@ -125,13 +125,22 @@ jobs:
         working-directory: e2e
         run: |
           npm ci
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox webkit
 
       - name: Run E2E tests
         working-directory: e2e
         run: npx playwright test
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
+
+      # Slow-network run: the PRODUCTION bundle under throttled bandwidth/latency (the dev server
+      # is unbundled and unrepresentative). `vite preview` proxies /api to the compose API.
+      - name: Slow-network test (production build, throttled)
+        run: |
+          cd frontend && npm ci && npx vite build --outDir dist-e2e --emptyOutDir
+          (npx vite preview --outDir dist-e2e --port 4173 > /tmp/preview.log 2>&1 &)
+          timeout 60 bash -c 'until curl -sf http://localhost:4173/login >/dev/null; do sleep 2; done'
+          cd ../e2e && SLOW_NETWORK=1 PLAYWRIGHT_BASE_URL=http://localhost:4173 npx playwright test slow-network --project=chromium
 
       - name: Upload Playwright report
         if: always()

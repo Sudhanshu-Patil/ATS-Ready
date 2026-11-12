@@ -84,3 +84,20 @@ async def test_request_id_header_is_set_and_echoed(client):
     assert len(r.headers["x-request-id"]) >= 8
     r2 = await client.get("/health", headers={"x-request-id": "abc123"})
     assert r2.headers["x-request-id"] == "abc123"
+
+
+async def test_tracked_works_with_keyword_and_positional_args(client):
+    import uuid
+    r = await register(client, unique_email())
+    uid = (await client.get("/api/auth/me", headers=bearer(r))).json()["id"]
+
+    @usage.tracked("resume")
+    async def task(ctx, row_id, user_id, extra=None):
+        usage.add_usage(10)
+        return "done"
+
+    assert await task({}, row_id="r1", user_id=uid) == "done"          # how enqueue() calls it
+    assert await task({}, "r2", uid) == "done"                         # positional
+    async with AsyncSessionLocal() as db:
+        n = len((await db.execute(select(UsageEvent).where(UsageEvent.user_id == uuid.UUID(uid)))).scalars().all())
+    assert n == 2
