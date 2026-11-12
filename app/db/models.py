@@ -316,6 +316,7 @@ class InterviewPrep(Base):
     job_title          = Column(String(300), nullable=True)
     company            = Column(String(200), nullable=True)
 
+    jd_text            = Column(Text, nullable=True)          # kept (truncated) so a failed run can be retried
     questions          = Column(JSONB, default=list)
     quick_tips         = Column(JSONB, default=list)
     red_flags_to_avoid = Column(JSONB, default=list)

@@ -134,3 +134,40 @@ async def test_activity_requires_auth(client):
 
 async def _uid(client, headers):
     return (await client.get("/api/auth/me", headers=headers)).json()["id"]
+
+
+async def _fail_row(model, row_id):
+    async with AsyncSessionLocal() as db:
+        await db.execute(update(model).where(model.id == uuid.UUID(row_id)).values(status="failed", error="boom"))
+        await db.commit()
+
+
+async def test_failed_cover_letter_and_prep_can_be_retried(client, stub):
+    from app.db.models import InterviewPrep
+    h = await user_with_profile(client)
+    cl = (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD, "tone": "enthusiastic"})).json()["id"]
+    pr = (await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})).json()["id"]
+
+    # Not failed yet: retry is refused.
+    assert (await client.post(f"/api/cover-letters/{cl}/retry", headers=h)).status_code == 409
+    assert (await client.post(f"/api/interview-preps/{pr}/retry", headers=h)).status_code == 409
+
+    await _fail_row(CoverLetter, cl)
+    await _fail_row(InterviewPrep, pr)
+    stub.clear()
+
+    r1 = await client.post(f"/api/cover-letters/{cl}/retry", headers=h)
+    r2 = await client.post(f"/api/interview-preps/{pr}/retry", headers=h)
+    assert r1.status_code == 202 and r2.status_code == 202
+    assert [f for f, _ in stub] == ["generate_cover_letter_task", "generate_interview_prep_task"]
+    assert stub[0][1]["tone"] == "enthusiastic" and stub[0][1]["jd_text"].startswith("We are hiring")
+    got = (await client.get(f"/api/cover-letters/{cl}", headers=h)).json()
+    assert got["status"] == "pending" and got["error"] is None
+
+
+async def test_retry_is_owner_only(client, stub):
+    h = await user_with_profile(client)
+    cl = (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD})).json()["id"]
+    await _fail_row(CoverLetter, cl)
+    other = bearer(await register(client, unique_email()))
+    assert (await client.post(f"/api/cover-letters/{cl}/retry", headers=other)).status_code == 404

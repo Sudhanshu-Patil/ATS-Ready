@@ -41,6 +41,7 @@ export default function CoverLetter() {
   const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
+  const [historyState, setHistoryState] = useState('loading')   // loading | ready | error
   const [expanded, setExpanded] = useState(null)
 
   useEffect(() => {
@@ -59,7 +60,8 @@ export default function CoverLetter() {
     try {
       const res = await api.get('/cover-letters')
       setHistory(res.data)
-    } catch { toast.error('Failed to load history') }
+      setHistoryState('ready')
+    } catch { setHistoryState('error'); toast.error('Failed to load history') }
   }
 
   const generate = async () => {
@@ -83,6 +85,17 @@ export default function CoverLetter() {
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
     toast.success('Copied to clipboard')
+  }
+
+  const retryItem = async (id) => {
+    try {
+      await api.post(`/cover-letters/${id}/retry`)
+      useActivityStore.getState().track('cover_letter', id)
+      setHistory(h => h.map(x => (x.id === id ? { ...x, status: 'pending', error: null } : x)))
+      toast('Trying again. You can keep working while it runs.')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not retry')
+    }
   }
 
   const deleteItem = async (id) => {
@@ -207,7 +220,16 @@ export default function CoverLetter() {
 
       {tab === 'history' && (
         <div className="space-y-3">
-          {history.length === 0 ? (
+          {historyState === 'loading' ? (
+            <div className="space-y-3" aria-busy="true" aria-label="Loading history">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            </div>
+          ) : historyState === 'error' ? (
+            <div className="card text-center space-y-3">
+              <p className="text-sm text-text-secondary">We couldn't load your history.</p>
+              <button className="btn-ghost text-sm" onClick={() => { setHistoryState('loading'); loadHistory() }}>Try again</button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="card">
               <EmptyState icon={FileText} title="No cover letters yet — generate one to get started" />
             </div>
@@ -232,7 +254,10 @@ export default function CoverLetter() {
                         {expanded === cl.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         {expanded === cl.id ? 'Hide' : 'View'}
                       </button>
-                      <button onClick={() => deleteItem(cl.id)}
+                      {cl.status === 'failed' && (
+                        <button onClick={() => retryItem(cl.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
+                      )}
+                      <button onClick={() => deleteItem(cl.id)} aria-label="Delete cover letter"
                         className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
                         <Trash2 size={15} />
                       </button>

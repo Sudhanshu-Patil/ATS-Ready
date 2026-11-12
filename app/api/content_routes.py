@@ -180,6 +180,25 @@ async def get_cover_letter(
     }
 
 
+@content_router.post("/cover-letters/{letter_id}/retry", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def retry_cover_letter(
+    letter_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """Re-run a failed cover letter with the job description saved on it."""
+    cl = await _own_letter(db, letter_id, user)
+    if cl.status != "failed" or not cl.jd_text:
+        raise HTTPException(status_code=409, detail="Only failed cover letters with a saved job description can be retried")
+    await ensure_capacity(db, user.id)
+    cl.status, cl.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
+                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional")
+    return {"id": str(cl.id), "status": "pending"}
+
+
 @content_router.delete("/cover-letters/{letter_id}")
 async def delete_cover_letter(
     letter_id: str,
@@ -209,7 +228,8 @@ async def generate_interview_prep(
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
 
-    row = InterviewPrep(user_id=user.id, status="pending", created_at=datetime.utcnow())
+    row = InterviewPrep(user_id=user.id, jd_text=request.jd_text[:3000], status="pending",
+                        created_at=datetime.utcnow())
     db.add(row)
     await db.commit()
     await db.refresh(row)
@@ -281,6 +301,25 @@ async def get_interview_prep(
         "error":               prep.error,
         "created_at":          str(prep.created_at),
     }
+
+
+@content_router.post("/interview-preps/{prep_id}/retry", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def retry_interview_prep(
+    prep_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Re-run a failed interview prep with the job description saved on it."""
+    prep = await _own_prep(db, prep_id, user)
+    if prep.status != "failed" or not prep.jd_text:
+        raise HTTPException(status_code=409, detail="Only failed sessions with a saved job description can be retried")
+    await ensure_capacity(db, user.id)
+    prep.status, prep.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, prep, "generate_interview_prep_task", prep_id=str(prep.id),
+                           user_id=str(user.id), jd_text=prep.jd_text, job_app_id=None)
+    return {"id": str(prep.id), "status": "pending"}
 
 
 @content_router.delete("/interview-preps/{prep_id}")

@@ -255,3 +255,28 @@ def local_ats_score(jd_keywords: List[str], required_skills: List[str],
         "matched_skills": sk_hit, "missing_skills": sk_miss,
         "suggestions": [], "estimated": True,
     }
+
+
+def ground_skills(tailored: Dict[str, Any], profile: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """Drop skills the model added that appear nowhere in the candidate's own profile.
+
+    The prompt forbids inventing skills, but models still pad with generic ones from the job
+    description (Agile, Git...). A resume claiming skills the person lacks is the worst failure
+    this app can have, so this is enforced in code. An item survives if it, or an alias of it
+    ("postgres" for PostgreSQL), appears in the profile text. If nothing would survive the
+    result is returned unchanged (better a padded resume than an empty one).
+    Returns (tailored, dropped_items)."""
+    from app.services.job_recommendations import _has, _normalise, _skill_variants
+
+    corpus = _normalise(json.dumps(profile, ensure_ascii=False, default=str))
+    dropped: List[str] = []
+    kept_groups = []
+    for group in tailored.get("skills") or []:
+        items = group.get("items") or []
+        kept = [i for i in items if any(_has(v, corpus) for v in _skill_variants(str(i)))]
+        dropped += [i for i in items if i not in kept]
+        if kept:
+            kept_groups.append({**group, "items": kept})
+    if not kept_groups:
+        return tailored, []
+    return {**tailored, "skills": kept_groups}, dropped

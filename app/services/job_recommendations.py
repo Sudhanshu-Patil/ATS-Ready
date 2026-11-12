@@ -156,7 +156,7 @@ class JobListing:
     __slots__ = (
         "title", "company", "location", "url", "source",
         "tags", "description", "posted_at",
-        "match_score", "matched_skills",
+        "match_score", "matched_skills", "match_reasons",
     )
 
     def __init__(
@@ -180,6 +180,7 @@ class JobListing:
         self.posted_at = posted_at
         self.match_score: float = 0.0
         self.matched_skills: List[str] = []
+        self.match_reasons: List[str] = []
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -192,6 +193,7 @@ class JobListing:
             "posted_at":      self.posted_at,
             "match_score":    round(self.match_score, 1),
             "matched_skills": self.matched_skills,
+            "match_reasons":  self.match_reasons,
             # Lets the "Generate Resume" button send the text itself instead of
             # a LinkedIn/Indeed/Naukri URL the scraper cannot fetch.
             "description":    self.description[:6000],
@@ -331,9 +333,14 @@ def score_job(
 
     # 2. Title (25)
     titles = [t for t in user_titles if t]
+    reasons: List[str] = []
     if titles:
-        earned += 25.0 * max(_title_similarity(t, job.title) for t in titles)
+        best_title = max(titles, key=lambda t: _title_similarity(t, job.title))
+        sim = _title_similarity(best_title, job.title)
+        earned += 25.0 * sim
         possible += 25.0
+        if sim >= 0.5:
+            reasons.append(f"Title is close to your {best_title} role")
 
     # 3. Seniority (10): the title wins, years of experience decide otherwise
     user_level = _infer_seniority(titles) or _level_from_years(user_years)
@@ -342,6 +349,7 @@ def score_job(
         earned += 6.0                       # listing doesn't say: neutral
     elif job_level == user_level:
         earned += 10.0
+        reasons.append(f"Fits your {user_level} level")
     elif "mid" == user_level:
         earned += 6.0
     possible += 10.0
@@ -352,12 +360,14 @@ def score_job(
         user_tokens = [t for t in _normalise(user_location).split() if len(t) > 2]
         if "remote" in loc or any(_has(t, loc) for t in user_tokens):
             earned += 15.0
+            reasons.append("Remote" if "remote" in loc else "In your area")
         elif not job.location.strip() or "flexible" in loc:
             earned += 7.0
         possible += 15.0
 
     job.match_score = min(100.0, 100.0 * earned / possible)
     job.matched_skills = matched
+    job.match_reasons = reasons
 
 
 def _age_days(posted_at: Any) -> Optional[float]:
@@ -918,3 +928,57 @@ async def get_recommendations_for_user(
         _inflight[cache_key] = task
         task.add_done_callback(lambda _t: _inflight.pop(cache_key, None))
     return await asyncio.shield(task)
+
+
+# ── Non-blocking refresh ─────────────────────────────────────────────────────
+# A cold fetch includes live Apify crawls (up to minutes), longer than a proxy allows a request
+# to live. The route answers at once with status "pending" and the fetch continues in this
+# process; the page polls. (Not the arq worker: it runs one LLM job at a time, and a crawl
+# there would stall everyone's resumes.)
+_background: set = set()
+PENDING_TTL = 240
+EMPTY_TTL = 600
+
+
+async def peek_recommendations(user_id: UUID, db: AsyncSession, refresh: bool = False):
+    """Cached result for the current profile, or None when a fetch is needed."""
+    profile = await load_user_profile(user_id, db)
+    if not profile.skills:
+        return []
+    key = f"job_recs:{user_id}:{profile.fingerprint()}"
+    cached = await cache_service.get(key)
+    if cached is not None and (not refresh or await cache_service.get(f"job_recs_last:{user_id}") is not None):
+        return cached
+    if await cache_service.get(f"job_recs_empty:{user_id}:{profile.fingerprint()}") is not None:
+        return []          # a recent fetch found nothing; don't loop on it
+    return None
+
+
+async def start_refresh(user_id: UUID, refresh: bool = False) -> None:
+    """Begin a fetch in the background unless one is already running for this user."""
+    from app.db.database import AsyncSessionLocal
+
+    pending_key = f"job_recs_pending:{user_id}"
+    client = await cache_service.client()
+    if client is not None:
+        try:
+            if not await client.set(pending_key, "1", nx=True, ex=PENDING_TTL):
+                return
+        except Exception:
+            pass
+
+    async def run() -> None:
+        try:
+            async with AsyncSessionLocal() as db:
+                profile = await load_user_profile(user_id, db)
+                jobs = await get_recommendations_for_user(user_id, db, refresh=refresh)
+            if not jobs:
+                await cache_service.set(f"job_recs_empty:{user_id}:{profile.fingerprint()}", 1, ttl=EMPTY_TTL)
+        except Exception:
+            logger.exception("Background job-recommendation fetch failed for %s", user_id)
+        finally:
+            await cache_service.delete(pending_key)
+
+    task = asyncio.ensure_future(run())
+    _background.add(task)
+    task.add_done_callback(_background.discard)

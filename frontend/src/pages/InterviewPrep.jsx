@@ -44,6 +44,7 @@ export default function InterviewPrep() {
   const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
+  const [historyState, setHistoryState] = useState('loading')   // loading | ready | error
   const [openQ, setOpenQ]     = useState(null)
 
   useEffect(() => {
@@ -62,7 +63,8 @@ export default function InterviewPrep() {
     try {
       const res = await api.get('/interview-preps')
       setHistory(res.data)
-    } catch { toast.error('Failed to load history') }
+      setHistoryState('ready')
+    } catch { setHistoryState('error'); toast.error('Failed to load history') }
   }
 
   const generate = async () => {
@@ -81,6 +83,17 @@ export default function InterviewPrep() {
       toast.error(err.response?.data?.detail || 'Generation failed')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const retryItem = async (id) => {
+    try {
+      await api.post(`/interview-preps/${id}/retry`)
+      useActivityStore.getState().track('interview_prep', id)
+      setHistory(h => h.map(x => (x.id === id ? { ...x, status: 'pending', error: null } : x)))
+      toast('Trying again. You can keep working while it runs.')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not retry')
     }
   }
 
@@ -138,14 +151,23 @@ export default function InterviewPrep() {
 
       {tab === 'history' && (
         <div className="space-y-3">
-          {history.length === 0 ? (
+          {historyState === 'loading' ? (
+            <div className="space-y-3" aria-busy="true" aria-label="Loading history">
+              {[0, 1, 2].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+            </div>
+          ) : historyState === 'error' ? (
+            <div className="card text-center space-y-3">
+              <p className="text-sm text-text-secondary">We couldn't load your history.</p>
+              <button className="btn-ghost text-sm" onClick={() => { setHistoryState('loading'); loadHistory() }}>Try again</button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="card">
               <EmptyState icon={BrainCircuit} title="No prep sessions yet — generate one to get started" />
             </div>
           ) : (
             <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-3">
               {history.map(p => (
-                <HistoryItem key={p.id} item={p} onDelete={deleteItem} />
+                <HistoryItem key={p.id} item={p} onDelete={deleteItem} onRetry={retryItem} />
               ))}
             </motion.div>
           )}
@@ -308,7 +330,7 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
   )
 }
 
-function HistoryItem({ item, onDelete }) {
+function HistoryItem({ item, onDelete, onRetry }) {
   const [expanded, setExpanded] = useState(false)
   const [data, setData]         = useState(null)
   const [openQ, setOpenQ]       = useState(null)
@@ -343,7 +365,10 @@ function HistoryItem({ item, onDelete }) {
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             {expanded ? 'Hide' : 'View'}
           </button>
-          <button onClick={() => onDelete(item.id)} className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+          {item.status === 'failed' && (
+            <button onClick={() => onRetry(item.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
+          )}
+          <button onClick={() => onDelete(item.id)} aria-label="Delete prep session" className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
             <Trash2 size={15} />
           </button>
         </div>

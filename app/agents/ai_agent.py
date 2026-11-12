@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from app.config import settings
 from app.models.schemas import ParsedJD
 from app.services.compaction import (
-    compact_jd, compact_profile, head_tail, local_ats_score, resume_text_for_scoring,
+    compact_jd, compact_profile, ground_skills, head_tail, local_ats_score, resume_text_for_scoring,
 )
 from app.services.llm_client import LLMClient, LLMContextTooLarge
 
@@ -318,6 +318,9 @@ CRITICAL: Only use information from the candidate's actual profile. Never invent
                 data = json.loads(match.group())
             else:
                 raise ValueError(f"AI tailor returned invalid JSON: {response[:200]}")
+        data, dropped = ground_skills(data, candidate_data)
+        if dropped:
+            logger.info("Dropped %d skills the candidate does not have: %s", len(dropped), dropped)
         return data
 
     # ─── Stage 3: ATS Scoring ─────────────────────────────────────────────────

@@ -95,3 +95,21 @@ def test_local_score_flags_estimated_and_counts_overlap():
     assert s["matched_keywords"] == ["Python", "FastAPI"] and s["missing_keywords"] == ["Rust"]
     assert s["skills_score"] == 50.0
     assert "Python engineer" in resume_text_for_scoring(tailored)
+
+
+def test_ground_skills_drops_padding_but_keeps_aliases():
+    from app.services.compaction import ground_skills
+    profile = {"skills": [{"category": "DB", "items": ["PostgreSQL", "Docker"]}],
+               "work_experience": [{"bullets": ["Deployed to Kubernetes on AWS"]}]}
+    tailored = {"skills": [{"category": "Backend", "items": ["Postgres", "Docker", "Agile", "Git", "K8s", "Amazon Web Services"]},
+                           {"category": "Process", "items": ["Scrum"]}]}
+    out, dropped = ground_skills(tailored, profile)
+    assert out["skills"] == [{"category": "Backend", "items": ["Postgres", "Docker", "K8s", "Amazon Web Services"]}]
+    assert sorted(dropped) == ["Agile", "Git", "Scrum"]
+
+
+def test_ground_skills_never_returns_an_empty_skill_section():
+    from app.services.compaction import ground_skills
+    tailored = {"skills": [{"category": "X", "items": ["Fortran"]}]}
+    out, dropped = ground_skills(tailored, {"skills": []})
+    assert out is tailored and dropped == []

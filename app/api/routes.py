@@ -819,14 +819,18 @@ async def get_recommendations(
     location changes the key). ?refresh=true refetches, at most once every
     5 minutes per user.
 
-    Response: list of jobs sorted by match_score descending (only ≥60% matches).
+    Response: {jobs, total, status}. Jobs are sorted by match_score descending (only ≥60% matches).
+    status is "pending" while a cold fetch runs in the background: poll again in a few seconds.
     """
-    from app.services.job_recommendations import get_recommendations_for_user
-    jobs = await get_recommendations_for_user(user.id, db, refresh=refresh)
-    return {
-        "jobs":    jobs,
-        "total":   len(jobs),
-    }
+    from app.services.job_recommendations import peek_recommendations, start_refresh
+    jobs = await peek_recommendations(user.id, db, refresh=refresh)
+    if jobs is None:
+        await start_refresh(user.id, refresh=refresh)
+        return {"jobs": [], "total": 0, "status": "pending"}
+    # A fetch still running (e.g. just after "refresh") means these jobs are the previous
+    # set: say so, so the page keeps polling and swaps in the new results.
+    updating = await cache_service.get(f"job_recs_pending:{user.id}") is not None
+    return {"jobs": jobs, "total": len(jobs), "status": "pending" if updating else "ready"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

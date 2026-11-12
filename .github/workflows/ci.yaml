@@ -137,6 +137,7 @@ jobs:
       # is unbundled and unrepresentative). `vite preview` proxies /api to the compose API.
       - name: Slow-network test (production build, throttled)
         run: |
+          sudo chown -R "$USER" frontend   # the compose container created node_modules as root
           cd frontend && npm ci && npx vite build --outDir dist-e2e --emptyOutDir
           (npx vite preview --outDir dist-e2e --port 4173 > /tmp/preview.log 2>&1 &)
           timeout 60 bash -c 'until curl -sf http://localhost:4173/login >/dev/null; do sleep 2; done'

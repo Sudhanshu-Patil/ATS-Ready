@@ -105,3 +105,13 @@ def test_profile_fingerprint_changes_with_skills():
     a = UserProfile(skills=["Python"], titles=["Dev"]).fingerprint()
     b = UserProfile(skills=["Python", "Go"], titles=["Dev"]).fingerprint()
     assert a != b
+
+
+def test_match_reasons_explain_the_score():
+    from app.services.job_recommendations import JobListing, score_job
+    job = JobListing("Senior Backend Engineer", "Acme", "Remote", "https://x.test/1", "t",
+                     ["python"], "We use Python and FastAPI.", None)
+    score_job(job, ["Python", "FastAPI"], ["Senior Backend Engineer"], 8, "Pune")
+    assert any("Title is close" in r for r in job.match_reasons)
+    assert "Remote" in job.match_reasons
+    assert job.to_dict()["match_reasons"] == job.match_reasons
