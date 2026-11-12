@@ -22,6 +22,8 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 from app.config import settings
 from app.services.compaction import estimate_tokens
 
+from app.services.usage import add_usage  # noqa: E402
+
 logger = logging.getLogger(__name__)
 
 
@@ -130,6 +132,7 @@ class LLMClient:
                 try:
                     out = self._once(model, system, user, max_tokens)
                     gov.settle(entry, self._last_usage)
+                    add_usage(self._last_usage)
                     if model != models[0]:
                         logger.warning("LLM answered via fallback model %s", model)
                     return out

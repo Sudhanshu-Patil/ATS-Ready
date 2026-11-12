@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
+from app.services.usage import mark_failed, tracked
 from app.db.models import CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
 from app.services.content_service import build_context, friendly_error
@@ -78,6 +79,7 @@ async def _update_job_status(
 # Main task: generate_resume
 # ─────────────────────────────────────────────────────────────────────────────
 
+@tracked("resume")
 async def generate_resume(
     ctx: Dict,                    # ARQ injects this — contains pool, redis, etc.
     job_app_id,                   # ID of the JobApplication row created in the route
@@ -236,6 +238,7 @@ async def generate_resume(
 # Cover letter / interview prep tasks
 # ─────────────────────────────────────────────────────────────────────────────
 
+@tracked("cover_letter")
 async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone):
     """Fill in a pending CoverLetter row. Failures are recorded on the row (no
     arq retry: the user sees the error and can resubmit)."""
@@ -260,9 +263,11 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
         except Exception as exc:
             logger.error("Cover letter %s FAILED: %s", letter_id, exc, exc_info=True)
             row.status, row.error = "failed", friendly_error(exc)
+            mark_failed()
         await db.commit()
 
 
+@tracked("interview_prep")
 async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_id):
     async with AsyncSessionLocal() as db:
         row = await db.get(InterviewPrep, uuid.UUID(prep_id))
@@ -285,6 +290,7 @@ async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_i
         except Exception as exc:
             logger.error("Interview prep %s FAILED: %s", prep_id, exc, exc_info=True)
             row.status, row.error = "failed", friendly_error(exc)
+            mark_failed()
         await db.commit()
 
 

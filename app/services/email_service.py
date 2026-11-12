@@ -39,8 +39,12 @@ def _send_sync(msg: EmailMessage) -> None:
 async def send_email(to: str, subject: str, text: str, html: str | None = None) -> bool:
     """Send an email. Returns True on success, False otherwise — never raises."""
     if not settings.SMTP_HOST:
-        logger.info("SMTP not configured — email to %s suppressed.\nSubject: %s\n%s",
-                    to, subject, text)
+        if settings.is_production:
+            # Reset/verify links are credentials: never write them to production logs.
+            logger.warning("SMTP not configured — email to %s suppressed (%s)", to, subject)
+        else:
+            logger.info("SMTP not configured — email to %s suppressed.\nSubject: %s\n%s",
+                        to, subject, text)
         return False
 
     msg = EmailMessage()

@@ -115,3 +115,41 @@ class BodyLimitMiddleware:
                     "headers": [(b"content-type", b"application/json"),
                                 (b"content-length", str(len(body)).encode())]})
         await send({"type": "http.response.body", "body": body})
+
+
+class RequestLogMiddleware:
+    """Request id (accepted from the proxy or generated), echoed in X-Request-ID,
+    bound to every log line of the request, plus one access-log line with the
+    duration. Health checks are skipped so uptime pings don't flood the logs."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        import time
+        import uuid
+        import structlog
+
+        raw = dict(scope["headers"]).get(b"x-request-id", b"").decode()[:64]
+        rid = raw if raw.isalnum() or raw.replace("-", "").isalnum() and raw else uuid.uuid4().hex[:16]
+        structlog.contextvars.clear_contextvars()
+        structlog.contextvars.bind_contextvars(request_id=rid)
+        started, status = time.monotonic(), 500
+
+        async def send_with_id(message):
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+                message["headers"] = list(message["headers"]) + [(b"x-request-id", rid.encode())]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_id)
+        finally:
+            if not scope["path"].startswith("/health"):
+                structlog.get_logger("access").info(
+                    "request", method=scope["method"], path=scope["path"], status=status,
+                    ms=int((time.monotonic() - started) * 1000))

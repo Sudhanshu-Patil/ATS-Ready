@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     # Global cap on Apify actor runs per UTC day (protects the free-plan credit).
     APIFY_DAILY_RUN_CAP: int = 30
+    # LLM spend caps, in tokens per UTC day (0 = off). Groq's free tier allows a
+    # few hundred thousand tokens a day per model, so these leave headroom.
+    LLM_DAILY_TOKEN_CAP: int = 600_000
+    LLM_USER_DAILY_TOKEN_CAP: int = 120_000
+    ADMIN_EMAILS: str = ""          # comma-separated; these accounts can open /admin
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)

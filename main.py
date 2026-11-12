@@ -18,12 +18,14 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.rate_limit import limiter
 from app.config import settings
-from app.middleware import BodyLimitMiddleware, SecurityHeadersMiddleware, MAX_BODY_BYTES
+from app.middleware import (BodyLimitMiddleware, RequestLogMiddleware, SecurityHeadersMiddleware,
+                            MAX_BODY_BYTES)
 from app.db.database import close_db, init_db
 from app.services.cache_service import cache_service
 
 structlog.configure(
     processors=[
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
@@ -107,6 +109,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(BodyLimitMiddleware, max_bytes=MAX_BODY_BYTES)
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestLogMiddleware)      # outermost: logs every response, incl. 413/429
 
 # Generated resumes are NOT served statically: downloads go through the
 # authenticated /api/download/{job_id}, which checks ownership.
@@ -119,6 +122,7 @@ from app.api.job_routes import job_router
 from app.api.billing_routes import billing_router
 from app.api.content_routes import content_router
 from app.api.activity_routes import activity_router
+from app.api.admin_routes import admin_router
 
 app.include_router(auth_router,    prefix="/api")
 app.include_router(router,         prefix="/api")
@@ -127,6 +131,7 @@ app.include_router(job_router,     prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(content_router, prefix="/api")
 app.include_router(activity_router, prefix="/api")
+app.include_router(admin_router,    prefix="/api")
 
 
 @app.get("/health", tags=["System"])

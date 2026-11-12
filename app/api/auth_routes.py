@@ -8,6 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.admin_routes import is_admin
 from app.api.dependencies import get_current_user
 from app.api.rate_limit import limiter
 from app.db.database import get_db
@@ -253,7 +254,9 @@ async def login(
 
 
 @auth_router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("60/minute")
 async def refresh(
+    request: Request,
     response: Response,
     refresh_token: str = Cookie(default=None),
     db: AsyncSession = Depends(get_db),
@@ -313,6 +316,7 @@ async def get_me(user: User = Depends(get_current_user)):
         "full_name":  user.full_name,
         "plan":       user.plan,
         "is_verified": user.is_verified,
+        "is_admin":   is_admin(user),
         "created_at": str(user.created_at),
     }
 

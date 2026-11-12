@@ -17,6 +17,8 @@ from app.api.dependencies import get_current_user
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, JobApplication, PersonalInfo, User
 
+from app.services.usage import ensure_budget  # noqa: E402
+
 activity_router = APIRouter()
 
 ACTIVE = ("pending", "running")
@@ -41,7 +43,9 @@ async def count_active(db: AsyncSession, user_id) -> int:
 
 
 async def ensure_capacity(db: AsyncSession, user_id) -> None:
-    """Free-tier AI quota is shared by everyone: cap one user's parallel work."""
+    """Free-tier AI quota is shared by everyone: cap one user's parallel work
+    and refuse new work once the daily token budget is spent."""
+    await ensure_budget(db, user_id)
     if await count_active(db, user_id) >= MAX_ACTIVE_PER_USER:
         raise HTTPException(
             status_code=429,

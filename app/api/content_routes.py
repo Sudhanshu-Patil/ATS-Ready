@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.activity_routes import ensure_capacity, ensure_profile
+from app.api.rate_limit import per_user_limit
 from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access
 from app.db.database import get_db
@@ -81,7 +82,8 @@ async def _enqueue_or_fail(db: AsyncSession, row, function: str, **kwargs) -> No
 
 # ── Cover Letter endpoints ────────────────────────────────────────────────────
 
-@content_router.post("/cover-letter", status_code=202)
+@content_router.post("/cover-letter", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
 async def generate_cover_letter(
     request: CoverLetterRequest,
     db: AsyncSession = Depends(get_db),
@@ -191,7 +193,8 @@ async def delete_cover_letter(
 
 # ── Interview Prep endpoints ──────────────────────────────────────────────────
 
-@content_router.post("/interview-prep", status_code=202)
+@content_router.post("/interview-prep", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
 async def generate_interview_prep(
     request: InterviewPrepRequest,
     db: AsyncSession = Depends(get_db),

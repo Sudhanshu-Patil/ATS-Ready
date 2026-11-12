@@ -26,6 +26,7 @@ from app.services.storage_service import storage_service
 from app.api.activity_routes import ensure_capacity
 from app.services.scraper import ScraperError, validate_public_url
 from app.api.dependencies import get_current_user
+from app.api.rate_limit import per_user_limit
 from app.api.plan_limits import check_resume_limit
 
 router = APIRouter()
@@ -44,7 +45,8 @@ async def _get_arq_pool():
 # Resume Generation
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.post("/generate-resume", response_model=GenerateResumeResponse, status_code=202)
+@router.post("/generate-resume", response_model=GenerateResumeResponse, status_code=202,
+             dependencies=[Depends(per_user_limit("generate", 10))])
 async def generate_resume(
     request: GenerateResumeRequest,
     db: AsyncSession = Depends(get_db),
@@ -647,7 +649,7 @@ def _extract_resume_text(filename: str, data: bytes) -> str:
     raise HTTPException(status_code=422, detail="Upload a .pdf or .docx file")
 
 
-@router.post("/metabase/import-resume")
+@router.post("/metabase/import-resume", dependencies=[Depends(per_user_limit("import", 5))])
 async def import_resume(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -805,7 +807,7 @@ async def import_resume(
 # Job Recommendations
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/recommendations")
+@router.get("/recommendations", dependencies=[Depends(per_user_limit("recs", 12))])
 async def get_recommendations(
     refresh: bool = False,
     db: AsyncSession = Depends(get_db),

@@ -331,3 +331,20 @@ class InterviewPrep(Base):
     created_at         = Column(DateTime, default=_now, nullable=False)
 
     user               = relationship("User", backref="interview_preps")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage events (admin analytics + spend caps)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind        = Column(String(30), nullable=False)          # resume | cover_letter | interview_prep
+    tokens      = Column(Integer, default=0, nullable=False)  # LLM tokens actually billed
+    llm_calls   = Column(Integer, default=0, nullable=False)
+    duration_ms = Column(Integer, default=0, nullable=False)
+    ok          = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime, default=_now, nullable=False, index=True)
