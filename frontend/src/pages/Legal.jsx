@@ -53,8 +53,7 @@ export function Terms() {
       <H>Acceptable use</H>
       <p>Do not abuse the service, attempt to bypass limits, or submit content you have no right to use.</p>
       <H>Payments</H>
-      <p>Paid plans are billed through PayPal for the period shown at checkout and do not renew automatically.
-        This project currently uses PayPal's sandbox for demonstration.</p>
+      <p>Paid plans are billed through PayPal for the period shown at checkout and do not renew automatically.</p>
       <H>No warranty</H>
       <p>The service is provided as is, and we do not guarantee interviews, offers or specific ATS scores.</p>
     </Page>
