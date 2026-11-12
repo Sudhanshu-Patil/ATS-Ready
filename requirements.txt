@@ -44,7 +44,7 @@ python-docx==1.1.2
 pypdf==5.1.0
 
 # ── Auth (Step 2 — install now so it's ready) ────────────────────────────────
-python-jose[cryptography]==3.3.0
+PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
 # passlib 1.7.4 detects the bcrypt backend via bcrypt.__about__.__version__,
 # which bcrypt>=4.1 removed — pin below that or password hashing breaks.

@@ -38,17 +38,24 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user_id = verify_access_token(raw_token)
-    if not user_id:
+    verified = verify_access_token(raw_token)
+    if not verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token is invalid or has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    user_id, token_version = verified
 
     result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
     user = result.scalar_one_or_none()
 
+    if user and user.token_version != token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -95,8 +102,9 @@ async def get_current_user_optional(
     raw_token = token or access_token
     if not raw_token:
         return None
-    user_id = verify_access_token(raw_token)
-    if not user_id:
+    verified = verify_access_token(raw_token)
+    if not verified:
         return None
-    result = await db.execute(select(User).where(User.id == user_id))
-    return result.scalar_one_or_none()
+    result = await db.execute(select(User).where(User.id == uuid.UUID(verified[0])))
+    user = result.scalar_one_or_none()
+    return user if user and user.token_version == verified[1] else None

@@ -2,8 +2,9 @@ import asyncio
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,10 +59,10 @@ class TokenResponse(BaseModel):
 
 # ── Cookie helper ─────────────────────────────────────────────────────────────
 
-def _set_auth_cookies(response: Response, user_id: int) -> str:
+def _set_auth_cookies(response: Response, user: User) -> str:
     """Set httpOnly auth cookies and return the access token string."""
-    access_token = create_access_token(user_id)
-    refresh_token = create_refresh_token(user_id)
+    access_token = create_access_token(user.id, user.token_version)
+    refresh_token = create_refresh_token(user.id, user.token_version)
 
     cookie_kwargs = dict(
         httponly=True,
@@ -121,7 +122,7 @@ async def register(
     await db.commit()
     await db.refresh(user)
 
-    access_token = _set_auth_cookies(response, user.id)
+    access_token = _set_auth_cookies(response, user)
 
     # Best-effort verification email — registration must succeed even when
     # SMTP is down/unconfigured (send_email never raises).
@@ -199,7 +200,7 @@ async def google_login(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
 
     return TokenResponse(
-        access_token=_set_auth_cookies(response, user.id),
+        access_token=_set_auth_cookies(response, user),
         user_id=str(user.id),
         email=user.email,
         full_name=user.full_name or "",
@@ -240,7 +241,7 @@ async def login(
             detail="Account is deactivated",
         )
 
-    access_token = _set_auth_cookies(response, user.id)
+    access_token = _set_auth_cookies(response, user)
 
     return TokenResponse(
         access_token=access_token,
@@ -267,23 +268,24 @@ async def refresh(
             detail="No refresh token found",
         )
 
-    user_id = verify_refresh_token(refresh_token)
-    if not user_id:
+    verified = verify_refresh_token(refresh_token)
+    if not verified:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is invalid or expired. Please log in again.",
         )
+    user_id, token_version = verified
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
+    if not user or not user.is_active or user.token_version != token_version:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or deactivated",
         )
 
-    access_token = _set_auth_cookies(response, user.id)
+    access_token = _set_auth_cookies(response, user)
 
     return TokenResponse(
         access_token=access_token,
@@ -315,17 +317,23 @@ async def get_me(user: User = Depends(get_current_user)):
     }
 
 
+class UpdateMeRequest(BaseModel):
+    full_name: str = Field(max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 @auth_router.patch("/me")
 async def update_me(
-    data: dict,
+    data: UpdateMeRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update the current user's full_name."""
-    allowed = {"full_name"}
-    for key, value in data.items():
-        if key in allowed:
-            setattr(user, key, value)
+    user.full_name = data.full_name.strip()
     user.updated_at = datetime.utcnow()
     await db.commit()
     return {"message": "Profile updated"}
@@ -335,23 +343,81 @@ async def update_me(
 @limiter.limit("10/hour")
 async def change_password(
     request: Request,
-    data: dict,
+    response: Response,
+    data: ChangePasswordRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Change password — requires current password for verification."""
-    current = data.get("current_password", "")
-    new = data.get("new_password", "")
-
-    if not user.hashed_password or not verify_password(current, user.hashed_password):
+    """Change password — requires current password for verification.
+    Every other session is signed out; this one gets fresh cookies."""
+    if not user.hashed_password or not verify_password(data.current_password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    if len(new) < 8:
-        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
 
-    user.hashed_password = hash_password(new)
+    user.hashed_password = hash_password(data.new_password)
+    user.token_version += 1
     user.updated_at = datetime.utcnow()
     await db.commit()
+    _set_auth_cookies(response, user)
     return {"message": "Password changed successfully"}
+
+
+@auth_router.post("/logout-all")
+async def logout_all(
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sign this account out on every device."""
+    user.token_version += 1
+    await db.commit()
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return {"message": "Signed out everywhere"}
+
+
+# ── Account data: export and deletion ────────────────────────────────────────
+
+class DeleteAccountRequest(BaseModel):
+    confirm_email: str
+    password: str = ""        # required for accounts that have a password
+
+
+@auth_router.get("/me/export")
+@limiter.limit("5/hour")
+async def export_my_data(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Everything we store about the user, as JSON (data portability)."""
+    from app.services.account_service import export_user_data
+    data = await export_user_data(db, user)
+    return JSONResponse(
+        content=data,
+        headers={"Content-Disposition": 'attachment; filename="ats-ready-data.json"'},
+    )
+
+
+@auth_router.delete("/me")
+@limiter.limit("5/hour")
+async def delete_my_account(
+    request: Request,
+    response: Response,
+    data: DeleteAccountRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete the account, its data and its generated files."""
+    if data.confirm_email.strip().lower() != user.email.lower():
+        raise HTTPException(status_code=400, detail="Type your account email to confirm deletion")
+    if user.hashed_password and not verify_password(data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Password is incorrect")
+
+    from app.services.account_service import delete_user_and_data
+    await delete_user_and_data(db, user)
+    response.delete_cookie("access_token")
+    response.delete_cookie("refresh_token")
+    return {"message": "Your account and data have been deleted"}
 
 
 # ── Password reset (forgot password) ──────────────────────────────────────────
@@ -418,6 +484,7 @@ async def reset_password(
         raise HTTPException(status_code=400, detail="Reset link is invalid or has expired")
 
     user.hashed_password = hash_password(data.new_password)
+    user.token_version += 1          # a reset means the old sessions may be an attacker's
     user.updated_at = datetime.utcnow()
     await db.commit()
     return {"message": "Password reset successfully. You can now log in."}

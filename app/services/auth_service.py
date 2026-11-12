@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
 
 from app.config import settings
@@ -25,7 +25,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id, token_version: int = 0) -> str:
     """
     Create a signed JWT access token.
     Expires in JWT_ACCESS_EXPIRE_MINUTES (default 60).
@@ -34,13 +34,14 @@ def create_access_token(user_id: int) -> str:
     payload = {
         "sub": str(user_id),
         "type": "access",
+        "tv": token_version,        # bumped on password change / logout-everywhere
         "exp": expire,
         "iat": datetime.utcnow(),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: int) -> str:
+def create_refresh_token(user_id, token_version: int = 0) -> str:
     """
     Create a signed JWT refresh token.
     Expires in JWT_REFRESH_EXPIRE_DAYS (default 30).
@@ -49,6 +50,7 @@ def create_refresh_token(user_id: int) -> str:
     payload = {
         "sub": str(user_id),
         "type": "refresh",
+        "tv": token_version,
         "exp": expire,
         "iat": datetime.utcnow(),
     }
@@ -62,34 +64,28 @@ def decode_token(token: str) -> Optional[dict]:
     """
     try:
         return jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         return None
 
 
-def verify_access_token(token: str) -> Optional[str]:
+def verify_access_token(token: str) -> Optional[tuple]:
     """
-    Verify an access token and return the user_id (int).
-    Returns None if the token is invalid, expired, or wrong type.
-    """
-    payload = decode_token(token)
-    if not payload:
-        return None
-    if payload.get("type") != "access":
-        return None
-    return payload.get("sub")
-
-
-def verify_refresh_token(token: str) -> Optional[str]:
-    """
-    Verify a refresh token and return the user_id.
-    Returns None if invalid, expired, or wrong type.
+    Verify an access token. Returns (user_id, token_version), or None if the
+    token is invalid, expired, or the wrong type. The caller must also check
+    the version against the user row (see get_current_user).
     """
     payload = decode_token(token)
-    if not payload:
+    if not payload or payload.get("type") != "access" or not payload.get("sub"):
         return None
-    if payload.get("type") != "refresh":
+    return payload["sub"], payload.get("tv", 0)
+
+
+def verify_refresh_token(token: str) -> Optional[tuple]:
+    """Like verify_access_token, for refresh tokens: (user_id, token_version) or None."""
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "refresh" or not payload.get("sub"):
         return None
-    return payload.get("sub")
+    return payload["sub"], payload.get("tv", 0)
 
 
 # ── Password-reset / email-verification tokens ───────────────────────────────

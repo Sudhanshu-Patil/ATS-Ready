@@ -73,6 +73,7 @@ class User(Base):
     github_id              = Column(String(100), unique=True, nullable=True)
     is_active              = Column(Boolean, default=True, nullable=False)
     is_verified            = Column(Boolean, default=False, nullable=False)
+    token_version          = Column(Integer, default=0, server_default="0", nullable=False)
 
     # subscription — provider-neutral names (currently PayPal order id):
     # payment_customer_id     = the provider's customer reference
