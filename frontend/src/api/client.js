@@ -45,10 +45,16 @@ api.interceptors.response.use(
         return api(original)
       }
     }
-    // FastAPI validation errors (422) return `detail` as a list of objects;
-    // pages pass it straight to toast(), and React crashes on non-strings.
-    const d = error.response?.data?.detail
-    if (Array.isArray(d)) error.response.data.detail = d.map((e) => e.msg).join('; ')
+    // `detail` is not always a string: FastAPI validation errors (422) send a
+    // list of objects, and plan-limit errors (402) send {error, message, ...}.
+    // Pages pass it straight to toast(), and React crashes on non-strings, so
+    // flatten here. The original object stays on `data.detail_raw`.
+    const data = error.response?.data
+    const d = data?.detail
+    if (d && typeof d !== 'string') {
+      data.detail_raw = d
+      data.detail = Array.isArray(d) ? d.map((e) => e.msg).join('; ') : d.message || 'Request failed'
+    }
     return Promise.reject(error)
   }
 )

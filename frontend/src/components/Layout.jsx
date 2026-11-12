@@ -9,6 +9,8 @@ import {
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import ThemeToggle from './ThemeToggle'
+import QueuePanel from './QueuePanel'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -53,6 +55,12 @@ export default function Layout() {
   // Drawer shouldn't survive a navigation on mobile — otherwise the next
   // page loads underneath it still open.
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
+
+  // Pick up work already running (reload, other tab) and forget it on logout.
+  useEffect(() => {
+    useActivityStore.getState().refresh()
+    return () => useActivityStore.getState().reset()
+  }, [])
 
   const handleLogout = async () => {
     try { await authAPI.logout() } catch {}
@@ -195,6 +203,7 @@ export default function Layout() {
           </AnimatePresence>
         </main>
       </div>
+      <QueuePanel />
     </div>
   )
 }

@@ -8,6 +8,7 @@ import EmptyState from '../components/EmptyState'
 import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
 import StatusBadge from '../components/StatusBadge'
+import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -35,14 +36,26 @@ const TAB_ITEMS = [
 export default function InterviewPrep() {
   const [tab, setTab]         = useState('generate')
   const [jdText, setJdText]   = useState('')
-  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const lastId = useActivityStore(s => s.last.interview_prep)
+  const finished = useActivityStore(s => (lastId ? s.finished[lastId] : null))
+  const recentKey = useActivityStore(s => s.recent.map(i => i.id + i.status).join())
+  const loading = submitting || Boolean(lastId && !finished)
   const [result, setResult]   = useState(null)
   const [history, setHistory] = useState([])
   const [openQ, setOpenQ]     = useState(null)
 
   useEffect(() => {
     if (tab === 'history') loadHistory()
-  }, [tab])
+  }, [tab, recentKey])
+
+  useEffect(() => {
+    if (!lastId || !finished) return
+    if (finished.status === 'done') {
+      api.get(`/interview-preps/${lastId}`).then(r => setResult(r.data)).catch(() => {})
+    }
+    useActivityStore.getState().clearLast('interview_prep')
+  }, [finished])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHistory = async () => {
     try {
@@ -56,17 +69,17 @@ export default function InterviewPrep() {
       toast.error('Job description too short (min 100 characters)')
       return
     }
-    setLoading(true)
+    setSubmitting(true)
     setResult(null)
     setOpenQ(null)
     try {
       const res = await api.post('/interview-prep', { jd_text: jdText })
-      setResult(res.data)
-      toast.success(`${res.data.questions?.length || 10} interview questions ready!`)
+      useActivityStore.getState().track('interview_prep', res.data.id)
+      toast('Preparing your interview kit — you can keep working while it runs.')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Generation failed')
     } finally {
-      setLoading(false)
+      setSubmitting(false)
     }
   }
 
@@ -104,17 +117,17 @@ export default function InterviewPrep() {
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
-              disabled={loading}
+              disabled={submitting}
             />
-            <button onClick={generate} disabled={loading}
+            <button onClick={generate} disabled={submitting}
               className={clsx(
                 'w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-white transition-all',
-                loading
+                submitting
                   ? 'bg-brand opacity-50 cursor-not-allowed'
                   : 'bg-gradient-to-r from-brand to-accent-magenta hover:shadow-[0_0_24px_-4px_rgba(255,61,119,0.5)]'
               )}>
               {loading ? <Spinner size="sm" color="white" /> : <BrainCircuit size={16} />}
-              {loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
+              {submitting ? 'Starting…' : loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
             </button>
           </motion.div>
 
@@ -316,12 +329,16 @@ function HistoryItem({ item, onDelete }) {
     <motion.div variants={fadeInUp} className="card">
       <div className="flex items-center flex-wrap justify-between gap-3">
         <div>
-          <p className="font-medium text-text-primary">{item.job_title || 'Untitled'}</p>
-          <p className="text-sm text-text-secondary">{item.company} · {item.question_count} questions</p>
+          <p className="font-medium text-text-primary">
+            {item.status === 'failed' ? 'Failed' : item.status === 'done' ? (item.job_title || 'Untitled') : 'Generating…'}
+          </p>
+          <p className="text-sm text-text-secondary">
+            {item.status === 'failed' ? item.error : item.status === 'done' ? `${item.company || ''} · ${item.question_count} questions` : 'Queued — you can leave this page'}
+          </p>
           <p className="text-xs text-text-muted mt-1">{new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={expand} className="btn-ghost text-sm flex items-center gap-1 px-3 py-1.5">
+          <button onClick={expand} disabled={item.status !== 'done'} className="btn-ghost text-sm flex items-center gap-1 px-3 py-1.5">
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             {expanded ? 'Hide' : 'View'}
           </button>

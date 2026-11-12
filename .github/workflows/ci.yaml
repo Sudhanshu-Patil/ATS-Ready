@@ -69,7 +69,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Create .env for the dev stack
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          # The e2e suite registers many accounts from one IP and must not spend LLM quota
+          echo "RATE_LIMIT_ENABLED=false" >> .env
+          echo "LLM_FAKE=true" >> .env
 
       - name: Start the dev stack
         run: docker compose -f docker-compose.yaml up -d --build api worker frontend db redis mailpit

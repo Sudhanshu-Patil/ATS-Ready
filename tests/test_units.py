@@ -59,3 +59,17 @@ def test_no_skills_matched_scores_low():
     score_job(job, ["Python", "FastAPI"], ["Backend Engineer"])
     assert job.match_score < 40
     assert job.matched_skills == []
+
+
+def test_production_refuses_fake_llm_or_disabled_rate_limit():
+    import pytest
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    strong = dict(ENVIRONMENT="production", JWT_SECRET="x" * 40,
+                  DATABASE_URL="postgresql+asyncpg://u:pw@h/db", REDIS_URL="redis://:pw@h:6379/0",
+                  LLM_FAKE=False, RATE_LIMIT_ENABLED=True)
+    Settings(**strong)                                        # baseline is valid
+    for bad in ({"LLM_FAKE": True}, {"RATE_LIMIT_ENABLED": False}):
+        with pytest.raises(ValidationError):
+            Settings(**{**strong, **bad})
