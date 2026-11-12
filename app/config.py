@@ -123,6 +123,7 @@ class Settings(BaseSettings):
 
     # ── Scraper ───────────────────────────────────────────────────────────────
     SCRAPE_TIMEOUT: int = 15
+    SCRAPE_MAX_BYTES: int = 2_000_000     # stop reading a page after this much
     RESPECT_ROBOTS_TXT: bool = True
 
     # ── Auth (Step 2 — defined here so routes can import settings cleanly) ────
