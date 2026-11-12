@@ -191,3 +191,13 @@ async def test_interview_prep_is_a_pro_feature(client, stub, monkeypatch):
         await db.commit()
     ok = await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})
     assert ok.status_code == 202 and stub[0][0] == "generate_interview_prep_task"
+
+
+async def test_generate_resume_without_a_profile_is_refused_up_front(client, stub):
+    h = bearer(await register(client, unique_email()))             # no Personal Info saved
+    r = await client.post("/api/generate-resume", headers=h, json={"jd_text": JD})
+    assert r.status_code == 400
+    assert "Personal Info" in r.json()["detail"]
+    assert not stub
+    jobs = (await client.get("/api/jobs", headers=h)).json()
+    assert jobs["total"] == 0                                       # no doomed job row was created
