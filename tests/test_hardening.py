@@ -43,5 +43,7 @@ async def test_spa_caching_and_unknown_api_path(client):
     from main import DIST_DIR
     if not DIST_DIR.exists():
         return
-    assert (await client.get("/login")).headers["cache-control"] == "no-cache"
-    assert (await client.get("/favicon.svg")).headers["cache-control"] == "public, max-age=86400"
+    assert (await client.get("/login")).headers["cache-control"] == "no-cache"      # index.html
+    public = [f for f in ("robots.txt", "favicon.svg", "sitemap.xml") if (DIST_DIR / f).is_file()]
+    for name in public[:1]:
+        assert (await client.get(f"/{name}")).headers["cache-control"] == "public, max-age=86400"

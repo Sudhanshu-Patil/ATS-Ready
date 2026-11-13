@@ -22,7 +22,7 @@ from app.models.schemas import (
 )
 from app.services.cache_service import cache_service
 from app.services.storage_service import storage_service
-from app.api.activity_routes import ensure_capacity
+from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.services.scraper import ScraperError, validate_public_url
 from app.api.dependencies import get_current_user
 from app.api.rate_limit import per_user_limit
@@ -66,6 +66,7 @@ async def generate_resume(
             await validate_public_url(str(request.jd_url))
         except ScraperError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+    await ensure_profile(db, user.id)        # a missing profile can only fail later in the worker
     await ensure_capacity(db, user.id)
 
     # Create the JobApplication row in "pending" state NOW so we have an ID
