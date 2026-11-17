@@ -1,5 +1,6 @@
 """Application tracker: every job the user is going after, with a dated timeline, follow-ups and back-questions."""
 import asyncio
+import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -17,6 +18,7 @@ from app.db.database import get_db
 from app.db.models import (APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter,
                            InterviewPrep, JobApplication, User)
 from app.services import applications, credits, pricing
+from app.services.usage import ensure_budget, mark_failed, record_usage, start_tally
 from app.services.scraper import ScraperError, scraper_service, validate_public_url
 from app.services.cache_service import cache_service
 from app.services.metabase_service import metabase_service
@@ -198,13 +200,19 @@ async def follow_up_draft(application_id: str, db: AsyncSession = Depends(get_db
                   "days above; ask about next steps; sign with the candidate's name.\n"
                   'Return JSON: {"subject": "...", "body": "..."}')
         import json
+        await ensure_budget(db, user.id)
+        tally, started, ok = start_tally(), time.monotonic(), False
         try:
             raw = await asyncio.to_thread(ai_agent._call, "You write brief, honest job follow-up emails. JSON only.", prompt, 500)
             data = json.loads(raw)
+            ok = True
         except Exception:
+            mark_failed()
             await credits.release(db, a.id, "follow_up")
             await db.commit()
             raise
+        finally:
+            await record_usage(user.id, "follow_up", tally, started, ok and not tally["failed"])
         text = f"Subject: {data.get('subject', '')}\n\n{data.get('body', '')}"
     await applications.add_event(db, a, "follow_up", "Drafted a follow-up message")
     await credits.succeeded(db, a.id)
