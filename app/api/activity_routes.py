@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.db.database import get_db
-from app.db.models import CoverLetter, InterviewPrep, JobApplication, PersonalInfo, User
+from app.db.models import AssistantRequest, CoverLetter, InterviewPrep, JobApplication, PersonalInfo, User
 
 from app.services.usage import ensure_budget  # noqa: E402
 
@@ -30,6 +30,7 @@ KINDS = {
     "resume":         (JobApplication, "error_message"),
     "cover_letter":   (CoverLetter, "error"),
     "interview_prep": (InterviewPrep, "error"),
+    "assistant":      (AssistantRequest, "error"),
 }
 
 

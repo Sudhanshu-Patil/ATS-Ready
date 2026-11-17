@@ -10,7 +10,7 @@ for operations.
 # Backend (use the venv: venv/Scripts/python on Windows)
 pytest -q                                   # 150+ tests, needs local Postgres + Redis (docker compose up db redis)
 ruff check app main.py tests scripts evals  # lint (config in ruff.toml)
-alembic upgrade head                        # migrations (head: 0012)
+alembic upgrade head                        # migrations (head: 0013)
 uvicorn main:app --reload                   # API on :8000
 arq app.worker.tasks.WorkerSettings         # worker (LLM jobs run here, one at a time)
 python -m evals.run_evals                   # REAL model quality + prompt-injection evals (spends Groq quota)
@@ -34,6 +34,7 @@ processes (PowerShell `Get-CimInstance Win32_Process`), not just the one you sta
 - `app/services/compaction.py` local (no-LLM) context shrinking, `ground_skills` (drops skills the candidate does not have).
 - `app/services/job_recommendations.py` scoring + ranking of job suggestions (hard location gate in `rank_jobs`); cold fetch runs in the background (`start_refresh`).
 - `app/services/job_sources.py` the free job sources (YC, HN, RemoteOK, Himalayas, WWR, Jobicy, optional Google dork); `app/services/locations.py` place parsing and the user's location preferences.
+- `app/services/assistant.py` + `persona.py` application-form answers: questions-only or with a JD; persona graph in Postgres (facts, stories, topics, style); fact questions (notice period, salary...) are asked back, never guessed; sensitive/EEO questions are never answered. `app/services/applications.py` tracks applications from every entry point (assistant, resume, cover letter, referral); company/role come only from literal text, else the `needs` list drives the back-question popup (`GET /api/applications/attention`, `AttentionModal.jsx`). `frontend/src/lib/outbox.js` keeps writes safe across offline/refresh (server dedupes on `client_request_id`).
 - `app/services/usage.py` token tally per run, daily spend caps, `UsageEvent` rows for the admin page.
 - `app/services/scraper.py` job-URL scraping with an SSRF guard (`validate_public_url`).
 - `app/worker/tasks.py` arq tasks (`@tracked` records usage; note `enqueue()` passes keyword arguments).

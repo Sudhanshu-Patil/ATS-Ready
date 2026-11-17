@@ -30,7 +30,7 @@ from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
-from app.services import letter_limit
+from app.services import applications, letter_limit
 from app.services.cache_service import cache_service
 from app.services.content_service import ProfileIncomplete, friendly_error
 from app.services.metabase_service import metabase_service
@@ -282,6 +282,28 @@ class ReferralRequest(BaseModel):
     job_url:     str = Field(default="", max_length=1000)
 
 
+async def _track_referral(db: AsyncSession, user: User, request) -> None:
+    """A referral request is a step in an application: put it on that job's timeline, dated now. The company
+    comes from the posting's cached analysis or its own text; if neither names it, the app asks the user."""
+    try:
+        jd = request.jd_text.strip()
+        cached = await cache_service.get_parsed_jd(jd)
+        company, role = (cached or {}).get("company"), (cached or {}).get("job_title")
+        if applications.is_unclear_company(company):
+            hints = applications.extract_hints(jd[:600])
+            company, role = hints["company"], role or hints["role"]
+        person = request.person_name.strip()
+        await applications.track(
+            db, user.id, source="referral", kind="referral_request",
+            summary="Drafted a referral request" + (f" to {person}" if person else ""), jd_text=jd,
+            company=company, role=role, job_url=request.job_url.strip() or None, status="referral_requested",
+            payload={"person": person} if person else None)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("Application tracking failed for referral (non-fatal)", exc_info=True)
+
+
 @content_router.post("/referral-message",
                      dependencies=[Depends(per_user_limit("content", 10))])
 async def referral_message(
@@ -308,6 +330,7 @@ async def referral_message(
             ai_agent.generate_referral_message, request.person_name.strip(), request.jd_text.strip(),
             request.job_url.strip(), profile), timeout=70)
         ok = True
+        await _track_referral(db, user, request)
         return result
     except asyncio.TimeoutError:
         mark_failed()

@@ -39,13 +39,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
-from app.services import suggestion_store
+from app.services import applications, assistant, persona, suggestion_store
 from app.services.ats_score import jd_terms as extract_terms
 from app.services.ats_score import score_view, terms_owned, view_from_resume, view_from_text
 from app.services.documents import fit_resume
 from app.services.grounding import add_known_terms, enforce_letter, enforce_resume, source_text
 from app.services.usage import mark_failed, tracked
-from app.db.models import CoverLetter, InterviewPrep, JobApplication
+from app.db.models import AssistantRequest, CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
 from app.services.content_service import build_context, friendly_error
 from app.services.metabase_service import metabase_service
@@ -113,6 +113,8 @@ async def generate_resume(
     job_app_id = uuid.UUID(str(job_app_id))
     user_id = uuid.UUID(str(user_id))
     async with AsyncSessionLocal() as db:
+        job_row = await db.get(JobApplication, job_app_id)
+        job_asked_at = job_row.created_at if job_row else None      # when the user asked, for the timeline
         try:
             # ── Mark running ──────────────────────────────────────────────────
             await _update_job_status(db, job_app_id, "running")
@@ -170,6 +172,10 @@ async def generate_resume(
                 raise ValueError(
                     "Profile incomplete — please fill in Personal Info in the Metabase first."
                 )
+
+            # Tracking: this job is now on the user's list, dated when they asked. Never fails the resume.
+            await _track_job(db, user_id, source="resume", kind="resume", summary="Tailored a resume",
+                             jd_text=jd_text, jd_url=jd_url, parsed_jd=parsed_jd, asked_at=job_asked_at)
 
             # ── Step 4: What the user already has, and the suggestion list for this JD ──
             terms = extract_terms(parsed_jd)
@@ -295,6 +301,9 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
         try:
             profile, parsed_jd, tailored, job_app = await build_context(
                 jd_text, uuid.UUID(user_id), db, job_app_id)
+            await _track_job(db, uuid.UUID(user_id), source="cover_letter", kind="cover_letter",
+                             summary="Asked for a cover letter", jd_text=jd_text, jd_url=None, parsed_jd=parsed_jd,
+                             asked_at=row.created_at)
             result = await asyncio.to_thread(
                 ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone, limit_unit, limit)
             row.job_app_id = job_app.id if job_app else None
@@ -343,6 +352,41 @@ async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_i
         except Exception as exc:
             logger.error("Interview prep %s FAILED: %s", prep_id, exc, exc_info=True)
             row.status, row.error = "failed", friendly_error(exc)
+            mark_failed()
+        await db.commit()
+
+
+async def _track_job(db, user_id, *, source, kind, summary, jd_text, jd_url, parsed_jd, asked_at) -> None:
+    """Add this job to the user's application list, dated when THEY asked (not when the worker got to it).
+    Company/role come from the job description's analysis; if the posting hides the company, the application is
+    created anyway and the UI asks the user. Tracking must never break the feature it is attached to."""
+    try:
+        company = parsed_jd.company if not applications.is_unclear_company(parsed_jd.company) else None
+        app = await applications.track(
+            db, user_id, source=source, kind=kind, summary=summary, jd_text=jd_text, company=company,
+            role=parsed_jd.job_title, job_url=jd_url, occurred_at=asked_at)
+        await persona.record_target(db, user_id, parsed_jd.job_title, [t.term for t in extract_terms(parsed_jd)[:5]])
+        await db.commit()
+        logger.info("Tracked %s for user %s -> application %s (needs=%s)", source, user_id, app.id, app.needs)
+    except Exception:
+        await db.rollback()
+        logger.warning("Application tracking failed (non-fatal)", exc_info=True)
+
+
+@tracked("assistant")
+async def generate_assistant_answers_task(ctx, request_id, user_id, only=None):
+    """Answer the questions of one AssistantRequest. `only` re-runs just those question ids."""
+    async with AsyncSessionLocal() as db:
+        req = await db.get(AssistantRequest, uuid.UUID(request_id))
+        if req is None:
+            return
+        req.status = "running"
+        await db.commit()
+        try:
+            await assistant.process_request(db, req, only)
+        except Exception as exc:
+            logger.error("Assistant request %s FAILED: %s", request_id, exc, exc_info=True)
+            req.status, req.error = "failed", friendly_error(exc)
             mark_failed()
         await db.commit()
 
@@ -401,7 +445,8 @@ class WorkerSettings:
     redis_settings = _RS.from_dsn(settings.REDIS_URL)
 
     # Every async function listed here becomes an enqueueable task
-    functions = [generate_resume, generate_cover_letter_task, generate_interview_prep_task]
+    functions = [generate_resume, generate_cover_letter_task, generate_interview_prep_task,
+                 generate_assistant_answers_task]
 
     # Every 5 minutes: fail jobs stuck in pending/running
     cron_jobs = [cron(reap_stale_jobs, minute=set(range(0, 60, 5)), run_at_startup=True)]

@@ -373,3 +373,9 @@ class ResumeSuggestion(Base):
     items      = Column(JSONB, nullable=False, default=list)
     created_at = Column(DateTime, default=_now, nullable=False)
     updated_at = Column(DateTime, default=_now, onupdate=_now, nullable=False)
+
+
+# Application tracking, the assistant and the persona graph live in their own module.
+from app.db.models_assistant import (  # noqa: E402,F401
+    APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, PersonaEdge, PersonaNode,
+)

@@ -4,12 +4,13 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   LayoutDashboard, FileText, Database,
   Settings, LogOut, Zap, ChevronRight,
-  BrainCircuit, Mail, Menu, X, BarChart3
+  BrainCircuit, Mail, Menu, X, BarChart3, MessageSquare, ClipboardList
 } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import ThemeToggle from './ThemeToggle'
 import QueuePanel from './QueuePanel'
+import AttentionModal from './AttentionModal'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -19,6 +20,8 @@ const NAV = [
   { to: '/generate',       icon: Zap,             label: 'Generate Resume' },
   { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
   { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
+  { to: '/assistant',      icon: MessageSquare,   label: 'Application Answers' },
+  { to: '/applications',   icon: ClipboardList,   label: 'Applications' },
   { to: '/metabase',       icon: Database,        label: 'Metabase' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]
@@ -137,14 +140,14 @@ export default function Layout() {
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Tools</p>
-          {NAV.slice(0, 4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
+          {NAV.slice(0, 6).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
 
           <div className="py-2">
             <div className="border-t border-white/10" />
           </div>
 
           <p className="px-3 pb-2 text-xs font-semibold text-text-muted uppercase tracking-wider">Manage</p>
-          {NAV.slice(4).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
+          {NAV.slice(6).map((item) => <NavItem key={item.to} {...item} onClick={() => setMobileOpen(false)} />)}
           {isAdmin && <NavItem to="/admin" icon={BarChart3} label="Admin" onClick={() => setMobileOpen(false)} />}
         </nav>
 
@@ -221,6 +224,7 @@ export default function Layout() {
         </main>
       </div>
       <QueuePanel />
+      <AttentionModal />
     </div>
   )
 }

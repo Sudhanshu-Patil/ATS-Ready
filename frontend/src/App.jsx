@@ -19,6 +19,8 @@ const Metabase = lazy(() => import('./pages/Metabase'))
 const Settings = lazy(() => import('./pages/Settings'))
 const CoverLetter = lazy(() => import('./pages/CoverLetter'))
 const InterviewPrep = lazy(() => import('./pages/InterviewPrep'))
+const Assistant = lazy(() => import('./pages/Assistant'))
+const Applications = lazy(() => import('./pages/Applications'))
 const NotFound = lazy(() => import('./pages/NotFound'))
 import CookieNotice from './components/CookieNotice'
 import ConfirmHost from './components/ConfirmDialog'
@@ -79,6 +81,8 @@ export default function App() {
           <Route path="/generate"       element={<Generator />} />
           <Route path="/cover-letter"   element={<CoverLetter />} />
           <Route path="/interview-prep" element={<InterviewPrep />} />
+          <Route path="/assistant"      element={<Assistant />} />
+          <Route path="/applications"   element={<Applications />} />
           <Route path="/history"        element={<Navigate to="/generate?tab=history" replace />} />
           <Route path="/metabase"       element={<Metabase />} />
           <Route path="/settings"       element={<Settings />} />

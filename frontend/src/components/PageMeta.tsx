@@ -19,6 +19,8 @@ const PAGES: Record<string, [string, boolean]> = {
   '/generate':        ['Generate resume | ATS-Ready', false],
   '/cover-letter':    ['Cover letters | ATS-Ready', false],
   '/interview-prep':  ['Interview prep | ATS-Ready', false],
+  '/assistant':       ['Application answers | ATS-Ready', false],
+  '/applications':    ['Applications | ATS-Ready', false],
   '/metabase':        ['Your profile | ATS-Ready', false],
   '/settings':        ['Settings | ATS-Ready', false],
   '/admin':           ['Admin | ATS-Ready', false],

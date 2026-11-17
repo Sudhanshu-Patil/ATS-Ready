@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useActivityStore } from '../store/activity'
 import Spinner from './Spinner'
 
-const LABEL = { resume: 'Resume', cover_letter: 'Cover letter', interview_prep: 'Interview prep' }
+const LABEL = { resume: 'Resume', cover_letter: 'Cover letter', interview_prep: 'Interview prep', assistant: 'Application answers' }
 
 // Floating list of work still running in the background. Visible on every page,
 // so leaving the page that started a job never loses track of it.

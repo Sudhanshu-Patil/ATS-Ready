@@ -12,7 +12,7 @@ import toast from 'react-hot-toast'
 import api from '../api/client'
 
 const POLL_MS = 3000
-const LABEL = { resume: 'Resume', cover_letter: 'Cover letter', interview_prep: 'Interview prep' }
+const LABEL = { resume: 'Resume', cover_letter: 'Cover letter', interview_prep: 'Interview prep', assistant: 'Application answers' }
 
 let timer = null
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('ats-activity') : null
