@@ -1,7 +1,10 @@
 """
 app/services/email_service.py
 ──────────────────────────────
-Zero-dependency SMTP email sender (stdlib smtplib, run off the event loop).
+Email sender: an HTTPS API (Brevo or Resend) or SMTP (stdlib smtplib, run off the event loop).
+
+Render's free plan blocks outbound SMTP ports, so production uses BREVO_API_KEY (or RESEND_API_KEY), which go over
+HTTPS. Order: Brevo API, then Resend API, then SMTP.
 
 DELIVERY MODES (by configuration, no code changes):
   Dev        — SMTP_HOST=mailpit (docker-compose runs a Mailpit container:
@@ -21,6 +24,9 @@ import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
+from email.utils import parseaddr
+
+import httpx
 
 from app.config import settings
 
@@ -36,8 +42,34 @@ def _send_sync(msg: EmailMessage) -> None:
         smtp.send_message(msg)
 
 
+async def _send_api(to: str, subject: str, text: str, html: str | None) -> None:
+    """Brevo or Resend over HTTPS. Raises on any non-2xx answer (the caller logs it and returns False)."""
+    name, address = parseaddr(settings.EMAIL_FROM)
+    async with httpx.AsyncClient(timeout=15) as client:
+        if settings.BREVO_API_KEY:
+            r = await client.post(
+                "https://api.brevo.com/v3/smtp/email", headers={"api-key": settings.BREVO_API_KEY},
+                json={"sender": {"name": name or "ATS-Ready", "email": address}, "to": [{"email": to}],
+                      "subject": subject, "textContent": text, **({"htmlContent": html} if html else {})})
+        else:
+            r = await client.post(
+                "https://api.resend.com/emails", headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                json={"from": settings.EMAIL_FROM, "to": [to], "subject": subject, "text": text,
+                      **({"html": html} if html else {})})
+        r.raise_for_status()
+
+
 async def send_email(to: str, subject: str, text: str, html: str | None = None) -> bool:
     """Send an email. Returns True on success, False otherwise — never raises."""
+    if settings.BREVO_API_KEY or settings.RESEND_API_KEY:
+        try:
+            await _send_api(to, subject, text, html)
+            logger.info("Email sent to %s: %s", to, subject)
+            return True
+        except Exception as exc:
+            logger.error("Email send failed to %s: %s", to, exc)
+            return False
+
     if not settings.SMTP_HOST:
         if settings.is_production:
             # Reset/verify links are credentials: never write them to production logs.

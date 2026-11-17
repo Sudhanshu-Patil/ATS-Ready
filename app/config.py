@@ -156,6 +156,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_TLS: bool = False          # STARTTLS — true for real providers (587)
     EMAIL_FROM: str = "ATS-Ready <no-reply@ats-ready.local>"
+    # HTTPS email APIs. Render's free plan blocks outbound SMTP, so production sends through one of these.
+    BREVO_API_KEY: str = ""         # brevo.com -> SMTP & API -> API keys (free: 300/day; verify the sender address)
+    RESEND_API_KEY: str = ""        # resend.com (free: 100/day; needs a verified domain to email other people)
     RESET_TOKEN_EXPIRE_MINUTES: int = 30
 
     # ── PayPal billing (sandbox by default) ───────────────────────────────────

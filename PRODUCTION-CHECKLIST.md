@@ -7,8 +7,8 @@ and [.env.example](.env.example); values live only in the Render dashboard and G
 ## Before the first production deploy
 
 1. **Migrations**: the image runs `alembic upgrade head` at start. Current head: `0014`.
-   **Credits and email**: starter credits wait for a verified email, and verification needs SMTP (see below). Until SMTP is set
-   up, use Google sign-in or set `GRANT_WITHOUT_VERIFICATION=true` (accepts more throwaway sign-ups).
+   **Credits and email**: starter credits wait for a verified email, and verification needs email. Render's free plan blocks SMTP, so set
+   `BREVO_API_KEY` (or `RESEND_API_KEY`) and `EMAIL_FROM`. Until email works, use Google sign-in or set `GRANT_WITHOUT_VERIFICATION=true` (accepts more throwaway sign-ups).
    **Razorpay**: set the three `RAZORPAY_*` vars (test keys first) and add the webhook
    `https://<host>/api/billing/razorpay/webhook` with events `payment.captured` and `order.paid`.
 2. **Required env**: `ENVIRONMENT=production`, a strong `JWT_SECRET` (Render can generate one), real
