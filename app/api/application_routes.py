@@ -138,7 +138,7 @@ async def get_application(application_id: str, db: AsyncSession = Depends(get_db
                               .order_by(InterviewPrep.created_at.desc()))).scalars().all()
     usage = {k: v for k, v in (a.usage or {}).items() if not k.startswith("_")}
     return {**_dict(a), "assistant_requests": [str(r) for r in reqs],
-            "jd_text": a.jd_text, "usage": usage, "caps": pricing.JOB_CAPS,
+            "jd_text": a.jd_text, "usage": usage, "caps": pricing.JOB_CAPS if settings.BILLING_ENABLED else {},
             "artifacts": {
                 "resumes": [{"id": str(r.id), "status": r.status, "ats_score": r.ats_score, "created_at": _iso(r.created_at),
                              "download_url": f"/api/download/{r.id}" if r.resume_s3_key else None,

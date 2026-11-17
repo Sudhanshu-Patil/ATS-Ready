@@ -8,6 +8,7 @@ import api from '../api/client'
 import { fadeInUp } from '../lib/motion'
 import { flush, newRequestId, pending, sendOrQueue } from '../lib/outbox'
 import { useActivityStore } from '../store/activity'
+import { JobBanner, useJob } from '../lib/job'
 import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
@@ -23,6 +24,7 @@ export const splitQuestions = (text) =>
 
 export default function Assistant() {
   const [params, setParams] = useSearchParams()
+  const { jobId, job, missing: jobMissing } = useJob()
   const [tab, setTab] = useState('ask')
   const [draft, setDraft] = useState(() => loadDraft() || {
     jd: '', questions: '', company: '', role: '', limit: '', unit: 'words', track: true, requestId: newRequestId(),
@@ -55,7 +57,7 @@ export default function Assistant() {
     const send = () => flush((entry, data) => {
       setOffline(pending().length > 0)
       useActivityStore.getState().track('assistant', data.id)
-      if (entry.id === draft.requestId) setParams({ request: data.id }, { replace: true })
+      if (entry.id === draft.requestId) setParams((p) => { p.set('request', data.id); return p }, { replace: true })
       toast.success('Your questions were sent')
     }).then(() => setOffline(pending().length > 0))
     send()
@@ -73,8 +75,9 @@ export default function Assistant() {
       const res = await sendOrQueue({
         id: draft.requestId, path: '/assistant/requests',
         body: {
-          client_request_id: draft.requestId, questions, jd_text: draft.jd.trim() || null,
-          company: draft.company.trim() || null, role: draft.role.trim() || null, track: draft.track,
+          client_request_id: draft.requestId, questions,
+          ...(jobId ? { application_id: jobId } : {
+            jd_text: draft.jd.trim() || null, company: draft.company.trim() || null, role: draft.role.trim() || null, track: draft.track }),
           ...(limit ? { limit, limit_unit: draft.unit } : {}),
         },
       })
@@ -85,7 +88,7 @@ export default function Assistant() {
       }
       useActivityStore.getState().track('assistant', res.data.id)
       set({ requestId: newRequestId() })            // the next submission is a new request
-      setParams({ request: res.data.id }, { replace: true })
+      setParams((p) => { p.set('request', res.data.id); return p }, { replace: true })
       setCurrent(res.data)
       window.dispatchEvent(new Event('ats-attention'))
     } catch (err) {
@@ -134,7 +137,8 @@ export default function Assistant() {
               </p>
             </div>
 
-            <details className="group">
+            {jobId && <JobBanner job={job} jobId={jobId} missing={jobMissing} kind="answers" toolPath="/assistant" />}
+            {!jobId && <details className="group">
               <summary className="cursor-pointer text-sm text-text-secondary hover:text-text-primary">
                 Job description and details <span className="text-text-muted">(optional: makes answers specific to the job)</span>
               </summary>
@@ -159,12 +163,12 @@ export default function Assistant() {
                   </select>
                 </div>
               </div>
-            </details>
+            </details>}
 
-            <label className="flex items-start gap-2 text-sm text-text-secondary cursor-pointer">
+            {!jobId && <label className="flex items-start gap-2 text-sm text-text-secondary cursor-pointer">
               <input type="checkbox" className="mt-0.5" checked={draft.track} onChange={(e) => set({ track: e.target.checked })} />
               <span>Track this application (date, status and follow-ups). Untick for practice questions.</span>
-            </label>
+            </label>}
 
             <button onClick={submit} disabled={submitting} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
               {submitting ? <Spinner size="sm" color="white" /> : <Sparkles size={16} />}
@@ -181,7 +185,7 @@ export default function Assistant() {
         </div>
       )}
 
-      {tab === 'history' && <History onOpen={(id) => { setParams({ request: id }); setTab('ask') }} />}
+      {tab === 'history' && <History onOpen={(id) => { setParams((p) => { p.set('request', id); return p }); setTab('ask') }} />}
       {tab === 'persona' && <PersonaPanel />}
     </div>
   )
@@ -197,7 +201,7 @@ function RequestView({ request, reload }) {
         <p className="text-xs text-text-muted">
           {request.application.company ? <>Tracked as <strong className="text-text-secondary">{request.application.company}</strong>
             {request.application.role && ` · ${request.application.role}`}. </> : 'Tracked as a draft application. '}
-          <Link to="/applications" className="text-brand underline">Open tracker</Link>
+          <Link to={`/jobs/${request.application.id}`} className="text-brand underline">Open this job</Link>
         </p>
       )}
       {running && <div className="card flex items-center gap-2 text-sm text-text-secondary"><Spinner size="sm" /> Writing your answers… you can leave this page.</div>}

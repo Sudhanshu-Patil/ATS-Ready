@@ -30,6 +30,9 @@ services:
       - { key: GOOGLE_CSE_CX, sync: false }
       - { key: PAYPAL_CLIENT_ID, sync: false }
       - { key: PAYPAL_CLIENT_SECRET, sync: false }
+      - { key: RAZORPAY_KEY_ID, sync: false }       # INR payments (UPI, cards, netbanking); test keys first
+      - { key: RAZORPAY_KEY_SECRET, sync: false }
+      - { key: RAZORPAY_WEBHOOK_SECRET, sync: false }   # dashboard -> Webhooks -> /api/billing/razorpay/webhook
       - { key: GOOGLE_CLIENT_ID, sync: false }
       - { key: SENTRY_DSN, sync: false }
       - { key: SENTRY_FRONTEND_DSN, sync: false }

@@ -63,7 +63,7 @@ describe('Register', () => {
     await userEvent.type(screen.getByPlaceholderText('Min. 8 characters'), 'long-enough-pass')
     await userEvent.click(screen.getByRole('button', { name: /create account/i }))
 
-    await waitFor(() => expect(authAPI.register).toHaveBeenCalledWith('new@example.com', 'long-enough-pass', 'New User'))
+    await waitFor(() => expect(authAPI.register).toHaveBeenCalledWith('new@example.com', 'long-enough-pass', 'New User', null))
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/metabase'))
     expect(useAuthStore.getState().accessToken).toBe('tok-456')
   })

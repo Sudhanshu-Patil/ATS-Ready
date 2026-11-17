@@ -38,9 +38,9 @@ export default function AttentionModal() {
   if (next) return <Ask key={next.id} app={next} onDone={() => { load() }} onLater={() => { hide(next.id); bump((n) => n + 1) }} />
 
   const count = (att?.due?.length || 0) + (att?.ask_applied?.length || 0)
-  if (!count || location.pathname.startsWith('/applications')) return null
+  if (!count || location.pathname.startsWith('/jobs')) return null
   return (
-    <Link to="/applications" className="fixed bottom-4 left-4 z-40 card !py-2 !px-3 text-sm text-text-primary shadow-lg">
+    <Link to="/jobs" className="fixed bottom-4 left-4 z-40 card !py-2 !px-3 text-sm text-text-primary shadow-lg">
       {att.due.length > 0 ? `${att.due.length} follow-up${att.due.length > 1 ? 's' : ''} due` : `Did you apply? ${att.ask_applied.length} to confirm`}
     </Link>
   )

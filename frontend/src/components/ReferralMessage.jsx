@@ -7,7 +7,7 @@ import Spinner from './Spinner'
 const NOTE_LIMIT = 300   // LinkedIn's limit for a connection-request note
 
 // Draft a LinkedIn referral ask: who to ask, the job description and (optionally) the job link.
-export default function ReferralMessage({ initial = {} }) {
+export default function ReferralMessage({ initial = {}, applicationId = null }) {
   const [person, setPerson] = useState('')
   const [url, setUrl] = useState(initial.jobUrl || '')
   const [jd, setJd] = useState(initial.jdText || '')
@@ -17,10 +17,11 @@ export default function ReferralMessage({ initial = {} }) {
   const [drafted, setDrafted] = useState(false)
 
   const generate = async () => {
-    if (jd.trim().length < 100) { toast.error('Paste the job description (min 100 characters)'); return }
+    if (!applicationId && jd.trim().length < 100) { toast.error('Paste the job description (min 100 characters)'); return }
     setLoading(true)
     try {
-      const { data } = await api.post('/referral-message', { person_name: person, jd_text: jd, job_url: url })
+      const { data } = await api.post('/referral-message', applicationId ? { person_name: person, job_url: url, application_id: applicationId }
+                                                  : { person_name: person, jd_text: jd, job_url: url })
       setNote(data.connection_note)
       setMessage(data.message)
       setDrafted(true)
@@ -48,11 +49,15 @@ export default function ReferralMessage({ initial = {} }) {
                    onChange={e => setUrl(e.target.value)} />
           </div>
         </div>
-        <div>
-          <label htmlFor="ref-jd" className="block text-sm font-medium text-text-secondary mb-1.5">Job description</label>
-          <textarea id="ref-jd" className="input min-h-32 resize-y font-mono text-sm" placeholder="Paste the full job description here…"
-                    value={jd} onChange={e => setJd(e.target.value)} />
-        </div>
+        {applicationId ? (
+          <p className="text-xs text-text-muted">Uses this job's saved description.</p>
+        ) : (
+          <div>
+            <label htmlFor="ref-jd" className="block text-sm font-medium text-text-secondary mb-1.5">Job description</label>
+            <textarea id="ref-jd" className="input min-h-32 resize-y font-mono text-sm" placeholder="Paste the full job description here…"
+                      value={jd} onChange={e => setJd(e.target.value)} />
+          </div>
+        )}
         <button onClick={generate} disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 py-3">
           {loading ? <Spinner size="sm" color="white" /> : <Sparkles size={16} />}
           {loading ? 'Drafting…' : 'Draft referral message'}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, FileText, TrendingUp, Target, ChevronRight, Clock, CheckCircle, XCircle, Download } from 'lucide-react'
@@ -11,6 +11,8 @@ import EmptyState from '../components/EmptyState'
 import { Skeleton, SkeletonRow } from '../components/Skeleton'
 import clsx from 'clsx'
 import JobRecommendations from '../components/JobRecommendations'
+import api from '../api/client'
+import { useCreditsStore } from '../store/credits'
 
 const JOB_STATUS = {
   done:    { icon: CheckCircle, color: 'text-score' },
@@ -27,6 +29,9 @@ function ScoreBadge({ score }) {
 export default function Dashboard() {
   const { user } = useAuthStore()
   const { stats, jobs, loading, initialized, fetchAll } = useJobsStore()
+  const { credits, billingEnabled } = useCreditsStore()
+  const [attention, setAttention] = useState(null)
+  useEffect(() => { api.get('/applications/attention').then(r => setAttention(r.data)).catch(() => {}) }, [])
 
   // Fetch only if not yet loaded (store persists across tab switches)
   useEffect(() => {
@@ -138,28 +143,36 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="card">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="font-semibold text-text-primary">Plan</h2>
-              <span className={clsx('badge',
-                user?.plan === 'pro'  ? 'bg-brand-muted text-brand' :
-                user?.plan === 'team' ? 'bg-score-muted text-score' :
-                'bg-bg-hover text-text-secondary'
-              )}>
-                {user?.plan?.toUpperCase() || 'FREE'}
-              </span>
+          {attention && attention.count > 0 && (
+            <div className="card">
+              <h2 className="font-semibold text-text-primary mb-2">Needs you</h2>
+              <ul className="space-y-1.5 text-sm">
+                {attention.due.map(j => (
+                  <li key={j.id}><Link className="text-brand hover:underline" to={`/jobs/${j.id}`}>Follow up: {j.company || 'a job'}{j.role ? ` · ${j.role}` : ''}</Link></li>
+                ))}
+                {attention.ask_applied.map(j => (
+                  <li key={j.id}><Link className="text-brand hover:underline" to={`/jobs/${j.id}`}>Did you apply to {j.company || 'this job'}?</Link></li>
+                ))}
+                {attention.letters.length > 0 && <li className="text-text-secondary">{attention.letters.length} cover letter waiting for a company name</li>}
+                {attention.needs.length > 0 && <li className="text-text-secondary">{attention.needs.length} job needs a company or role</li>}
+              </ul>
             </div>
-            {user?.plan === 'free' && (
-              <div>
-                <p className="text-xs text-text-muted mb-3">
-                  {stats?.resumes_this_month ?? 0}/3 resumes used this month
-                </p>
-                <Link to="/settings?section=plan" className="btn-primary text-xs w-full text-center block py-2">
-                  Upgrade to Pro →
-                </Link>
+          )}
+
+          {billingEnabled && (
+            <div className="card">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="font-semibold text-text-primary">Credits</h2>
+                <span className="badge bg-brand-muted text-brand">{credits ? credits.job : '…'} job{credits && credits.job !== 1 ? 's' : ''}</span>
               </div>
-            )}
-          </div>
+              <p className="text-xs text-text-muted mb-3">
+                One credit covers everything for one job. {credits?.resume ? `${credits.resume} resume-only credit${credits.resume > 1 ? 's' : ''} too.` : ''}
+              </p>
+              <Link to="/settings?section=billing" className="btn-primary text-xs w-full text-center block py-2">
+                Get credits or invite a friend →
+              </Link>
+            </div>
+          )}
         </motion.div>
       </div>
 

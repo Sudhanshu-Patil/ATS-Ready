@@ -176,6 +176,9 @@ class Settings(BaseSettings):
     # ── Billing ───────────────────────────────────────────────────────────────
     # Master switch — PayPal settings live in the PayPal section above.
     BILLING_ENABLED: bool = False
+    # Starter credits normally wait for a verified email. Without SMTP nobody can verify, so a beta without email
+    # set up can turn this on (Google sign-in is always verified). Raises the risk of throwaway sign-ups.
+    GRANT_WITHOUT_VERIFICATION: bool = False
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { ExternalLink, RefreshCw, Briefcase, MapPin, Zap, AlertCircle, Sparkles, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { recommendationsAPI } from '../api/client'
+import api, { recommendationsAPI } from '../api/client'
+import toast from 'react-hot-toast'
 import { fadeInUp } from '../lib/motion'
 import ScoreRing from './ScoreRing'
 import { Skeleton } from './Skeleton'
@@ -197,28 +198,37 @@ function JobCard({ job }) {
           <ExternalLink size={11} /> View Job
         </a>
         <button
-          onClick={() =>
-            (job.description || '').length >= 200
-              ? navigate('/generate', { state: { jdText: `${job.title} at ${job.company}\n\n${job.description}` } })
-              : navigate(`/generate?url=${encodeURIComponent(job.url)}`)
-          }
+          onClick={() => startJob(job).then((id) => id && navigate(`/jobs/${id}`))}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
                      bg-brand/10 border border-brand/30 text-xs text-brand font-medium
                      hover:bg-brand/20 transition-colors"
         >
-          <Zap size={11} /> Generate Resume
+          <Zap size={11} /> Start this job
         </button>
       </div>
       <button
-        onClick={() => navigate('/cover-letter', { state: { tab: 'referral', jobUrl: job.url, jdText: `${job.title} at ${job.company}
-
-${job.description || ''}` } })}
+        onClick={() => startJob(job).then((id) => id && navigate(`/cover-letter?job=${id}&tab=referral`, { state: { jobUrl: job.url } }))}
         className="text-[11px] text-text-muted hover:text-brand transition-colors text-left"
       >
         Draft a LinkedIn referral request →
       </button>
     </div>
   )
+}
+
+// A listing becomes a job: its text (or link) is saved once and every tool then works from it.
+async function startJob(job) {
+  try {
+    const description = (job.description || '').trim()
+    const { data } = await api.post('/applications', {
+      company: job.company || undefined, role: job.title || undefined, job_url: job.url || undefined,
+      ...(description.length >= 200 ? { jd_text: `${job.title} at ${job.company}\n\n${description}` } : {}),
+    })
+    return data.id
+  } catch (err) {
+    toast.error(err.response?.data?.detail || 'Could not start this job')
+    return null
+  }
 }
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────

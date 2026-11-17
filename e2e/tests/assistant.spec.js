@@ -46,9 +46,9 @@ test('questions only: answers appear, the company question pops up and survives 
   await expect(dialog).toBeHidden()
 
   // The tracker has it, with the date it was asked.
-  await page.goto('/applications')
+  await page.goto('/jobs')
   await expect(page.getByText('Acme · Backend Engineer')).toBeVisible()
-  await expect(page.getByText(/Asked /)).toBeVisible()
+  await expect(page.getByText(/Started /)).toBeVisible()
 })
 
 test('a request sent while offline is delivered when the connection returns', async ({ page, context }) => {

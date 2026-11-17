@@ -23,15 +23,16 @@ def _inline_script_hashes() -> str:
 
 
 def build_csp() -> str:
-    script = " ".join(filter(None, ["'self'", "https://accounts.google.com", _inline_script_hashes()]))
+    script = " ".join(filter(None, ["'self'", "https://accounts.google.com", "https://checkout.razorpay.com", _inline_script_hashes()]))
     return "; ".join([
         "default-src 'self'",
         f"script-src {script}",
         "style-src 'self' 'unsafe-inline' https://accounts.google.com",
         "font-src 'self' data:",
         "img-src 'self' data: https:",
-        "connect-src 'self' https://accounts.google.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
-        "frame-src https://accounts.google.com",
+        "connect-src 'self' https://accounts.google.com https://*.razorpay.com https://lumberjack.razorpay.com "
+        "https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
+        "frame-src https://accounts.google.com https://api.razorpay.com https://checkout.razorpay.com",
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",

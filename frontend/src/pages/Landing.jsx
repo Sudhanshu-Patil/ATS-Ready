@@ -146,7 +146,7 @@ export default function Landing() {
             Stop rewriting. Start interviewing.
           </h2>
           <p className="text-text-secondary mb-8">
-            3 free resumes a month. No credit card required.
+            Your first job is free: resume, cover letter, application answers and interview prep. After that it is ₹10 a job, and credits never expire.
           </p>
           <Link to={primaryTo} className="btn-primary text-sm py-3 px-8 inline-flex items-center gap-2">
             <Zap size={15} /> {accessToken ? 'Open Dashboard' : 'Get started free'}

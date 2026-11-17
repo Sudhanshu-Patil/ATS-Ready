@@ -1,6 +1,6 @@
 # ATS-Ready
 
-> ATS-Ready is a web app that tailors a resume to a specific job description, scores it for applicant tracking systems (ATS), and writes cover letters and interview prep.  Paid plans are billed through PayPal.
+> ATS-Ready is a web app that tailors a resume to a specific job description, scores it for applicant tracking systems (ATS), and writes cover letters and interview prep.  Credits are bought with Razorpay (INR) or PayPal (USD).
 
 ## What it does
 - Resume tailoring: paste a job description (or a public job-posting URL) and get a resume rewritten around that role's keywords, from a profile you maintain once.
@@ -13,7 +13,7 @@
 Job seekers who apply to many roles and want each resume to match the posting without rewriting it by hand.
 
 ## Facts
-- Free plan: 3 resumes per month. Cover letters and interview prep are Pro features. Paid plans are billed through PayPal.
+- Pricing: pay per job, from Rs 10 (one job credit covers resumes, cover letters, application answers, interview prep and outreach for that job). New accounts get 1 job credit and 2 resume credits free. Credits never expire.
 - AI output can contain mistakes; users should review every document.
 - Data can be exported or deleted by the user at any time in Settings.
 

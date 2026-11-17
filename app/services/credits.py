@@ -103,7 +103,8 @@ async def ensure_codes(db: AsyncSession, user: User) -> None:
 
 async def grant_signup(db: AsyncSession, user: User) -> bool:
     """Free starter credits, once per person, only for a verified email. Safe to call on every sign-in."""
-    if user.signup_granted or not user.is_verified or not settings.BILLING_ENABLED:
+    verified = user.is_verified or settings.GRANT_WITHOUT_VERIFICATION
+    if user.signup_granted or not verified or not settings.BILLING_ENABLED:
         return False
     await ensure_codes(db, user)
     user.signup_granted = True                         # decided now, whatever the outcome below
@@ -135,7 +136,7 @@ async def link_referral(db: AsyncSession, user: User, code: Optional[str]) -> No
 
 async def reward_referral(db: AsyncSession, referee: User) -> None:
     """The invited person verified their email and started a job: the inviter gets a job credit (capped)."""
-    if not referee.referred_by_id or not referee.is_verified:
+    if not referee.referred_by_id or not (referee.is_verified or settings.GRANT_WITHOUT_VERIFICATION):
         return
     ref = (await db.execute(select(Referral).where(
         Referral.referee_id == referee.id, Referral.status == "pending").with_for_update())).scalar_one_or_none()

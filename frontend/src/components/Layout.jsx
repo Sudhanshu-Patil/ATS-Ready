@@ -11,17 +11,19 @@ import { authAPI } from '../api/client'
 import ThemeToggle from './ThemeToggle'
 import QueuePanel from './QueuePanel'
 import AttentionModal from './AttentionModal'
+import CreditsModal from './CreditsModal'
+import { useCreditsStore } from '../store/credits'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
 const NAV = [
   { to: '/dashboard',      icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/jobs',           icon: ClipboardList,   label: 'Jobs' },
   { to: '/generate',       icon: Zap,             label: 'Generate Resume' },
   { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
   { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
   { to: '/assistant',      icon: MessageSquare,   label: 'Application Answers' },
-  { to: '/applications',   icon: ClipboardList,   label: 'Applications' },
   { to: '/metabase',       icon: Database,        label: 'Metabase' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]
@@ -84,11 +86,8 @@ export default function Layout() {
     toast.success('Logged out')
   }
 
-  const planColor = {
-    free: 'text-text-muted',
-    pro:  'text-brand',
-    team: 'text-score',
-  }[user?.plan || 'free']
+  const { credits, billingEnabled } = useCreditsStore()
+  useEffect(() => { useCreditsStore.getState().refresh() }, [])
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -153,20 +152,20 @@ export default function Layout() {
 
         {/* User block */}
         <div className="px-3 py-4 border-t border-white/10">
+          {billingEnabled && (
           <div className="px-3 py-2.5 rounded-lg bg-white/[0.03] mb-3">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-text-secondary">Plan</span>
-              <span className={clsx('text-xs font-semibold capitalize', planColor)}>
-                {user?.plan || 'free'}
+              <span className="text-xs text-text-secondary">Credits</span>
+              <span className="text-xs font-semibold text-brand" data-testid="credits-badge">
+                {credits ? `${credits.job} job${credits.resume ? ` + ${credits.resume} resume` : ''}` : '…'}
               </span>
             </div>
-            {user?.plan === 'free' && (
-              <Link to="/settings?section=plan"
+            <Link to="/settings?section=billing"
                 className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover transition-colors">
-                Upgrade to Pro <ChevronRight size={12} />
+                Get credits · invite a friend <ChevronRight size={12} />
               </Link>
-            )}
           </div>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-brand/20 border border-brand/30 flex items-center justify-center text-brand text-sm font-semibold">
@@ -225,6 +224,7 @@ export default function Layout() {
       </div>
       <QueuePanel />
       <AttentionModal />
+      <CreditsModal />
     </div>
   )
 }

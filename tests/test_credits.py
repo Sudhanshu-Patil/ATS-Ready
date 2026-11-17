@@ -492,3 +492,12 @@ async def test_merging_two_records_of_one_job_keeps_what_was_paid_and_made(clien
     assert keep["unlock_level"] == "full" and len(keep["artifacts"]["cover_letters"]) == 1
     assert items[0]["id"] == a["id"]                       # the older record survives; the other one is gone
     assert (await client.get(f"/api/applications/{b['id']}", headers=h)).status_code == 404
+
+
+async def test_without_email_set_up_the_grant_can_be_allowed_by_flag(client, monkeypatch):
+    h, uid, _ = await _register(client)                         # never verified
+    await client.get("/api/billing/status", headers=h)
+    assert await balance(uid) == (0, 0)
+    monkeypatch.setattr(settings, "GRANT_WITHOUT_VERIFICATION", True)
+    await client.get("/api/billing/status", headers=h)
+    assert await balance(uid) == (1, 2)

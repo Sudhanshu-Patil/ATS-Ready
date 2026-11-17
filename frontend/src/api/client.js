@@ -57,6 +57,10 @@ api.interceptors.response.use(
     const d = data?.detail
     if (d && typeof d !== 'string') {
       data.detail_raw = d
+      // A job that needs a credit opens the buy dialog wherever the user is.
+      if (error.response?.status === 402 && d.error === 'no_credits') {
+        window.dispatchEvent(new CustomEvent('ats-no-credits', { detail: d }))
+      }
       data.detail = Array.isArray(d) ? d.map((e) => e.msg).join('; ') : d.message || 'Request failed'
     }
     return Promise.reject(error)
@@ -70,10 +74,14 @@ export const authAPI = {
     api.post('/auth/login', new URLSearchParams({ username: email, password }), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     }),
-  register: (email, password, fullName) =>
-    api.post('/auth/register', { email, password, full_name: fullName }),
+  register: (email, password, fullName, ref) =>
+    api.post('/auth/register', { email, password, full_name: fullName, ...(ref ? { ref } : {}) }),
   config:   () => api.get('/auth/config'),
-  google:   (credential) => api.post('/auth/google', { credential }),
+  google:   (credential) => {
+    let ref = null
+    try { ref = localStorage.getItem('ats-ref') } catch { /* private mode */ }
+    return api.post('/auth/google', { credential, ...(ref ? { ref } : {}) })
+  },
   logout:   () => api.post('/auth/logout'),
   logoutAll: () => api.post('/auth/logout-all'),
   exportData: () => api.get('/auth/me/export', { responseType: 'blob' }),
@@ -95,8 +103,11 @@ export const authAPI = {
 }
 
 export const resumeAPI = {
-  generate: (jdText, jdUrl, emphasis, baselineId) =>
-    api.post('/generate-resume', { jd_text: jdText, jd_url: jdUrl, emphasis, baseline_id: baselineId || undefined }),
+  generate: (jdText, jdUrl, emphasis, baselineId, applicationId) =>
+    api.post('/generate-resume', {
+      jd_text: jdText, jd_url: jdUrl, emphasis, baseline_id: baselineId || undefined,
+      application_id: applicationId || undefined,
+    }),
   // The user's CURRENT resume (PDF/DOCX), scored next to the new one. Extracted, not parsed by AI.
   uploadBaseline: (file) => {
     const fd = new FormData()
@@ -145,11 +156,10 @@ export const metabaseAPI = {
 }
 
 export const billingAPI = {
-  plans:    ()     => api.get('/billing/plans'),
+  catalog:  ()     => api.get('/billing/catalog'),
   status:   ()     => api.get('/billing/status'),
-  checkout: (plan) => api.post('/billing/checkout', { plan }),
-  sync:     (order_id) => api.post('/billing/sync', { order_id }),
-  cancel:   ()     => api.post('/billing/cancel'),
+  checkout: (pack_id, provider) => api.post('/billing/checkout', { pack_id, provider }),
+  sync:     (order_id) => api.post('/billing/sync', { order_id }),   // PayPal return
 }
 
 export const contentAPI = {

@@ -10,7 +10,7 @@ for operations.
 # Backend (use the venv: venv/Scripts/python on Windows)
 pytest -q                                   # 150+ tests, needs local Postgres + Redis (docker compose up db redis)
 ruff check app main.py tests scripts evals  # lint (config in ruff.toml)
-alembic upgrade head                        # migrations (head: 0013)
+alembic upgrade head                        # migrations (head: 0014)
 uvicorn main:app --reload                   # API on :8000
 arq app.worker.tasks.WorkerSettings         # worker (LLM jobs run here, one at a time)
 python -m evals.run_evals                   # REAL model quality + prompt-injection evals (spends Groq quota)
@@ -35,6 +35,7 @@ processes (PowerShell `Get-CimInstance Win32_Process`), not just the one you sta
 - `app/services/job_recommendations.py` scoring + ranking of job suggestions (hard location gate in `rank_jobs`); cold fetch runs in the background (`start_refresh`).
 - `app/services/job_sources.py` the free job sources (YC, HN, RemoteOK, Himalayas, WWR, Jobicy, optional Google dork); `app/services/locations.py` place parsing and the user's location preferences.
 - `app/services/assistant.py` + `persona.py` application-form answers: questions-only or with a JD; persona graph in Postgres (facts, stories, topics, style); fact questions (notice period, salary...) are asked back, never guessed; sensitive/EEO questions are never answered. `app/services/applications.py` tracks applications from every entry point (assistant, resume, cover letter, referral); company/role come only from literal text, else the `needs` list drives the back-question popup (`GET /api/applications/attention`, `AttentionModal.jsx`). `frontend/src/lib/outbox.js` keeps writes safe across offline/refresh (server dedupes on `client_request_id`).
+- `app/services/credits.py` + `pricing.py` + `job_access.py` credits: one job credit unlocks one job (found by its job description, never by what the client claims) within per-job caps; ledger with idempotency keys and row locks (the session does NOT autoflush: flush before `populate_existing` locks); refunds when a first run fails; signup grant after email verification once per canonical email; referral reward when the invited person starts a job. Every LLM route calls `job_access.gate()`. Payments: `razorpay_service.py` (INR) and `billing_service.py` (PayPal, USD) both end in `billing_routes.fulfil()`. Plans (Pro/Team) are gone. `BILLING_ENABLED=false` skips all of it.
 - `app/services/usage.py` token tally per run, daily spend caps, `UsageEvent` rows for the admin page.
 - `app/services/scraper.py` job-URL scraping with an SSRF guard (`validate_public_url`).
 - `app/worker/tasks.py` arq tasks (`@tracked` records usage; note `enqueue()` passes keyword arguments).
