@@ -7,6 +7,7 @@ Two-stage AI pipeline:
 """
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
@@ -72,6 +73,9 @@ class AIAgent:
                     "format_score": 80, "total_score": 80, "matched_keywords": ["Python"],
                     "missing_keywords": [], "matched_skills": ["Python"],
                     "missing_skills": [], "suggestions": []}
+        elif system == self.SYSTEM_REFERRAL:
+            data = {"connection_note": "Hi Sam, I am applying for the Backend Engineer role and would value a referral.",
+                    "message": "Hi Sam,\n\nI am applying for the Backend Engineer role at Acme. Would you be open to referring me?\n\nThanks,\nTest User"}
         elif system == self.SYSTEM_COVER_LETTER:
             data = {"subject": "Application for Backend Engineer", "body": "Dear team,\n\nHello.",
                     "word_count": 3, "highlights": ["Python"]}
@@ -371,6 +375,51 @@ Return JSON:
             # and flag it, rather than inventing a plausible-looking number.
             logger.warning("ATS scorer returned invalid JSON; using local score")
             return local_ats_score(parsed_jd.keywords, parsed_jd.required_skills, tailored_resume)
+
+    # ─── LinkedIn referral request ────────────────────────────────────────────
+
+    SYSTEM_REFERRAL = """You write short, respectful LinkedIn messages that ask someone for a job referral.
+Be specific, human and low-pressure: say why this role fits, give one concrete proof point from the
+candidate's real background, make it easy to say no, never flatter excessively, never invent facts.
+Always respond with valid JSON only."""
+
+    def generate_referral_message(
+        self,
+        person_name: str,
+        jd_text: str,
+        job_url: str,
+        candidate_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Two drafts for the same ask: a <=300 character connection note and a short direct message."""
+        keywords = re.findall(r"[A-Za-z][A-Za-z+#.]{2,}", jd_text)[:60]
+        profile = compact_profile(candidate_data, keywords, 2500)
+        prompt = f"""Draft a LinkedIn referral request.
+
+PERSON TO ASK: {person_name or "(name unknown, use a neutral greeting)"}
+JOB LINK: {job_url or "(none)"}
+JOB DESCRIPTION:
+{head_tail(jd_text, 2500)}
+
+CANDIDATE (use only this):
+{json.dumps(profile, ensure_ascii=False)}
+
+Return JSON:
+{{
+  "connection_note": "<= 280 characters, for LinkedIn's connection request box",
+  "message": "60-110 words, addressed to the person by first name, mentions the role (and the link if given), one proof point, a clear low-pressure ask, signed with the candidate's first name"
+}}"""
+        response = self._call(self.SYSTEM_REFERRAL, prompt, max_tokens=700)
+        try:
+            data = json.loads(response.strip())
+        except json.JSONDecodeError:
+            m = re.search(r"\{.*\}", response, re.DOTALL)
+            if not m:
+                raise ValueError("AI referral draft was not valid JSON")
+            data = json.loads(m.group())
+        note = str(data.get("connection_note") or "")
+        if len(note) > 300:                                   # LinkedIn's hard limit on connection notes
+            note = note[:297].rstrip() + "..."
+        return {"connection_note": note, "message": str(data.get("message") or "")}
 
     # ─── Stage 4: Cover Letter ────────────────────────────────────────────────
 

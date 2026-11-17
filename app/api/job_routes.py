@@ -58,6 +58,7 @@ def _job_summary(job: JobApplication) -> Dict[str, Any]:
         "error":        job.error_message,
         "created_at":   str(job.created_at),
         "download_url": f"/api/download/{job.id}" if job.resume_s3_key else None,
+        "pdf_url":      f"/api/download/{job.id}?format=pdf" if job.resume_data else None,
     }
 
 
@@ -135,6 +136,7 @@ async def get_job(
         "skills_matched": job.skills_matched,
         "skills_missing": job.skills_missing,
         "download_url":   download_url,
+        "pdf_url":        f"/api/download/{job.id}?format=pdf" if job.resume_data else None,
         "created_at":     str(job.created_at),
         "updated_at":     str(job.updated_at),
     }

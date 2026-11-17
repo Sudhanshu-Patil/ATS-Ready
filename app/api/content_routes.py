@@ -10,23 +10,31 @@ Same pattern as resume generation:
 Generation runs in the arq worker (app/worker/tasks.py), so the user can leave
 the page or open other tabs; progress is visible via GET /api/activity.
 """
+import asyncio
 import logging
+import re
+import time
 import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.ai_agent import ai_agent
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.api.rate_limit import per_user_limit
 from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
+from app.services.cache_service import cache_service
+from app.services.content_service import ProfileIncomplete, friendly_error
+from app.services.metabase_service import metabase_service
 from app.services.queue import enqueue
+from app.services.usage import ensure_budget, mark_failed, record_usage, start_tally
 
 content_router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -197,6 +205,104 @@ async def retry_cover_letter(
     await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
                            jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional")
     return {"id": str(cl.id), "status": "pending"}
+
+
+class CoverLetterEdit(BaseModel):
+    subject: Optional[str] = Field(default=None, max_length=500)
+    body: str = Field(min_length=1, max_length=20000)
+
+
+@content_router.patch("/cover-letters/{letter_id}")
+async def edit_cover_letter(
+    letter_id: str,
+    data: CoverLetterEdit,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """Save the user's edits. Downloads and copies then use this text."""
+    cl = await _own_letter(db, letter_id, user)
+    if cl.status != "done":
+        raise HTTPException(status_code=409, detail="Only finished cover letters can be edited")
+    cl.body = data.body.strip()
+    if data.subject is not None:
+        cl.subject = data.subject.strip()
+    cl.word_count = len(cl.body.split())
+    await db.commit()
+    return {"id": str(cl.id), "subject": cl.subject, "body": cl.body, "word_count": cl.word_count}
+
+
+def _safe_name(*parts: Optional[str]) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", "_".join(p for p in parts if p)).strip("_")[:60] or "cover_letter"
+
+
+@content_router.get("/cover-letters/{letter_id}/download")
+async def download_cover_letter(
+    letter_id: str,
+    format: str = "docx",
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """The saved (possibly edited) letter as DOCX or PDF."""
+    from app.services.documents import cover_letter_docx, cover_letter_pdf
+    if format not in ("docx", "pdf"):
+        raise HTTPException(status_code=422, detail="format must be docx or pdf")
+    cl = await _own_letter(db, letter_id, user)
+    if cl.status != "done":
+        raise HTTPException(status_code=409, detail="This cover letter is not ready yet")
+    if format == "pdf":
+        data = await asyncio.to_thread(cover_letter_pdf, cl.subject or "", cl.body)
+        media = "application/pdf"
+    else:
+        data = await asyncio.to_thread(cover_letter_docx, cl.subject or "", cl.body)
+        media = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    name = f"cover_letter_{_safe_name(cl.company, cl.job_title)}.{format}"
+    return Response(data, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+# ── LinkedIn referral request ─────────────────────────────────────────────────
+
+class ReferralRequest(BaseModel):
+    person_name: str = Field(default="", max_length=120)
+    jd_text:     str = Field(default="", max_length=20000)
+    job_url:     str = Field(default="", max_length=1000)
+
+
+@content_router.post("/referral-message",
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def referral_message(
+    request: ReferralRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),     # outreach is part of the Pro writing tools
+):
+    """Draft a LinkedIn referral ask. One small LLM call, answered directly (not queued)."""
+    if len(request.jd_text.strip()) < 100:
+        raise HTTPException(status_code=422, detail="Paste the job description (min 100 characters)")
+    await ensure_budget(db, user.id)
+
+    profile = await cache_service.get_profile(str(user.id))
+    if not profile:
+        profile = await metabase_service.get_full_profile_async(db, user.id)
+        await cache_service.set_profile(str(user.id), profile)
+    if not profile.get("personal"):
+        raise HTTPException(status_code=400, detail=str(ProfileIncomplete(
+            "Profile incomplete — fill in Personal Info in Metabase first.")))
+
+    tally, started, ok = start_tally(), time.monotonic(), False
+    try:
+        result = await asyncio.wait_for(asyncio.to_thread(
+            ai_agent.generate_referral_message, request.person_name.strip(), request.jd_text.strip(),
+            request.job_url.strip(), profile), timeout=70)
+        ok = True
+        return result
+    except asyncio.TimeoutError:
+        mark_failed()
+        raise HTTPException(status_code=503, detail="The AI service is busy right now. Please try again in a minute.")
+    except Exception as exc:
+        mark_failed()
+        logger.exception("Referral message failed")
+        raise HTTPException(status_code=503, detail=friendly_error(exc))
+    finally:
+        await record_usage(user.id, "referral", tally, started, ok and not tally["failed"])
 
 
 @content_router.delete("/cover-letters/{letter_id}")

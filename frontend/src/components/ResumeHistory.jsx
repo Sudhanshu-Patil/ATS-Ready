@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Download, RefreshCw, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react'
 import { useJobsStore } from '../store/jobs'
 import { jobsAPI } from '../api/client'
+import { downloadFile } from '../lib/download'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import { scoreColorClass } from './ScoreRing'
 import StatusBadge from './StatusBadge'
@@ -127,10 +128,17 @@ export default function ResumeHistory() {
                 )}
 
                 <div className="flex items-center gap-2 flex-shrink-0">
+                  {job.status === 'done' && job.pdf_url && (
+                    <button onClick={() => downloadFile(job.pdf_url, 'resume.pdf').catch(() => toast.error('Could not download the PDF'))}
+                      className="px-1.5 py-1 rounded-md text-[11px] font-semibold text-text-muted hover:text-score hover:bg-score/10 transition-colors"
+                      title="Download PDF" aria-label="Download resume as PDF">
+                      PDF
+                    </button>
+                  )}
                   {job.status === 'done' && job.download_url && (
                     <a href={job.download_url}
                       className="p-1.5 rounded-md text-text-muted hover:text-score hover:bg-score/10 transition-colors"
-                      title="Download" aria-label="Download resume">
+                      title="Download DOCX" aria-label="Download resume as DOCX">
                       <Download size={15} />
                     </a>
                   )}

@@ -105,6 +105,7 @@ async def _job_event_stream(
                     "skills_matched": job.skills_matched or [],
                     "skills_missing": job.skills_missing or [],
                     "download_url":   download_url,
+                    "pdf_url":        f"/api/download/{job.id}?format=pdf" if job.resume_data else None,
                 }
 
             yield _sse_event(payload)

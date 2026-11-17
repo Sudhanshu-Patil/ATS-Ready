@@ -209,6 +209,14 @@ function JobCard({ job }) {
           <Zap size={11} /> Generate Resume
         </button>
       </div>
+      <button
+        onClick={() => navigate('/cover-letter', { state: { tab: 'referral', jobUrl: job.url, jdText: `${job.title} at ${job.company}
+
+${job.description || ''}` } })}
+        className="text-[11px] text-text-muted hover:text-brand transition-colors text-left"
+      >
+        Draft a LinkedIn referral request →
+      </button>
     </div>
   )
 }

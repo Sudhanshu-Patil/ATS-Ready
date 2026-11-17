@@ -1,10 +1,11 @@
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
 from arq import create_pool
 from arq.connections import RedisSettings
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,6 +153,7 @@ async def get_job_status(
             "skills_matched": job.skills_matched or [],
             "skills_missing": job.skills_missing or [],
             "download_url":   download_url,
+            "pdf_url":        f"/api/download/{job.id}?format=pdf" if job.resume_data else None,
         }
 
     return response
@@ -160,6 +162,7 @@ async def get_job_status(
 @router.get("/download/{job_id}")
 async def download_resume(
     job_id: str,
+    format: str = "docx",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -176,6 +179,16 @@ async def download_resume(
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    if format == "pdf":
+        if not job.resume_data:
+            raise HTTPException(status_code=404, detail="PDF not available for this resume. Generate it again to get one.")
+        from app.services.documents import resume_pdf
+        data = await asyncio.to_thread(resume_pdf, job.resume_data)
+        name = (job.resume_filename or "resume.docx").rsplit(".", 1)[0] + ".pdf"
+        return Response(data, media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    if format != "docx":
+        raise HTTPException(status_code=422, detail="format must be docx or pdf")
     if not job.resume_s3_key:
         raise HTTPException(status_code=404, detail="Resume file not yet available")
 

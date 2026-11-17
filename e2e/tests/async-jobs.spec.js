@@ -76,3 +76,62 @@ test('history is a tab inside Generate, not a nav item', async ({ page }) => {
   await page.goto('/history')
   await expect(page).toHaveURL(/\/generate\?tab=history/)
 })
+
+test('edit a cover letter inline; copy and downloads use the edited text', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/cover-letter')
+  await page.locator('textarea').fill(JD)
+  await page.getByRole('button', { name: 'Generate Cover Letter' }).click()
+  await expect(page.getByText('Application for Backend Engineer').first()).toBeVisible({ timeout: 30000 })
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel(/^Letter/).fill('Hello Sam,\n\nI edited this letter myself.\n\nBest')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('I edited this letter myself.')).toBeVisible()
+
+  // DOCX and PDF come from the saved (edited) text.
+  const docx = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'DOCX' }).click()
+  const docxFile = await docx
+  expect(docxFile.suggestedFilename()).toMatch(/^cover_letter.*\.docx$/)
+
+  const pdf = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'PDF', exact: true }).click()
+  expect((await pdf).suggestedFilename()).toMatch(/\.pdf$/)
+
+  // The edit survives a reload (it is saved on the server, not just on screen).
+  await page.reload()
+  await page.getByRole('tab', { name: 'History' }).click()
+  await page.getByRole('button', { name: 'View' }).first().click()
+  await expect(page.getByText('I edited this letter myself.')).toBeVisible()
+})
+
+test('draft a LinkedIn referral request', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/cover-letter')
+  await page.getByRole('tab', { name: 'Referral message' }).click()
+  await page.getByLabel('Who are you asking?').fill('Sam Lee')
+  await page.getByLabel(/Job link/).fill('https://example.com/jobs/1')
+  await page.getByLabel('Job description').fill(JD)
+  await page.getByRole('button', { name: 'Draft referral message' }).click()
+
+  await expect(page.getByLabel('Connection request note')).not.toHaveValue('', { timeout: 30000 })
+  await expect(page.getByLabel('Referral message')).toContainText('referring me')
+  await expect(page.getByText(/\/300$/)).toBeVisible()
+})
+
+test('a generated resume can be downloaded as PDF as well as DOCX', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/generate')
+  await page.locator('textarea').first().fill(JD)
+  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+
+  await expect(page.getByRole('link', { name: 'Download DOCX' })).toBeVisible({ timeout: 60000 })
+  const pdf = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download PDF' }).click()
+  const file = await pdf
+  expect(file.suggestedFilename()).toMatch(/\.pdf$/)
+  const path = await file.path()
+  const { readFileSync } = await import('node:fs')
+  expect(readFileSync(path).subarray(0, 5).toString()).toBe('%PDF-')
+})
