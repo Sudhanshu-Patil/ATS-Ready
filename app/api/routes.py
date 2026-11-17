@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -89,6 +90,7 @@ async def generate_resume(
         jd_url=str(request.jd_url) if request.jd_url else None,
         jd_text=request.jd_text,
         emphasis=request.emphasis,
+        baseline_id=request.baseline_id,
         _job_id=f"resume:{job_app.id}",   # deterministic ARQ job ID for dedup
     )
     await arq_pool.aclose()
@@ -636,7 +638,18 @@ def _with_links(text: str, links: list) -> str:
 
 
 def _extract_resume_text(filename: str, data: bytes) -> str:
-    """Extract plain text from an uploaded PDF or DOCX (sync — run in a thread)."""
+    """Extract plain text from an uploaded PDF or DOCX (sync — run in a thread). A corrupt or unreadable
+    file is a 422 for the user, never a server error."""
+    try:
+        return _extract_resume_text_unchecked(filename, data)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("Could not read uploaded resume %r", filename, exc_info=True)
+        raise HTTPException(status_code=422, detail="Couldn't read that file. Is it a valid, un-protected PDF or DOCX?")
+
+
+def _extract_resume_text_unchecked(filename: str, data: bytes) -> str:
     import io
     name = (filename or "").lower()
     if name.endswith(".pdf"):
@@ -666,6 +679,27 @@ def _extract_resume_text(filename: str, data: bytes) -> str:
                  if r.is_external and r.reltype.endswith("/hyperlink")]
         return _with_links("\n".join(parts), links)
     raise HTTPException(status_code=422, detail="Upload a .pdf or .docx file")
+
+
+@router.post("/resume-baseline", dependencies=[Depends(per_user_limit("import", 10))])
+async def upload_resume_baseline(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+):
+    """Upload the user's CURRENT resume (PDF/DOCX) to compare against a job description. No AI is used: the
+    text is extracted and held for 2 hours; generate-resume then scores it next to the new resume. Nothing
+    is added to the profile."""
+    data = await file.read()
+    if len(data) > MAX_RESUME_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 5MB)")
+    text = await asyncio.to_thread(_extract_resume_text, file.filename, data)
+    if len(text.strip()) < 200:
+        raise HTTPException(status_code=422, detail="Couldn't extract readable text. Is this a scanned or image PDF? "
+                                                    "Try a text-based export of your resume.")
+    baseline_id = uuid.uuid4().hex
+    await cache_service.set(f"baseline:{user.id}:{baseline_id}",
+                            {"filename": (file.filename or "resume")[:120], "text": text[:60000]}, ttl=7200)
+    return {"id": baseline_id, "filename": file.filename, "characters": len(text), "words": len(text.split())}
 
 
 @router.post("/metabase/import-resume", dependencies=[Depends(per_user_limit("import", 5))])

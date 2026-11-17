@@ -10,7 +10,7 @@ for operations.
 # Backend (use the venv: venv/Scripts/python on Windows)
 pytest -q                                   # 150+ tests, needs local Postgres + Redis (docker compose up db redis)
 ruff check app main.py tests scripts evals  # lint (config in ruff.toml)
-alembic upgrade head                        # migrations (head: 0011)
+alembic upgrade head                        # migrations (head: 0012)
 uvicorn main:app --reload                   # API on :8000
 arq app.worker.tasks.WorkerSettings         # worker (LLM jobs run here, one at a time)
 python -m evals.run_evals                   # REAL model quality + prompt-injection evals (spends Groq quota)
@@ -30,6 +30,7 @@ processes (PowerShell `Get-CimInstance Win32_Process`), not just the one you sta
   `activity_routes.py` (in-flight jobs, per-user cap of 3), `content_routes.py` (cover letter, interview prep), `admin_routes.py`.
 - `app/agents/ai_agent.py` prompts and pipeline stages; every system prompt gets `INJECTION_GUARD`.
 - `app/services/llm_client.py` provider access: fallback models, token-per-minute governor, `Retry-After`, 413 handling.
+- `app/services/ats_score.py` DETERMINISTIC ATS score (no LLM) and the technical gap list; `suggestion_store.py` keeps one suggestion list per (user, job description): created once, only shrinks as items are applied; `grounding.py` enforces that resumes and letters never state an invented number, tool, employer or title (applied in the worker after the model runs).
 - `app/services/compaction.py` local (no-LLM) context shrinking, `ground_skills` (drops skills the candidate does not have).
 - `app/services/job_recommendations.py` scoring + ranking of job suggestions (hard location gate in `rank_jobs`); cold fetch runs in the background (`start_refresh`).
 - `app/services/job_sources.py` the free job sources (YC, HN, RemoteOK, Himalayas, WWR, Jobicy, optional Google dork); `app/services/locations.py` place parsing and the user's location preferences.

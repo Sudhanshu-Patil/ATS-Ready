@@ -13,6 +13,8 @@ export const useGeneratorStore = create((set) => ({
   jdText:   '',
   jdUrl:    '',
   emphasis: '',
+  baselineId:   null,   // an uploaded current resume to compare against (held 2h server-side)
+  baselineName: '',
 
   // Job state
   jobId:    null,
@@ -26,6 +28,7 @@ export const useGeneratorStore = create((set) => ({
   setJdText:   (jdText)   => set({ jdText }),
   setJdUrl:    (jdUrl)    => set({ jdUrl }),
   setEmphasis: (emphasis) => set({ emphasis }),
+  setBaseline: (baselineId, baselineName = '') => set({ baselineId, baselineName }),
   setJobId:    (jobId)    => set({ jobId }),
   setLoading:  (loading)  => set({ loading }),
   setStep:     (step)     => set({ step }),

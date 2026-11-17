@@ -239,7 +239,9 @@ Always respond with valid JSON only."""
         )
         emphasis_str = ""
         if emphasis:
-            emphasis_str = f"\nUser wants to especially emphasize: {', '.join(emphasis)}"
+            emphasis_str = ("\nUSER-CONFIRMED SKILLS (the candidate says they have these): "
+                            f"{', '.join(emphasis)}. Add them to the skills list ONLY. Do not write bullets, "
+                            "summary claims or numbers about them.")
 
         prompt = f"""Given the job description analysis and candidate's full profile, create an optimized resume.
 
@@ -257,25 +259,26 @@ ATS Keywords to target: {', '.join(parsed_jd.keywords)}
 {json.dumps(candidate_data, default=str, separators=(',', ':'))}
 
 === INSTRUCTIONS ===
-1. PROFESSIONAL SUMMARY: Write a 3-4 sentence summary that:
-   - Opens with the exact job title from the JD
-   - Naturally incorporates 5-8 ATS keywords
-   - Highlights most relevant experience/skills
-   - Is specific and quantified
+You are REWORDING the candidate's own resume for this job. You may choose, order and re-word. You may NOT add facts.
 
-2. SKILLS SELECTION: Pick the {settings.MAX_SKILLS_IN_RESUME} most relevant skills from candidate's metabase.
-   Group them into max 3 categories. Put closest JD matches first.
+1. PROFESSIONAL SUMMARY: 2-3 sentences. Open with the job title. Use only skills and facts that appear in the
+   candidate profile above. No numbers unless they appear in the profile. Do not state years of experience.
 
-3. WORK EXPERIENCE: For each role, select and REWRITE the {settings.MAX_EXPERIENCE_BULLETS} most relevant bullets.
-   - Start with strong action verbs
-   - Mirror JD terminology naturally
-   - Quantify impact where data exists
-   - Include relevant ATS keywords
+2. SKILLS: pick the {settings.MAX_SKILLS_IN_RESUME} most relevant skills from the candidate's own skills (plus any
+   user-confirmed skills above). Group them into max 3 categories. Put the closest JD matches first.
 
-4. PROJECTS: Select the {settings.MAX_PROJECTS_IN_RESUME} most relevant projects.
-   Rewrite bullets to highlight skills/tech the JD cares about.
+3. WORK EXPERIENCE: for each role, keep the {settings.MAX_EXPERIENCE_BULLETS} most relevant bullets and reword each
+   one. Every rewritten bullet must be a re-wording of ONE original bullet of the SAME role: stronger action verbs
+   and the job's vocabulary are welcome. Do NOT add or change any number, percentage, scale, tool, technology,
+   team size, result or responsibility that the original bullet does not contain. If a bullet has no metric,
+   leave it without one.
 
-5. KEYWORD INJECTION: Naturally inject missing JD keywords where truthfully applicable.
+4. PROJECTS: pick the {settings.MAX_PROJECTS_IN_RESUME} most relevant and reword their bullets under the same rule.
+
+HARD RULES (a checker removes any violation, so breaking them only removes content):
+- Never invent or alter numbers, metrics, tools, employers, job titles, dates, locations or responsibilities.
+- Never claim a JD requirement the profile does not show.
+- Copy company, role, dates and location exactly from the profile.
 
 Return this JSON structure:
 {{
@@ -477,16 +480,20 @@ Tone: {tone}
 {letter_limit.prompt_line(limit_unit, limit) if limit and limit_unit else "Length: 250-320 words (3-4 paragraphs)"}
 
 Paragraph 1: Hook — why this specific role at this specific company excites the candidate.
-Paragraph 2: Most relevant achievement (quantified) that directly maps to a key requirement.
-Paragraph 3: Second achievement or skill that addresses another key requirement.
+Paragraph 2: The most relevant real experience above, and how it maps to a key requirement.
+Paragraph 3: A second real experience or skill that addresses another key requirement.
 Paragraph 4: Brief close — enthusiasm, call to action, professional sign-off.
 
 Rules:
 - Never use generic phrases like "I am writing to apply" or "Please find attached"
 - Reference the company by name at least twice
-- Include at least one quantified achievement
 - Sound like a real human wrote it, not AI
-- Do NOT fabricate experiences not in the candidate's profile
+- ONLY describe experience, skills and results that appear in the CANDIDATE section above. Make them
+  impactful through wording, never through new facts.
+- NEVER invent or estimate numbers, percentages, scale, team sizes, results, employers, tools or years of
+  experience. Use a number only if it appears in the CANDIDATE section. No number is better than a made-up one.
+- A technology from the job description may be mentioned as something the company uses, not as something
+  the candidate has used, unless it appears in the CANDIDATE section.
 
 Return JSON:
 {{

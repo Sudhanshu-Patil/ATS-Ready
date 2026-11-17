@@ -65,6 +65,7 @@ class GenerateResumeRequest(BaseModel):
     jd_url:   Optional[str] = None   # validated as URL by the route
     jd_text:  Optional[str] = None
     emphasis: Optional[List[str]] = None
+    baseline_id: Optional[str] = Field(default=None, max_length=64)   # an uploaded resume to compare against
 
     @field_validator("jd_text")
     @classmethod

@@ -95,8 +95,14 @@ export const authAPI = {
 }
 
 export const resumeAPI = {
-  generate: (jdText, jdUrl, emphasis) =>
-    api.post('/generate-resume', { jd_text: jdText, jd_url: jdUrl, emphasis }),
+  generate: (jdText, jdUrl, emphasis, baselineId) =>
+    api.post('/generate-resume', { jd_text: jdText, jd_url: jdUrl, emphasis, baseline_id: baselineId || undefined }),
+  // The user's CURRENT resume (PDF/DOCX), scored next to the new one. Extracted, not parsed by AI.
+  uploadBaseline: (file) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('/resume-baseline', fd, { timeout: 60000, headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   status:   (jobId) => api.get(`/jobs/${jobId}/status`),
   download: (jobId) => `/api/download/${jobId}`,
 }
