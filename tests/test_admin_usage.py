@@ -31,6 +31,10 @@ async def test_admin_stats_only_for_allowlisted_verified_users(client, monkeypat
     assert r.status_code == 200
     body = r.json()
     assert body["users"]["total"] >= 2 and len(body["daily"]) == 14
+    assert "plans" not in body["users"] and body["users"]["verified"] >= 1
+    credits = body["credits"]
+    assert set(credits) >= {"revenue_total", "revenue_30d", "paying_users", "credits", "last_30d", "referrals"}
+    assert credits["credits"]["sold"] >= 0 and credits["last_30d"]["unlocks"] >= 0
     assert (await client.get("/api/auth/me", headers=bearer(admin))).json()["is_admin"] is True
     assert (await client.get("/api/auth/me", headers=bearer(normal))).json()["is_admin"] is False
 
@@ -101,3 +105,25 @@ async def test_tracked_works_with_keyword_and_positional_args(client):
     async with AsyncSessionLocal() as db:
         n = len((await db.execute(select(UsageEvent).where(UsageEvent.user_id == uuid.UUID(uid)))).scalars().all())
     assert n == 2
+
+
+async def test_admin_sees_money_and_credits(client, monkeypatch):
+    import uuid
+
+    from app.db.models import Payment
+    from app.services import credits
+    admin, email = await make_admin(monkeypatch, client)
+    async with AsyncSessionLocal() as db:
+        u = (await db.execute(select(User).where(User.email == email))).scalar_one()
+        pay = Payment(user_id=u.id, provider="razorpay", provider_order_id="order_" + uuid.uuid4().hex[:12],
+                      pack_id="starter", amount_minor=4900, currency="INR", status="paid", paid_at=__import__("datetime").datetime.utcnow())
+        db.add(pay)
+        await db.flush()
+        await credits.apply(db, u.id, "job", 6, "purchase", f"payment:{pay.id}", payment_id=pay.id)
+        await credits.apply(db, u.id, "job", 1, "signup", f"signup:{u.id}:job")
+        await db.commit()
+    c = (await client.get("/api/admin/stats", headers=bearer(admin))).json()["credits"]
+    assert c["revenue_total"]["INR"]["amount"] >= 49 and c["revenue_30d"]["INR"]["payments"] >= 1
+    assert c["paying_users"] >= 1 and c["credits"]["sold"] >= 6 and c["credits"]["free_given"] >= 1
+    assert c["credits"]["outstanding_job"] >= 7 and {"pack": "starter", "payments": 1} in c["by_pack"] or c["by_pack"]
+    assert c["pack_prices_inr"]["single"] == 10
