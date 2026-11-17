@@ -1,15 +1,31 @@
 import { Link } from 'react-router-dom'
+import { useSiteConfig } from '../lib/siteConfig'
 
 function Page({ title, children }) {
   return (
     <main className="max-w-3xl mx-auto p-6 sm:p-10 text-text-secondary leading-relaxed space-y-4">
       <Link to="/" className="text-brand text-sm">← ATS-Ready</Link>
       <h1 className="font-display text-3xl font-bold text-text-primary">{title}</h1>
-      <p className="text-xs">Last updated: 12 November 2026. Draft text: review before relying on it.</p>
+      <p className="text-xs">Last updated: 18 November 2026.</p>
       {children}
+      <Contact />
     </main>
   )
 }
+function Contact() {
+  const site = useSiteConfig()
+  return (
+    <>
+      <H>Contact</H>
+      <p>
+        {site.business_name ? `${site.business_name}. ` : ''}
+        {site.contact_email ? <>Write to <a className="text-brand underline" href={`mailto:${site.contact_email}`}>{site.contact_email}</a></> : 'Use the contact details shown on the home page'}
+        {site.contact_phone ? ` or call ${site.contact_phone}` : ''}. We answer within 2 working days.
+      </p>
+    </>
+  )
+}
+
 const H = ({ children }) => <h2 className="text-lg font-semibold text-text-primary pt-2">{children}</h2>
 
 export function Privacy() {
@@ -17,8 +33,10 @@ export function Privacy() {
     <Page title="Privacy policy">
       <H>What we store</H>
       <p>Your account (email, name, password hash or Google ID), the career details you add (skills, experience,
-        projects, education, contact details), the job descriptions you submit, and the resumes, cover letters and
-        interview prep we generate for you.</p>
+        projects, education, contact details), the job descriptions you submit, the resumes, cover letters, interview
+        prep, application-form answers and referral messages we generate for you, the jobs you track (company, role,
+        dates, notes), what the assistant learns about your answering style, and your credit balance and payment
+        records (provider, amount, order and payment ids; never your card or UPI details).</p>
       <H>Who processes it</H>
       <ul className="list-disc pl-6 space-y-1">
         <li>Groq: receives your profile and job description text to generate documents.</li>
@@ -37,7 +55,6 @@ export function Privacy() {
       <p>We keep data until you delete it. Deleted data is removed from the live database immediately; backups
         expire on the provider's schedule.</p>
       <H>Contact</H>
-      <p>Questions or requests: use the contact address listed on the project page.</p>
     </Page>
   )
 }
@@ -54,8 +71,32 @@ export function Terms() {
       <p>Do not abuse the service, attempt to bypass limits, or submit content you have no right to use.</p>
       <H>Payments</H>
       <p>Credits are one-time purchases through Razorpay or PayPal at the price shown at checkout. There are no subscriptions and nothing renews. Credits do not expire and are not refundable, except that a credit is returned automatically when the first generation for a job fails. Free starter and invite credits have no cash value. One job credit covers the job described by one job description, within the per-job limits shown in the app.</p>
+      <H>Delivery</H>
+      <p>ATS-Ready is a digital service. Credits are added to your account as soon as the payment is confirmed, and
+        everything you generate is available in the app straight away.</p>
       <H>No warranty</H>
       <p>The service is provided as is, and we do not guarantee interviews, offers or specific ATS scores.</p>
+    </Page>
+  )
+}
+
+export function Refunds() {
+  return (
+    <Page title="Refunds and cancellation">
+      <H>No subscriptions</H>
+      <p>There is nothing to cancel. ATS-Ready sells credits as one-time purchases. No plan renews and nothing is charged again.</p>
+      <H>When a credit comes back</H>
+      <p>If the first generation for a job fails, the credit you spent on it is returned to your balance automatically, and so
+        is any use of that job's limits that did not complete.</p>
+      <H>Refunds for payments</H>
+      <p>Credits you have not used are refunded in full if you ask within 7 days of paying. If you were charged twice, or charged
+        and did not receive your credits, we refund the extra or missing amount. Credits you have already spent on a job are not
+        refundable, because the generation has been delivered.</p>
+      <p>Free starter and invite credits have no cash value and cannot be refunded or exchanged.</p>
+      <H>How to ask and when you are paid</H>
+      <p>Write to us using the contact details below with the email on your account and the payment id from your receipt.
+        Approved refunds go back to the original payment method (UPI, card, netbanking or PayPal) and usually reach you within
+        5 to 7 working days, depending on your bank.</p>
     </Page>
   )
 }

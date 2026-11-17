@@ -12,6 +12,7 @@ const PAGES: Record<string, [string, boolean]> = {
   '/register':        ['Create your account | ATS-Ready', true],
   '/privacy':         ['Privacy policy | ATS-Ready', true],
   '/terms':           ['Terms of service | ATS-Ready', true],
+  '/refunds':         ['Refunds and cancellation | ATS-Ready', true],
   '/forgot-password': ['Reset your password | ATS-Ready', false],
   '/reset-password':  ['Choose a new password | ATS-Ready', false],
   '/verify-email':    ['Verify your email | ATS-Ready', false],

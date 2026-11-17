@@ -92,3 +92,12 @@ async def test_active_paid_plan_is_kept(client):
         u.plan, u.plan_expires_at = "pro", datetime.utcnow() + timedelta(days=5)
         await db.commit()
     assert (await client.get("/api/auth/me", headers=bearer(r))).json()["plan"] == "pro"
+
+
+async def test_public_config_carries_contact_details_for_the_footer(client, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "CONTACT_EMAIL", "help@example.org")
+    monkeypatch.setattr(settings, "BUSINESS_NAME", "Example Labs")
+    body = (await client.get("/api/auth/config")).json()
+    assert body["contact_email"] == "help@example.org" and body["business_name"] == "Example Labs"
+    assert body["contact_phone"] is None

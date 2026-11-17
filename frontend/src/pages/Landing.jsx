@@ -1,12 +1,14 @@
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Zap, Mail, BrainCircuit, Sparkles, FileText, ChevronDown } from 'lucide-react'
+import { Zap, Mail, BrainCircuit, Sparkles, FileText, ChevronDown, MessageSquare, ClipboardList } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import LandingNav from '../components/landing/LandingNav'
 import ScrollJourney from '../components/landing/ScrollJourney'
 import FeatureCards from '../components/landing/FeatureCards'
 import CursorFX from '../components/landing/CursorFX'
+import LandingPricing from '../components/landing/LandingPricing'
+import { useSiteConfig } from '../lib/siteConfig'
 
 // Public cinematic landing page at "/". Sits OUTSIDE ProtectedRoute/Layout —
 // scrolls the window natively, aurora background (mounted globally in
@@ -15,15 +17,18 @@ import CursorFX from '../components/landing/CursorFX'
 // ThemeToggle here.
 
 const APP_FEATURES = [
-  { icon: FileText,     title: 'ATS scoring',    desc: 'Weighted 0–100 grade with a keyword-level breakdown per JD.' },
-  { icon: Mail,         title: 'Cover letters',  desc: 'Personalized, tone-adjustable letters — never templated.' },
-  { icon: BrainCircuit, title: 'Interview prep', desc: '10 tailored questions with model answers from your real experience.' },
-  { icon: Sparkles,     title: 'Job matching',   desc: 'Live listings from 5+ sources, scored against your skills.' },
+  { icon: FileText,     title: 'One-page resumes',     desc: 'Tailored to the posting, scored 0–100 for ATS, as Word and PDF. Tick the skills you really have to raise the score.' },
+  { icon: Mail,         title: 'Cover letters',        desc: 'Written from your real profile, with the length limit your form allows. Edit, copy or download.' },
+  { icon: MessageSquare, title: 'Application answers', desc: 'Paste the form questions, copy answers written as you. It learns your style and asks once for things it cannot know.' },
+  { icon: BrainCircuit, title: 'Interview prep',       desc: 'Likely questions with model answers drawn from your real experience.' },
+  { icon: ClipboardList, title: 'Every job in one place', desc: 'Paste the posting once. Resume, letter, answers, referral message and follow-ups all live under that job.' },
+  { icon: Sparkles,     title: 'Job matching',         desc: 'Fresh listings from free job boards, filtered to the places you want, scored against your skills.' },
 ]
 
 export default function Landing() {
   const { accessToken } = useAuthStore()
   const primaryTo = accessToken ? '/dashboard' : '/register'
+  const site = useSiteConfig()
 
   return (
     <div className="min-h-screen custom-cursor-zone">
@@ -54,15 +59,15 @@ export default function Landing() {
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.16 }}
               className="text-text-secondary text-lg mt-6 max-w-md leading-relaxed"
             >
-              Paste a JD. Get an ATS-optimized .docx built from your real
-              experience, scored live — in about 30 seconds.
+              Paste the job once. Get a one-page, ATS-scored resume built from your real experience,
+              then the cover letter, the answers to the application form and interview prep, all in one place.
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.24 }}
               className="flex items-center gap-3 mt-8"
             >
               <Link to={primaryTo} className="btn-primary text-sm py-3 px-6 flex items-center gap-2">
-                <Zap size={15} /> {accessToken ? 'Open Dashboard' : 'Build my resume free'}
+                <Zap size={15} /> {accessToken ? 'Open Dashboard' : 'Start your first job free'}
               </Link>
               {!accessToken && (
                 <Link to="/login" className="btn-ghost text-sm py-3 px-6">
@@ -121,7 +126,7 @@ export default function Landing() {
           <motion.div
             initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }}
             variants={staggerContainer}
-            className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
           >
             {APP_FEATURES.map(({ icon: Icon, title, desc }) => (
               <motion.div key={title} variants={fadeInUp} className="card p-5">
@@ -135,6 +140,8 @@ export default function Landing() {
           </motion.div>
         </div>
       </section>
+
+      <LandingPricing />
 
       {/* ── Final CTA + footer ───────────────────────────────────────────── */}
       <section className="relative bg-[#050409] pb-28 px-6 text-center">
@@ -162,8 +169,16 @@ export default function Landing() {
             </div>
             <span className="font-display font-bold text-text-primary text-sm">ATS-Ready</span>
           </div>
-          <p className="text-xs text-text-muted">
-            © {new Date().getFullYear()} ATS-Ready — AI resume tailoring, honestly.
+          <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-text-muted">
+            <a href="#pricing" className="hover:text-text-primary">Pricing</a>
+            <Link to="/terms" className="hover:text-text-primary">Terms</Link>
+            <Link to="/privacy" className="hover:text-text-primary">Privacy</Link>
+            <Link to="/refunds" className="hover:text-text-primary">Refunds and cancellation</Link>
+            {site.contact_email && <a href={`mailto:${site.contact_email}`} className="hover:text-text-primary">{site.contact_email}</a>}
+            {site.contact_phone && <span>{site.contact_phone}</span>}
+          </nav>
+          <p className="text-xs text-text-muted basis-full">
+            © {new Date().getFullYear()} {site.business_name || 'ATS-Ready'}. AI resume tailoring, honestly. Prices in Indian rupees, taxes included.
           </p>
         </div>
       </footer>

@@ -154,8 +154,8 @@ export default function InterviewPrep() {
             </button>
             {needsUpgrade && (
               <p role="status" className="mt-3 text-sm text-text-secondary">
-                Interview prep is a Pro feature.{' '}
-                <Link to="/settings?section=plan" className="text-brand underline">See plans</Link>
+                This job needs a credit to unlock.{' '}
+                <Link to="/settings?section=billing" className="text-brand underline">Get credits</Link>
               </p>
             )}
           </motion.div>

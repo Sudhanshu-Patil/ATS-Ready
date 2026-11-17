@@ -1,6 +1,6 @@
 # 🤖 ATS-Ready — AI Resume Agent
 
-Automatically tailors your resume to any job description using LLM pipelines, maximizing ATS scores. Paste a JD URL or text — get an optimized `.docx` in seconds.
+Automatically tailors your resume to any job description using LLM pipelines, maximizing ATS scores. Paste a job once — get a one-page, ATS-scored resume (Word and PDF), a cover letter, application-form answers and interview prep, all under one job.
 
 ---
 

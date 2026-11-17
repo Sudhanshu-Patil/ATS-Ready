@@ -63,7 +63,7 @@ export default function Login() {
         >
           <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Sign in</h1>
           <p className="text-sm text-text-secondary mb-6">
-            Welcome back — let's optimize your resume.
+            Welcome back. Pick up where you left off.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
