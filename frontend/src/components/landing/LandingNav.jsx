@@ -26,6 +26,9 @@ export default function LandingNav() {
           <a href="#features" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
             Features
           </a>
+          <a href="#pricing" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
+            Pricing
+          </a>
         </div>
 
         <div className="flex items-center gap-3">

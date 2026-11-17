@@ -145,6 +145,7 @@ export default function Register() {
           <p className="mt-4 text-xs text-text-muted text-center">
             By creating an account you agree to our <Link to="/terms" className="underline">Terms</Link> and{' '}
             <Link to="/privacy" className="underline">Privacy policy</Link>.
+            Payments are one-time; see <Link to="/refunds" className="underline">refunds</Link>.
           </p>
           <GoogleButton />
         </motion.div>

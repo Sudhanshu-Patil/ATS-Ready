@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     GOOGLE_CSE_CX: str = ""
     DORK_DAILY_QUERY_CAP: int = 80
     ADMIN_EMAILS: str = ""          # comma-separated; these accounts can open /admin
+    # Shown on the public Contact lines (footer, legal pages). Payment providers want a reachable contact.
+    CONTACT_EMAIL: str = ""
+    CONTACT_PHONE: str = ""
+    BUSINESS_NAME: str = ""
 
     # ── Database ──────────────────────────────────────────────────────────────
     # Async URL used by the app (asyncpg driver)

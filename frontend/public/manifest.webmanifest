@@ -1,7 +1,7 @@
 {
   "name": "ATS-Ready",
   "short_name": "ATS-Ready",
-  "description": "Tailor your resume to any job description in seconds.",
+  "description": "Resume, cover letter, application answers and interview prep for every job, in one place.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#0A0A0F",

@@ -84,7 +84,7 @@ const CARDS = [
   {
     eyebrow: 'Perfect',
     title: 'Score before you send',
-    desc: 'Every resume is graded 0–100 against the exact JD, with a breakdown and one-click keyword boosts.',
+    desc: 'Every resume is graded 0–100 against the exact JD, with a breakdown, and the skills you may be missing for you to tick if you really have them.',
     Vignette: PerfectVignette,
   },
 ]

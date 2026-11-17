@@ -27,6 +27,7 @@ import CookieNotice from './components/CookieNotice'
 import ConfirmHost from './components/ConfirmDialog'
 const Privacy = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Privacy })))
 const Terms = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Terms })))
+const Refunds = lazy(() => import('./pages/Legal').then((m) => ({ default: m.Refunds })))
 const Admin = lazy(() => import('./pages/Admin'))
 import PageMeta from './components/PageMeta'
 import Spinner from './components/Spinner'
@@ -97,6 +98,7 @@ export default function App() {
         <Route path="/"  element={<Landing />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms"   element={<Terms />} />
+        <Route path="/refunds" element={<Refunds />} />
         <Route path="*"  element={<NotFound />} />
       </Routes>
       </Suspense>

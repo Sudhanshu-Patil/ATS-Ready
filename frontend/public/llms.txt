@@ -3,6 +3,8 @@
 > ATS-Ready is a web app that tailors a resume to a specific job description, scores it for applicant tracking systems (ATS), and writes cover letters and interview prep.  Credits are bought with Razorpay (INR) or PayPal (USD).
 
 ## What it does
+- Jobs: paste a posting once; every tool works from that job's saved description.
+- Application answers: paste application-form questions and get answers written from the user's profile, with or without the job description.
 - Resume tailoring: paste a job description (or a public job-posting URL) and get a resume rewritten around that role's keywords, from a profile you maintain once.
 - ATS score: a 0-100 score with a breakdown (keywords, skills, action verbs, formatting) and the matched and missing skills.
 - Cover letters and interview prep: generated from the same profile and job description.

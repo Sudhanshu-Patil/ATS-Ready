@@ -23,7 +23,7 @@ const STEPS = [
   'Matching your profile…',
   'Tailoring resume content…',
   'Scoring ATS compatibility…',
-  'Building .docx file…',
+  'Building your Word and PDF files…',
 ]
 
 const PAGE_TABS = [
@@ -140,7 +140,7 @@ export default function Generator() {
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <p className="eyebrow !text-brand mb-2">Pipeline</p>
         <h1 className="font-display text-2xl font-bold text-text-primary">Generate Resume</h1>
-        <p className="text-text-secondary mt-1">Paste a job description and get an ATS-optimized .docx in ~30 seconds.</p>
+        <p className="text-text-secondary mt-1">Get a one-page, ATS-scored resume as Word and PDF, tailored to a job description, in about a minute.</p>
       </motion.div>
 
       <Tabs tabs={PAGE_TABS} active={tab} onChange={setTab} className="mb-6" />

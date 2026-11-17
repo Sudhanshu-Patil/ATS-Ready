@@ -176,7 +176,7 @@ export default function Assistant() {
             </button>
             {upgrade && (
               <p role="status" className="text-sm text-text-secondary">
-                The assistant is a Pro feature. <Link to="/settings?section=plan" className="text-brand underline">See plans</Link>
+                This job needs a credit to unlock. <Link to="/settings?section=billing" className="text-brand underline">Get credits</Link>
               </p>
             )}
           </div>

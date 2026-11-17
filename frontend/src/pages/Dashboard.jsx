@@ -48,7 +48,7 @@ export default function Dashboard() {
         <h1 className="font-display text-2xl font-bold text-text-primary">
           Good {getGreeting()}, {firstName} 👋
         </h1>
-        <p className="text-text-secondary mt-1">Your AI-powered resume optimizer is ready.</p>
+        <p className="text-text-secondary mt-1">Your job search, in one place.</p>
       </motion.div>
 
       {/* Stats */}
@@ -127,8 +127,8 @@ export default function Dashboard() {
                   <Zap size={15} className="text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-brand">Generate Resume</p>
-                  <p className="text-xs text-text-muted">Paste a job description</p>
+                  <p className="text-sm font-semibold text-brand">Start a job</p>
+                  <p className="text-xs text-text-muted">Paste a posting once, use it everywhere</p>
                 </div>
               </Link>
               <Link to="/metabase" className="flex items-center gap-3 p-3 rounded-lg hover:bg-bg-hover transition-colors">

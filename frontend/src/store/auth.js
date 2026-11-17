@@ -28,6 +28,4 @@ export const useAuthStore = create((set, get) => ({
 
   // Helpers
   isAuthenticated: () => !!get().accessToken,
-  isPro: () => ['pro', 'team'].includes(get().user?.plan),
-  isTeam: () => get().user?.plan === 'team',
 }))
