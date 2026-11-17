@@ -17,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.api.dependencies import get_current_user
-from app.api.plan_limits import check_cover_letter_access
+from app.config import settings
 from app.api.rate_limit import per_user_limit
 from app.db.database import get_db
 from app.db.models import AssistantRequest, User
-from app.services import applications, assistant, letter_limit, persona
+from app.services import applications, assistant, credits, letter_limit, persona
 from app.services.ats_score import term_in
 from app.services.cache_service import cache_service
 from app.services.metabase_service import metabase_service
@@ -41,6 +41,7 @@ class AssistantCreate(BaseModel):
     limit: Optional[int] = None
     limit_unit: str = "words"
     track: bool = True                                           # False: just answer, do not record an application
+    application_id: Optional[str] = None                         # keep working on a job already started
 
 
 def _app_dict(app) -> Optional[dict]:
@@ -80,7 +81,7 @@ async def _own(db: AsyncSession, request_id: str, user: User) -> AssistantReques
 async def create_request(
     data: AssistantCreate,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),              # a Pro writing tool, like cover letters
+    user: User = Depends(get_current_user),
 ):
     """Queue answers. Works with a job description, or with questions alone."""
     existing = (await db.execute(select(AssistantRequest).where(
@@ -107,12 +108,19 @@ async def create_request(
     role = (data.role or "").strip() or hints["role"]
 
     app = None
-    if data.track:
+    given = credits.parse_uuid(data.application_id) if data.application_id else None
+    if given:
+        app = await db.get(applications.Application, given)
+        if app is None or app.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Job not found")
+    elif data.track or settings.BILLING_ENABLED:          # with credits, every answer belongs to a job
         app = await applications.track(
             db, user.id, source="assistant", kind="questions",
             summary=f"Asked for answers to {len(questions)} application question{'s' if len(questions) != 1 else ''}",
             jd_text=jd_text, company=company, role=role, job_url=data.job_url,
             payload={"questions": [q["question"][:120] for q in questions][:20]})
+    if app is not None:
+        await credits.ensure_unlocked(db, user, app, "answers", len(questions))
     req = AssistantRequest(user_id=user.id, application_id=app.id if app else None,
                            client_request_id=data.client_request_id, jd_text=jd_text,
                            company=app.company if app else company, job_title=app.role if app else role,
@@ -125,6 +133,7 @@ async def create_request(
     except Exception:
         logger.exception("Could not enqueue assistant request %s", req.id)
         req.status, req.error = "failed", "The job queue is unavailable. Please try again."
+        await credits.release(db, req.application_id, "answers", len(questions))
         await db.commit()
         raise HTTPException(status_code=503, detail="The job queue is unavailable. Please try again.")
     return _req_dict(req, app)
@@ -191,6 +200,9 @@ async def supply_fact(request_id: str, data: FactIn, db: AsyncSession = Depends(
     req = await _own(db, request_id, user)
     await persona.set_fact(db, user.id, data.field, data.value)
     waiting = [q["id"] for q in req.questions if q.get("status") == "needs_input" and (q.get("needs") or {}).get("field") == data.field]
+    if not waiting:                                   # nothing was waiting for this fact: no model run
+        await db.commit()
+        return {"id": str(req.id), "waiting": []}
     items = [dict(q) | ({"status": "pending", "needs": None} if q["id"] in waiting else {}) for q in req.questions]
     req.questions, req.status = items, "pending"
     await db.commit()

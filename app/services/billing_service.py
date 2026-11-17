@@ -3,8 +3,8 @@ app/services/billing_service.py
 ────────────────────────────────
 PayPal billing (Orders v2 REST via httpx — no SDK dependency).
 
-Each upgrade is a one-time 30-day payment (no recurring subscription), which
-keeps the sandbox demo to zero dashboard setup beyond an app's credentials.
+Used for buyers outside India (USD credit packs); Indian buyers pay in INR through Razorpay. Each payment is a
+one-time purchase of credits, never a subscription.
 
 FEATURE FLAG:
   BILLING_ENABLED=false → all methods are graceful no-ops.
@@ -14,7 +14,7 @@ CHECKOUT FLOW (redirect):
   2. Frontend redirects the browser to approve_url (PayPal sandbox login)
   3. PayPal redirects back to /settings?token=<order_id>
   4. Frontend calls POST /billing/sync → backend captures the order and
-     applies the plan.
+     adds the credits.
 
 PAYPAL SETUP (one-time):
   1. https://developer.paypal.com → Apps & Credentials → Sandbox → Create App
@@ -30,40 +30,6 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# ── Plan definitions ──────────────────────────────────────────────────────────
-
-PLAN_LIMITS = {
-    "free": {
-        "resumes_per_month": 3,
-        "cover_letters":     False,
-        "interview_prep":    False,
-        "api_access":        False,
-        "label":             "Free",
-        "price_monthly":     0,
-    },
-    "pro": {
-        "resumes_per_month": -1,      # -1 = unlimited
-        "cover_letters":     True,
-        "interview_prep":    True,
-        "api_access":        False,
-        "label":             "Pro",
-        "price_monthly":     19,
-    },
-    "team": {
-        "resumes_per_month": -1,
-        "cover_letters":     True,
-        "interview_prep":    True,
-        "api_access":        True,
-        "label":             "Team",
-        "price_monthly":     49,
-    },
-}
-
-
-def get_plan_limits(plan: str) -> dict:
-    return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
-
 
 # ── Billing service ───────────────────────────────────────────────────────────
 
@@ -84,7 +50,7 @@ class BillingService:
         r.raise_for_status()
         return r.json()["access_token"]
 
-    async def create_order(self, user_id: str, plan: str, return_url: str) -> Optional[Dict[str, Any]]:
+    async def create_order(self, custom_id: str, description: str, amount_cents: int, return_url: str) -> Optional[Dict[str, Any]]:
         """Returns {"order_id", "approve_url"}, or None if disabled / failed."""
         if not self.is_enabled():
             logger.info("Billing disabled — skipping order creation")
@@ -98,11 +64,11 @@ class BillingService:
                     json={
                         "intent": "CAPTURE",
                         "purchase_units": [{
-                            "custom_id": f"{user_id}:{plan}",
-                            "description": f"ATS-Ready {plan} plan (30 days)",
+                            "custom_id": custom_id,
+                            "description": description,
                             "amount": {
                                 "currency_code": "USD",
-                                "value": f"{PLAN_LIMITS[plan]['price_monthly']:.2f}",
+                                "value": f"{amount_cents / 100:.2f}",
                             },
                         }],
                         "payment_source": {"paypal": {"experience_context": {

@@ -15,7 +15,8 @@ PUBLIC = {
     ("POST", "/api/auth/verify-email"),
     ("POST", "/api/auth/google"),
     ("GET", "/api/auth/config"),
-    ("GET", "/api/billing/plans"),
+    ("GET", "/api/billing/catalog"),
+    ("POST", "/api/billing/razorpay/webhook"),     # signature-verified, called by Razorpay
     ("GET", "/health"),
     ("GET", "/health/ready"),
 }

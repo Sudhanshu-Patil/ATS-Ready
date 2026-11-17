@@ -27,8 +27,8 @@ from app.services.storage_service import storage_service
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.services.scraper import ScraperError, validate_public_url
 from app.api.dependencies import get_current_user
+from app.services import job_access
 from app.api.rate_limit import per_user_limit
-from app.api.plan_limits import check_resume_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ async def _get_arq_pool():
 async def generate_resume(
     request: GenerateResumeRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_resume_limit),
+    user: User = Depends(get_current_user),
 ):
     """
     Enqueue a resume generation job.
@@ -70,10 +70,14 @@ async def generate_resume(
             raise HTTPException(status_code=422, detail=str(exc))
     await ensure_profile(db, user.id)        # a missing profile can only fail later in the worker
     await ensure_capacity(db, user.id)
+    # The job this resume is for: by its posting. Unlocks it (or fails with no_credits) and counts the use.
+    job = await job_access.gate(db, user, "resume", source="resume", jd_text=request.jd_text,
+                                jd_url=str(request.jd_url) if request.jd_url else None)
 
     # Create the JobApplication row in "pending" state NOW so we have an ID
     job_app = JobApplication(
         user_id=user.id,
+        application_id=job.id,
         jd_url=str(request.jd_url) if request.jd_url else None,
         status="pending",
     )
@@ -91,6 +95,7 @@ async def generate_resume(
         jd_text=request.jd_text,
         emphasis=request.emphasis,
         baseline_id=request.baseline_id,
+        application_id=str(job.id),
         _job_id=f"resume:{job_app.id}",   # deterministic ARQ job ID for dedup
     )
     await arq_pool.aclose()
@@ -702,7 +707,8 @@ async def upload_resume_baseline(
     return {"id": baseline_id, "filename": file.filename, "characters": len(text), "words": len(text.split())}
 
 
-@router.post("/metabase/import-resume", dependencies=[Depends(per_user_limit("import", 5))])
+@router.post("/metabase/import-resume", dependencies=[Depends(per_user_limit("import", 5)),
+                                                           Depends(per_user_limit("import_day", 8, 86400))])
 async def import_resume(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),

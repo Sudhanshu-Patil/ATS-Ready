@@ -78,6 +78,14 @@ class User(Base):
     payment_subscription_id = Column(String(100), nullable=True)
     plan_expires_at         = Column(DateTime, nullable=True)
 
+    # Credits (see app/services/credits.py). The plan columns above are legacy and unused.
+    credits_job             = Column(Integer, default=0, server_default="0", nullable=False)   # unlocks one job fully
+    credits_resume          = Column(Integer, default=0, server_default="0", nullable=False)   # unlocks a job resume only
+    referral_code           = Column(String(16), unique=True, nullable=True, index=True)
+    referred_by_id          = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    email_canonical         = Column(String(255), nullable=True, index=True)   # gmail dots/+tags stripped: one grant per person
+    signup_granted          = Column(Boolean, default=False, server_default="false", nullable=False)
+
     created_at             = Column(DateTime, default=_now, nullable=False)
     updated_at             = Column(DateTime, default=_now, onupdate=_now, nullable=False)
 
@@ -265,6 +273,7 @@ class JobApplication(Base):
     jd_text         = Column(Text, nullable=True)
     jd_parsed       = Column(JSONB, nullable=True)
 
+    application_id  = Column(UUID(as_uuid=True), ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True)
     resume_s3_key   = Column(String(500), nullable=True)
     resume_filename = Column(String(255), nullable=True)
     resume_path     = Column(String(500), nullable=True)   # legacy
@@ -293,11 +302,13 @@ class CoverLetter(Base):
     user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     job_app_id  = Column(UUID(as_uuid=True), ForeignKey("job_applications.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    application_id = Column(UUID(as_uuid=True), ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True)
+
     job_title   = Column(String(300), nullable=True)
     company     = Column(String(200), nullable=True)
     jd_text     = Column(Text(), nullable=True)
 
-    subject     = Column(String(500), nullable=True)
+    subject    = Column(String(500), nullable=True)
     body        = Column(Text(), nullable=False)
     word_count  = Column(Integer(), nullable=True)
     highlights  = Column(JSONB, default=list)
@@ -320,6 +331,8 @@ class InterviewPrep(Base):
     id                 = Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     user_id            = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     job_app_id         = Column(UUID(as_uuid=True), ForeignKey("job_applications.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    application_id     = Column(UUID(as_uuid=True), ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True)
 
     job_title          = Column(String(300), nullable=True)
     company            = Column(String(200), nullable=True)
@@ -379,3 +392,4 @@ class ResumeSuggestion(Base):
 from app.db.models_assistant import (  # noqa: E402,F401
     APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, PersonaEdge, PersonaNode,
 )
+from app.db.models_credits import CreditLedger, Payment, Referral  # noqa: E402,F401

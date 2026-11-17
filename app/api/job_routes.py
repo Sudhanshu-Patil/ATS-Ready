@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.api.dependencies import get_current_user
-from app.api.plan_limits import check_resume_limit
+from app.services import job_access
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import JobApplication, User
@@ -171,7 +171,7 @@ async def _suggestions_now(db: AsyncSession, job: JobApplication) -> Optional[Di
 async def retry_job(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_resume_limit),   # a retry spends quota like a new job
+    user: User = Depends(get_current_user),
 ):
     """
     Retry a failed job.
@@ -194,6 +194,11 @@ async def retry_job(
             detail="Cannot retry — original JD data was not stored.",
         )
 
+    # A retry counts against the job like a new run (a failed run gave its use back).
+    app = await job_access.gate(db, user, "resume", source="resume", jd_text=job.jd_text, jd_url=job.jd_url,
+                                application_id=job.application_id)
+    job.application_id = app.id
+
     # Reset status to pending
     job.status = "pending"
     job.error_message = None
@@ -208,6 +213,7 @@ async def retry_job(
         jd_url=job.jd_url,
         jd_text=job.jd_text,
         emphasis=None,
+        application_id=str(app.id),
         _job_id=f"retry:{job.id}",
     )
     await arq_pool.aclose()

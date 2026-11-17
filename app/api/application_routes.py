@@ -11,12 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.api.dependencies import get_current_user
-from app.api.plan_limits import check_cover_letter_access
 from app.api.rate_limit import per_user_limit
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter, User
-from app.services import applications
+from app.services import applications, credits
 from app.services.cache_service import cache_service
 from app.services.metabase_service import metabase_service
 
@@ -145,9 +144,11 @@ async def delete_application(application_id: str, db: AsyncSession = Depends(get
 @application_router.post("/applications/{application_id}/follow-up-draft",
                          dependencies=[Depends(per_user_limit("content", 10))])
 async def follow_up_draft(application_id: str, db: AsyncSession = Depends(get_db),
-                          user: User = Depends(check_cover_letter_access)):
+                          user: User = Depends(get_current_user)):
     """A short follow-up message for this application, from what we know about it. Facts only."""
     a = await _own(db, application_id, user)
+    await credits.ensure_unlocked(db, user, a, "follow_up")
+    await db.commit()                                  # the use is counted before the model runs
     profile = (await cache_service.get_profile(str(user.id)) or await metabase_service.get_full_profile_async(db, user.id))
     name = ((profile.get("personal") or {}).get("full_name") or "").strip()
     since = a.applied_at or a.created_at
@@ -162,9 +163,15 @@ async def follow_up_draft(application_id: str, db: AsyncSession = Depends(get_db
                   "days above; ask about next steps; sign with the candidate's name.\n"
                   'Return JSON: {"subject": "...", "body": "..."}')
         import json
-        raw = await asyncio.to_thread(ai_agent._call, "You write brief, honest job follow-up emails. JSON only.", prompt, 500)
-        data = json.loads(raw)
+        try:
+            raw = await asyncio.to_thread(ai_agent._call, "You write brief, honest job follow-up emails. JSON only.", prompt, 500)
+            data = json.loads(raw)
+        except Exception:
+            await credits.release(db, a.id, "follow_up")
+            await db.commit()
+            raise
         text = f"Subject: {data.get('subject', '')}\n\n{data.get('body', '')}"
     await applications.add_event(db, a, "follow_up", "Drafted a follow-up message")
+    await credits.succeeded(db, a.id)
     await db.commit()
     return {"draft": text}

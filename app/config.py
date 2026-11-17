@@ -163,6 +163,11 @@ class Settings(BaseSettings):
     PAYPAL_CLIENT_SECRET: str = ""
     PAYPAL_API: str = "https://api-m.sandbox.paypal.com"  # live: https://api-m.paypal.com
 
+    # ── Razorpay (INR; UPI, cards, netbanking) ───────────────────────────────
+    RAZORPAY_KEY_ID: str = ""          # public; also sent to the browser for Checkout
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
     SENTRY_FRONTEND_DSN: str = ""      # browser DSN (public by design); served via /auth/config

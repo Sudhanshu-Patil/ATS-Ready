@@ -27,10 +27,9 @@ from app.agents.ai_agent import ai_agent
 from app.api.activity_routes import ensure_capacity, ensure_profile
 from app.api.rate_limit import per_user_limit
 from app.api.dependencies import get_current_user
-from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
-from app.services import applications, letter_limit
+from app.services import applications, credits, job_access, letter_limit
 from app.services.cache_service import cache_service
 from app.services.content_service import ProfileIncomplete, friendly_error
 from app.services.metabase_service import metabase_service
@@ -81,13 +80,15 @@ def _check_jd(jd_text: str) -> None:
         raise HTTPException(status_code=422, detail="Job description too short (min 100 chars)")
 
 
-async def _enqueue_or_fail(db: AsyncSession, row, function: str, **kwargs) -> None:
-    """Enqueue; if the queue is unreachable, don't leave a row 'pending' forever."""
+async def _enqueue_or_fail(db: AsyncSession, row, function: str, kind: Optional[str] = None, **kwargs) -> None:
+    """Enqueue; if the queue is unreachable, don't leave a row 'pending' forever (and give the job's use back)."""
     try:
         await enqueue(function, **kwargs)
     except Exception:
         logger.exception("Could not enqueue %s", function)
         row.status, row.error = "failed", "The job queue is unavailable. Please try again."
+        if kind:
+            await credits.release(db, getattr(row, "application_id", None), kind)
         await db.commit()
         raise HTTPException(status_code=503, detail="The job queue is unavailable. Please try again.")
 
@@ -100,7 +101,7 @@ async def generate_cover_letter(
     request: CoverLetterRequest,
     db: AsyncSession = Depends(get_db),
     # Pro/Team gate. No-op while BILLING_ENABLED=false.
-    user: User = Depends(check_cover_letter_access),
+    user: User = Depends(get_current_user),
 ):
     """
     Queue a personalized cover letter. Returns 202 immediately with an id;
@@ -116,9 +117,10 @@ async def generate_cover_letter(
             raise HTTPException(status_code=422, detail=str(exc))
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
+    job = await job_access.gate(db, user, "cover_letter", source="cover_letter", jd_text=request.jd_text)
 
     row = CoverLetter(
-        user_id=user.id, jd_text=request.jd_text[:3000], body="",
+        user_id=user.id, application_id=job.id, jd_text=request.jd_text[:3000], body="",
         tone=request.tone, status="pending", created_at=datetime.utcnow(),
         length_limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
     )
@@ -127,7 +129,7 @@ async def generate_cover_letter(
     await db.refresh(row)
 
     await _enqueue_or_fail(
-        db, row, "generate_cover_letter_task",
+        db, row, "generate_cover_letter_task", kind="cover_letter", application_id=str(job.id),
         letter_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
         job_app_id=request.job_app_id, tone=request.tone,
         limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
@@ -209,18 +211,22 @@ async def get_cover_letter(
 async def retry_cover_letter(
     letter_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),
+    user: User = Depends(get_current_user),
 ):
     """Re-run a failed cover letter with the job description saved on it."""
     cl = await _own_letter(db, letter_id, user)
     if cl.status != "failed" or not cl.jd_text:
         raise HTTPException(status_code=409, detail="Only failed cover letters with a saved job description can be retried")
     await ensure_capacity(db, user.id)
+    job = await job_access.gate(db, user, "cover_letter", source="cover_letter", jd_text=cl.jd_text,
+                                application_id=cl.application_id)
+    cl.application_id = job.id
     cl.status, cl.error = "pending", None
     await db.commit()
-    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
-                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
-                           limit=cl.length_limit, limit_unit=cl.limit_unit)
+    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", kind="cover_letter", application_id=str(job.id),
+                           letter_id=str(cl.id), user_id=str(user.id),
+                           jd_text=job_access.stored_jd(job, cl.jd_text), job_app_id=None,
+                           tone=cl.tone or "professional", limit=cl.length_limit, limit_unit=cl.limit_unit)
     return {"id": str(cl.id), "status": "pending"}
 
 
@@ -235,7 +241,7 @@ async def answer_company(
     letter_id: str,
     data: CompanyAnswer,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),
+    user: User = Depends(get_current_user),
 ):
     """The user's answer to "which company is this letter for?". Resumes the waiting letter."""
     cl = await _own_letter(db, letter_id, user)
@@ -250,7 +256,8 @@ async def answer_company(
     await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
                            jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
                            limit=cl.length_limit, limit_unit=cl.limit_unit,
-                           company=company or None, company_skipped=not company)
+                           company=company or None, company_skipped=not company,
+                           application_id=str(cl.application_id) if cl.application_id else None)
     return {"id": str(cl.id), "status": "pending"}
 
 
@@ -264,7 +271,7 @@ async def edit_cover_letter(
     letter_id: str,
     data: CoverLetterEdit,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),
+    user: User = Depends(get_current_user),
 ):
     """Save the user's edits. Downloads and copies then use this text."""
     cl = await _own_letter(db, letter_id, user)
@@ -287,7 +294,7 @@ async def download_cover_letter(
     letter_id: str,
     format: str = "docx",
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),
+    user: User = Depends(get_current_user),
 ):
     """The saved (possibly edited) letter as DOCX or PDF."""
     from app.services.documents import cover_letter_docx, cover_letter_pdf
@@ -314,7 +321,7 @@ class ReferralRequest(BaseModel):
     job_url:     str = Field(default="", max_length=1000)
 
 
-async def _track_referral(db: AsyncSession, user: User, request) -> None:
+async def _track_referral(db: AsyncSession, user: User, request, application_id=None) -> None:
     """A referral request is a step in an application: put it on that job's timeline, dated now. The company
     comes from the posting's cached analysis or its own text; if neither names it, the app asks the user."""
     try:
@@ -329,7 +336,7 @@ async def _track_referral(db: AsyncSession, user: User, request) -> None:
             db, user.id, source="referral", kind="referral_request",
             summary="Drafted a referral request" + (f" to {person}" if person else ""), jd_text=jd,
             company=company, role=role, job_url=request.job_url.strip() or None, status="referral_requested",
-            payload={"person": person} if person else None)
+            payload={"person": person} if person else None, application_id=application_id)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -341,12 +348,15 @@ async def _track_referral(db: AsyncSession, user: User, request) -> None:
 async def referral_message(
     request: ReferralRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_cover_letter_access),     # outreach is part of the Pro writing tools
+    user: User = Depends(get_current_user),     # outreach is part of the Pro writing tools
 ):
     """Draft a LinkedIn referral ask. One small LLM call, answered directly (not queued)."""
     if len(request.jd_text.strip()) < 100:
         raise HTTPException(status_code=422, detail="Paste the job description (min 100 characters)")
     await ensure_budget(db, user.id)
+    job = await job_access.gate(db, user, "referral", source="referral", jd_text=request.jd_text,
+                                jd_url=request.job_url.strip() or None)
+    await db.commit()                                  # the use is counted before the model runs
 
     profile = await cache_service.get_profile(str(user.id))
     if not profile:
@@ -362,13 +372,18 @@ async def referral_message(
             ai_agent.generate_referral_message, request.person_name.strip(), request.jd_text.strip(),
             request.job_url.strip(), profile), timeout=70)
         ok = True
-        await _track_referral(db, user, request)
+        await credits.succeeded(db, job.id)
+        await _track_referral(db, user, request, job.id)
         return result
     except asyncio.TimeoutError:
         mark_failed()
+        await credits.release(db, job.id, "referral")
+        await db.commit()
         raise HTTPException(status_code=503, detail="The AI service is busy right now. Please try again in a minute.")
     except Exception as exc:
         mark_failed()
+        await credits.release(db, job.id, "referral")
+        await db.commit()
         logger.exception("Referral message failed")
         raise HTTPException(status_code=503, detail=friendly_error(exc))
     finally:
@@ -393,7 +408,7 @@ async def delete_cover_letter(
 async def generate_interview_prep(
     request: InterviewPrepRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_interview_prep_access),
+    user: User = Depends(get_current_user),
 ):
     """
     Queue tailored interview questions and model answers (10 questions across
@@ -403,15 +418,16 @@ async def generate_interview_prep(
     _check_jd(request.jd_text)
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
+    job = await job_access.gate(db, user, "interview_prep", source="interview_prep", jd_text=request.jd_text)
 
-    row = InterviewPrep(user_id=user.id, jd_text=request.jd_text[:3000], status="pending",
+    row = InterviewPrep(user_id=user.id, application_id=job.id, jd_text=request.jd_text[:3000], status="pending",
                         created_at=datetime.utcnow())
     db.add(row)
     await db.commit()
     await db.refresh(row)
 
     await _enqueue_or_fail(
-        db, row, "generate_interview_prep_task",
+        db, row, "generate_interview_prep_task", kind="interview_prep", application_id=str(job.id),
         prep_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
         job_app_id=request.job_app_id,
     )
@@ -484,17 +500,21 @@ async def get_interview_prep(
 async def retry_interview_prep(
     prep_id: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(check_interview_prep_access),
+    user: User = Depends(get_current_user),
 ):
     """Re-run a failed interview prep with the job description saved on it."""
     prep = await _own_prep(db, prep_id, user)
     if prep.status != "failed" or not prep.jd_text:
         raise HTTPException(status_code=409, detail="Only failed sessions with a saved job description can be retried")
     await ensure_capacity(db, user.id)
+    job = await job_access.gate(db, user, "interview_prep", source="interview_prep", jd_text=prep.jd_text,
+                                application_id=prep.application_id)
+    prep.application_id = job.id
     prep.status, prep.error = "pending", None
     await db.commit()
-    await _enqueue_or_fail(db, prep, "generate_interview_prep_task", prep_id=str(prep.id),
-                           user_id=str(user.id), jd_text=prep.jd_text, job_app_id=None)
+    await _enqueue_or_fail(db, prep, "generate_interview_prep_task", kind="interview_prep",
+                           application_id=str(job.id), prep_id=str(prep.id), user_id=str(user.id),
+                           jd_text=job_access.stored_jd(job, prep.jd_text), job_app_id=None)
     return {"id": str(prep.id), "status": "pending"}
 
 

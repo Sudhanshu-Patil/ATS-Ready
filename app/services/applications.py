@@ -181,6 +181,23 @@ async def _find(db: AsyncSession, user_id: UUID, jd_text: Optional[str], company
     return _pick(_live((await db.execute(q.limit(500))).scalars().all()), company, role)
 
 
+async def get_or_create(db: AsyncSession, user_id: UUID, *, source: str, jd_text: Optional[str] = None,
+                        job_url: Optional[str] = None) -> Application:
+    """The job for this posting (by its text or link), started if new. Company and role are filled later by track()
+    once the posting is analysed, so `needs` stays empty until then (no premature back-question)."""
+    app = await _find(db, user_id, jd_text, None, None, job_url)
+    if app is not None:
+        return app
+    app = Application(user_id=user_id, source=source, status="interested", needs=[], usage={}, unlock_level="none",
+                      job_url=norm_url(job_url))
+    if jd_text and len(jd_text.strip()) >= 100:
+        app.jd_hash, app.jd_text = jd_hash(jd_text), jd_text.strip()[:8000]
+    db.add(app)
+    await db.flush()
+    await add_event(db, app, "created", f"Started from {source.replace('_', ' ')}")
+    return app
+
+
 async def add_event(db: AsyncSession, app: Application, kind: str, summary: str,
                     occurred_at: Optional[datetime] = None, payload: Optional[Dict[str, Any]] = None) -> None:
     db.add(ApplicationEvent(application_id=app.id, user_id=app.user_id, kind=kind, summary=summary[:300],
