@@ -37,9 +37,9 @@ const MODE_TABS = [
 export default function Generator() {
   // All state lives in Zustand — survives tab switches
   const {
-    mode, jdText, jdUrl, emphasis,
+    mode, jdText, jdUrl, emphasis, baselineId, baselineName,
     loading, step, result, error,
-    setMode, setJdText, setJdUrl, setEmphasis,
+    setMode, setJdText, setJdUrl, setEmphasis, setBaseline,
     setJobId, setLoading, setStep, setResult, setError, reset,
   } = useGeneratorStore()
 
@@ -84,7 +84,8 @@ export default function Generator() {
     const emphasisList = emphasis.split(',').map(s => s.trim()).filter(Boolean)
 
     try {
-      const res = await resumeAPI.generate(text, url, emphasisList.length ? emphasisList : null)
+      const res = await resumeAPI.generate(text, url, emphasisList.length ? emphasisList : null, baselineId)
+      setEmphasis('')       // ticked suggestions are now saved server-side as applied
       const id = res.data.job_id
       setJobId(id)
       addPendingJob(id)  // Optimistically add to history store
@@ -156,12 +157,15 @@ export default function Generator() {
 
         <div className="mt-4">
           <label className="block text-sm text-text-secondary mb-1.5">
-            Emphasis keywords <span className="text-text-muted">(optional — comma separated)</span>
+            Skills you have that this job asks for <span className="text-text-muted">(optional, comma separated)</span>
           </label>
           <input className="input text-sm"
-            placeholder="e.g. Kafka, distributed systems, team leadership"
+            placeholder="e.g. Kafka, Terraform. Only skills you genuinely have"
             value={emphasis} onChange={e => setEmphasis(e.target.value)} disabled={submitting} />
         </div>
+
+        <BaselineUpload baselineId={baselineId} baselineName={baselineName} setBaseline={setBaseline}
+                        disabled={submitting} />
 
         <div className="flex gap-3 mt-5">
           <button onClick={handleGenerate} disabled={submitting}
@@ -275,9 +279,15 @@ export default function Generator() {
             </div>
           </div>
 
-          {result.ats_breakdown?.missing_keywords?.length > 0 && (
-            <MissingKeywordChips
-              keywords={result.ats_breakdown.missing_keywords}
+          {result.ats_breakdown?.baseline_expired && (
+            <p className="mt-4 text-xs text-text-muted">Your uploaded resume is no longer held (it is kept for 2 hours). Upload it again to compare.</p>
+          )}
+          {result.ats_breakdown?.baseline && <BaselineCompare breakdown={result.ats_breakdown} score={result.ats_score} />}
+
+          {result.ats_breakdown?.open_suggestions && (
+            <SuggestionsPanel
+              breakdown={result.ats_breakdown}
+              score={result.ats_score}
               emphasis={emphasis}
               setEmphasis={setEmphasis}
               onRegenerate={handleGenerate}
@@ -304,20 +314,6 @@ export default function Generator() {
                         'Action Verbs': result.ats_breakdown.action_verb_score,
                         'Format':       result.ats_breakdown.format_score,
                       }).map(([label, score]) => <ScoreBar key={label} label={label} score={score} />)}
-
-                      {result.ats_breakdown.suggestions?.length > 0 && (
-                        <div className="mt-4 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-lg">
-                          <div className="flex items-center gap-2 mb-2">
-                            <AlertCircle size={14} className="text-yellow-400" />
-                            <span className="text-sm font-medium text-yellow-400">Suggestions</span>
-                          </div>
-                          <ul className="space-y-1">
-                            {result.ats_breakdown.suggestions.map((s, i) => (
-                              <li key={i} className="text-xs text-text-secondary">• {s}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                     </div>
                   </motion.div>
                 )}
@@ -351,56 +347,162 @@ function ScoreBar({ label, score }) {
   )
 }
 
-// JD keywords the resume didn't pick up — click any you genuinely have to
-// queue them as emphasis for the next generation, instead of hand-typing a
-// comma-separated list. Toggleable (click again to remove a mis-click).
-function MissingKeywordChips({ keywords, emphasis, setEmphasis, onRegenerate }) {
-  const currentList = emphasis.split(',').map(s => s.trim()).filter(Boolean)
-  const queuedCount = keywords.filter(k => currentList.includes(k)).length
-
-  const toggle = (kw) => {
-    if (currentList.includes(kw)) {
-      setEmphasis(currentList.filter(k => k !== kw).join(', '))
-    } else {
-      setEmphasis([...currentList, kw].join(', '))
+// ── Compare with the user's current resume ─────────────────────────────────────
+function BaselineUpload({ baselineId, baselineName, setBaseline, disabled }) {
+  const [busy, setBusy] = useState(false)
+  const pick = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusy(true)
+    try {
+      const { data } = await resumeAPI.uploadBaseline(file)
+      setBaseline(data.id, data.filename || file.name)
+      toast.success('Got it. Your resume will be scored against this job too.')
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not read that file')
+    } finally {
+      setBusy(false)
     }
   }
+
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-text-secondary mb-1.5">
+        Your current resume <span className="text-text-muted">(optional)</span>
+      </p>
+      {baselineId ? (
+        <div className="flex items-center gap-2 text-sm">
+          <FileText size={15} className="text-brand" />
+          <span className="text-text-primary truncate">{baselineName}</span>
+          <button onClick={() => setBaseline(null, '')} disabled={disabled}
+                  className="text-xs text-text-muted hover:text-red-400 underline">Remove</button>
+        </div>
+      ) : (
+        <label className={clsx('btn-ghost inline-flex items-center gap-2 text-sm cursor-pointer', (busy || disabled) && 'opacity-60 pointer-events-none')}>
+          {busy ? <Spinner size="sm" /> : <Plus size={14} />}
+          {busy ? 'Reading…' : 'Upload PDF or DOCX to compare'}
+          <input type="file" accept=".pdf,.docx" className="sr-only" onChange={pick} disabled={busy || disabled} />
+        </label>
+      )}
+      <p className="text-xs text-text-muted mt-1.5">
+        We score it against this job and show how much the new resume improves on it. Nothing is added to your profile.
+      </p>
+    </div>
+  )
+}
+
+function BaselineCompare({ breakdown, score }) {
+  const b = breakdown.baseline
+  const now = score ?? breakdown.total_score
+  const gain = breakdown.score_gain ?? (now - b.total_score)
+  return (
+    <div className="mt-4 p-4 rounded-lg border border-bg-border bg-bg-hover" aria-label="Score comparison">
+      <p className="text-sm font-medium text-text-primary mb-3">Your resume vs the new one</p>
+      <div className="flex items-center gap-4 flex-wrap">
+        <div>
+          <p className="text-xs text-text-muted truncate max-w-48">{b.filename || 'Your resume'}</p>
+          <p className="text-2xl font-bold text-text-secondary">{Math.round(b.total_score)}</p>
+        </div>
+        <span className="text-text-muted" aria-hidden="true">→</span>
+        <div>
+          <p className="text-xs text-text-muted">New resume</p>
+          <p className="text-2xl font-bold text-score">{Math.round(now)}</p>
+        </div>
+        <span className={clsx('badge', gain > 0 ? 'bg-score-muted text-score' : 'bg-bg-card text-text-secondary')}>
+          {gain > 0 ? `+${gain.toFixed(1)} points` : gain === 0 ? 'same score' : `${gain.toFixed(1)} points`}
+        </span>
+      </div>
+      {gain <= 0 && (
+        <p className="text-xs text-text-muted mt-3">
+          Your current resume already covers this job as well as your profile allows. The suggestions below are
+          what would raise it further.
+        </p>
+      )}
+      {b.missing_skills?.length > 0 && (
+        <p className="text-xs text-text-secondary mt-3">
+          Your uploaded resume is missing: {b.missing_skills.slice(0, 6).join(', ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
+// ── Technical suggestions: created once per job, they only shrink as you apply them ──
+const KIND_LABEL = { required: 'Required', preferred: 'Preferred', keyword: 'Keyword', user: 'Yours' }
+
+function SuggestionsPanel({ breakdown, score, emphasis, setEmphasis, onRegenerate }) {
+  const [custom, setCustom] = useState('')
+  const open = breakdown.open_suggestions || []
+  const applied = breakdown.applied_terms || []
+  const selected = emphasis.split(',').map(s => s.trim()).filter(Boolean)
+
+  const toggle = (term) => {
+    setEmphasis((selected.includes(term) ? selected.filter(t => t !== term) : [...selected, term]).join(', '))
+  }
+  const addCustom = () => {
+    const t = custom.trim()
+    if (t && !selected.includes(t)) setEmphasis([...selected, t].join(', '))
+    setCustom('')
+  }
+
+  if (!open.length && !applied.length) return null
+  const projected = breakdown.projected_score
+  const canGain = open.length > 0 && projected > (score ?? 0)
 
   return (
     <div className="mt-4 p-3 bg-brand/5 border border-brand/20 rounded-lg">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-brand" />
-          <span className="text-sm font-medium text-brand">Boost your ATS score</span>
+          <span className="text-sm font-medium text-brand">
+            {open.length ? `${open.length} skill${open.length !== 1 ? 's' : ''} this job asks for that your profile does not show` : 'All suggestions applied'}
+          </span>
         </div>
-        {queuedCount > 0 && (
+        {selected.length > 0 && (
           <button onClick={onRegenerate} className="text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
-            Regenerate with {queuedCount} keyword{queuedCount !== 1 ? 's' : ''} →
+            Regenerate with {selected.length} selected →
           </button>
         )}
       </div>
-      <p className="text-xs text-text-muted mb-3">
-        These JD keywords didn't make it into your resume. Click any you genuinely have experience with — the AI won't fabricate skills you don't have, so only add what's true.
-      </p>
-      <div className="flex flex-wrap gap-1.5">
-        {keywords.map(kw => {
-          const added = currentList.includes(kw)
-          return (
-            <button
-              key={kw}
-              onClick={() => toggle(kw)}
-              className={clsx(
-                'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                added
-                  ? 'bg-score-muted text-score border-score/30'
-                  : 'bg-bg-hover text-text-secondary border-bg-border hover:border-brand/40 hover:text-brand'
-              )}
-            >
-              {added ? <Check size={11} /> : <Plus size={11} />} {kw}
-            </button>
-          )
-        })}
+
+      {open.length > 0 && (
+        <>
+          <p className="text-xs text-text-muted mb-3">
+            Tick the ones you genuinely have. They are added to your skills list for every version of this resume.
+            Nothing is invented: we never write experience or numbers you did not give us.
+            {canGain && <> Adding all of them would take the score to about <strong>{Math.round(projected)}</strong>.</>}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {open.map(s => {
+              const on = selected.includes(s.term)
+              return (
+                <button key={s.term} onClick={() => toggle(s.term)} aria-pressed={on} title={s.why}
+                  className={clsx(
+                    'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                    on ? 'bg-score-muted text-score border-score/30'
+                       : 'bg-bg-hover text-text-secondary border-bg-border hover:border-brand/40 hover:text-brand')}>
+                  {on ? <Check size={11} /> : <Plus size={11} />} {s.term}
+                  <span className="text-[10px] opacity-70">· {KIND_LABEL[s.kind] || s.kind}</span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      <div className="flex gap-2 mt-3 max-w-sm">
+        <input aria-label="Add another skill you have" className="input text-xs" placeholder="Another skill you have…"
+               value={custom} maxLength={40} onChange={e => setCustom(e.target.value)}
+               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom() } }} />
+        <button onClick={addCustom} className="btn-ghost text-xs px-3">Add</button>
       </div>
+
+      {applied.length > 0 && (
+        <p className="text-xs text-text-muted mt-3">
+          Already added to your skills: <span className="text-text-secondary">{applied.join(', ')}</span>
+        </p>
+      )}
     </div>
   )
 }

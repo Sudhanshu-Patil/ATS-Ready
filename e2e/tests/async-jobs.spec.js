@@ -160,3 +160,32 @@ test('an out-of-range limit is refused before anything is queued', async ({ page
   await page.getByRole('button', { name: 'Generate Cover Letter' }).click()
   await expect(page.getByText(/limit must be between 50 and 1500/)).toBeVisible()
 })
+
+test('score my current resume against the job, then suggestions only shrink across versions', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/generate')
+  await page.locator('textarea').first().fill(JD)
+
+  // Upload the current resume to compare against.
+  await page.locator('input[type="file"]').setInputFiles('fixtures/baseline_resume.docx')
+  await expect(page.getByText('baseline_resume.docx')).toBeVisible({ timeout: 15000 })
+
+  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await expect(page.getByLabel('Score comparison')).toBeVisible({ timeout: 60000 })
+  await expect(page.getByLabel('Score comparison')).toContainText('baseline_resume.docx')
+
+  // Technical suggestions: only skills the job asks for that the user's own material lacks.
+  const panel = page.getByText(/this job asks for that your profile does not show/)
+  await expect(panel).toBeVisible()
+  await expect(page.getByRole('button', { name: /FastAPI/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Docker/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Python/ })).toHaveCount(0)     // already in the uploaded resume
+
+  // Apply Docker only; FastAPI must remain, and nothing new may appear.
+  await page.getByRole('button', { name: /Docker/ }).click()
+  await page.getByRole('button', { name: /Regenerate with 1 selected/ }).click()
+  await expect(page.getByText(/Already added to your skills/)).toContainText('Docker', { timeout: 60000 })
+  await expect(page.getByRole('button', { name: /FastAPI/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Docker/ })).toHaveCount(0)
+  await expect(page.getByText(/1 skill this job asks for/)).toBeVisible()
+})

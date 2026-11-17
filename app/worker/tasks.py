@@ -39,12 +39,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
+from app.services import suggestion_store
+from app.services.ats_score import jd_terms as extract_terms
+from app.services.ats_score import score_view, terms_owned, view_from_resume, view_from_text
 from app.services.documents import fit_resume
+from app.services.grounding import add_known_terms, enforce_letter, enforce_resume, source_text
 from app.services.usage import mark_failed, tracked
 from app.db.models import CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
 from app.services.content_service import build_context, friendly_error
-from app.services.compaction import local_ats_score
 from app.services.metabase_service import metabase_service
 from app.services.resume_builder import resume_builder
 from app.services.scraper import ScraperError, RobotsBlocked, scraper_service
@@ -87,6 +90,7 @@ async def generate_resume(
     jd_url: Optional[str],
     jd_text: Optional[str],
     emphasis: Optional[list],
+    baseline_id: Optional[str] = None,       # the user's uploaded resume to compare against
 ) -> Dict[str, Any]:
     """
     Full resume generation pipeline as an ARQ background task.
@@ -167,27 +171,60 @@ async def generate_resume(
                     "Profile incomplete — please fill in Personal Info in the Metabase first."
                 )
 
-            # ── Step 4: Tailor resume with AI ─────────────────────────────────
-            logger.info("Calling AI resume tailor…")
-            tailored = ai_agent.tailor_resume(parsed_jd, profile, emphasis)
+            # ── Step 4: What the user already has, and the suggestion list for this JD ──
+            terms = extract_terms(parsed_jd)
+            term_names = [t.term for t in terms]
+            own_text = source_text(profile)
+            baseline_text, baseline_name = "", ""
+            if baseline_id:
+                stored = await cache_service.get(f"baseline:{user_id}:{baseline_id}") or {}
+                baseline_text, baseline_name = stored.get("text", ""), stored.get("filename", "")
+            # Built once per job description, then reused by every later version (see suggestion_store).
+            sugg = await suggestion_store.get_or_create(
+                db, user_id, jd_text, parsed_jd.job_title, terms, own_text + "\n" + baseline_text)
+            suggestion_store.apply_selected(sugg, emphasis or [])
+            await db.commit()
+            # Skills the user vouches for: ticked earlier or now, or already in the resume they uploaded.
+            confirmed = list(dict.fromkeys(suggestion_store.applied_terms(sugg) + terms_owned(terms, baseline_text)))
 
-            # ── Step 5: Score resume ──────────────────────────────────────────
-            logger.info("Scoring resume…")
-            try:
-                score_data = ai_agent.score_resume(parsed_jd, tailored)
-            except Exception as exc:
-                logger.warning("ATS scoring failed (non-fatal): %s", exc)
-                score_data = local_ats_score(parsed_jd.keywords, parsed_jd.required_skills, tailored)
+            # ── Step 5: Tailor, then enforce that nothing was invented ────────
+            logger.info("Calling AI resume tailor…")
+            tailored = await asyncio.to_thread(ai_agent.tailor_resume, parsed_jd, profile, confirmed)
+            tailored, corrections = enforce_resume(tailored, profile, term_names, confirmed)
+            tailored, _added = add_known_terms(tailored, terms_owned(terms, own_text) + confirmed)
+
+            # One page, always: measure the real layout, shrink fonts slightly, then trim the lowest-value
+            # content until it fits. The same plan renders the DOCX now and the PDF later.
+            fitted = await asyncio.to_thread(fit_resume, {
+                "personal": profile["personal"], "tailored": tailored, "education": profile.get("education", [])})
+
+            # Score what the user will actually download (deterministic: same input, same score).
+            view = view_from_resume(fitted["personal"], fitted["tailored"], fitted["education"])
+            score_data = score_view(view, terms)
+            open_items = suggestion_store.open_items(sugg)
+            score_data.update({
+                "open_suggestions": open_items,
+                "applied_terms": suggestion_store.applied_terms(sugg),
+                "projected_score": (score_view(view, terms, [i["term"] for i in open_items])["total_score"]
+                                    if open_items else score_data["total_score"]),
+                "corrections": len(corrections),
+            })
+            if baseline_id and not baseline_text:
+                score_data["baseline_expired"] = True        # held for 2 hours; the UI asks for it again
+            if baseline_text:
+                base = score_view(view_from_text(baseline_text), terms)
+                score_data["baseline"] = {
+                    "filename": baseline_name, "total_score": base["total_score"],
+                    **{k: base[k] for k in ("keyword_score", "skills_score", "action_verb_score", "format_score")},
+                    "missing_skills": base["missing_skills"][:12],
+                }
+                score_data["score_gain"] = round(score_data["total_score"] - base["total_score"], 1)
 
             # ── Step 6: Build .docx ───────────────────────────────────────────
             company_slug = _slugify(parsed_jd.company or "company", 20)
             title_slug   = _slugify(parsed_jd.job_title or "role", 20)
             filename     = f"resume_{title_slug}_{company_slug}.docx"
 
-            # One page, always: measure the real layout, shrink fonts slightly, then trim the lowest-value
-            # content until it fits. The same plan renders the DOCX now and the PDF later.
-            fitted = await asyncio.to_thread(fit_resume, {
-                "personal": profile["personal"], "tailored": tailored, "education": profile.get("education", [])})
             local_path = resume_builder.build(
                 personal=fitted["personal"],
                 tailored=fitted["tailored"],
@@ -263,7 +300,16 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
             row.job_app_id = job_app.id if job_app else None
             row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
             row.subject = result.get("subject")
-            row.body = result.get("body") or ""
+            # Nothing the candidate did not say: drop sentences with invented figures or claimed tools.
+            full_profile = (await cache_service.get_profile(user_id)
+                            or await metabase_service.get_full_profile_async(db, uuid.UUID(user_id)))
+            saved = await suggestion_store.load(db, uuid.UUID(user_id), jd_text)
+            body, fixes = enforce_letter(
+                result.get("body") or "", full_profile, jd_text, [t.term for t in extract_terms(parsed_jd)],
+                suggestion_store.applied_terms(saved) if saved else [])
+            if fixes:
+                logger.info("Cover letter %s: %d unsupported sentence(s) removed", letter_id, len(fixes))
+            row.body = body
             row.word_count = len(row.body.split())            # real count, not the model's estimate
             row.highlights = result.get("highlights", [])
             row.status = "done"

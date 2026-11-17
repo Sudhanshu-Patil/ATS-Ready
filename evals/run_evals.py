@@ -25,6 +25,18 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}")
 
 
+def profile_for_checks() -> dict:
+    """The eval profile in the shape the app stores it (experience/bullets as dicts)."""
+    p = PROFILE
+    return {
+        "personal": p["personal"],
+        "skills": [{"name": i, "category": g["category"]} for g in p["skills"] for i in g["items"]],
+        "experience": [{**w, "bullets": [{"text": b} for b in w["bullets"]]} for w in p["work_experience"]],
+        "projects": [{**pr, "title": pr["name"], "bullets": [{"text": b} for b in pr["bullets"]]} for pr in p["projects"]],
+        "education": p["education"],
+    }
+
+
 def blob(obj) -> str:
     return json.dumps(obj, ensure_ascii=False).lower()
 
@@ -51,6 +63,24 @@ def main() -> int:
     for kw in ("python", "fastapi", "postgresql", "redis", "docker", "kubernetes"):
         check(f"tailor: keeps JD skill '{kw}'", kw in text)
     check("tailor: does not claim skills the candidate lacks", "terraform" not in text and "kafka" not in text)
+
+    # No fabrication: how often does the REAL model invent, and does anything survive the checker?
+    from app.services.ats_score import jd_terms
+    from app.services.grounding import allowed_numbers, enforce_letter, enforce_resume, source_text, violation
+    from app.services.ats_score import _norm
+    jd_names = [t.term for t in jd_terms(jd)]
+    corpus_norm, allowed = _norm(source_text(profile_for_checks())), allowed_numbers(profile_for_checks())
+
+    def bullets_of(t):
+        return [b for k in ("work_experience", "projects") for e in t.get(k, []) for b in e.get("bullets", [])]
+    raw_bad = [b for b in bullets_of(tailored) if violation(b, allowed, corpus_norm, jd_names)]
+    print(f"INFO  model invented something in {len(raw_bad)} of {len(bullets_of(tailored))} bullets before the checker")
+    checked, _ = enforce_resume(tailored, profile_for_checks(), jd_names)
+    still_bad = [b for b in bullets_of(checked) if violation(b, allowed, corpus_norm, jd_names)]
+    check("fabrication: no bullet states an invented number or tool after the checker", not still_bad, str(still_bad[:2]))
+    check("fabrication: employers and roles are the candidate's own",
+          all((e["company"], e["role"]) in {(w["company"], w["role"]) for w in PROFILE["work_experience"]}
+              for e in checked.get("work_experience", [])))
 
     score = agent.score_resume(jd, tailored)
     check("score: in range", 0 <= score.get("total_score", -1) <= 100, str(score.get("total_score")))
@@ -79,6 +109,12 @@ def main() -> int:
     check("cover letter: 120-450 words", 120 <= len(body.split()) <= 450, f"{len(body.split())} words")
     check("cover letter: mentions a real employer", any(c.title().split()[0].lower() in body.lower() for c in REAL_COMPANIES))
     check("cover letter: no placeholders left", "[" not in body and "{" not in body)
+
+    cleaned, fixes = enforce_letter(body, profile_for_checks(), JDS["backend"], jd_names)
+    print(f"INFO  cover letter: {len(fixes)} sentence(s) with unsupported claims were removed by the checker")
+    check("cover letter: no invented numbers after the checker",
+          not (__import__("app.services.grounding", fromlist=["numbers_in"]).numbers_in(cleaned)
+               - allowed - __import__("app.services.grounding", fromlist=["numbers_in"]).numbers_in(JDS["backend"])))
 
     prep = agent.generate_interview_prep(jd, PROFILE, tailored)
     qs = prep.get("questions", [])

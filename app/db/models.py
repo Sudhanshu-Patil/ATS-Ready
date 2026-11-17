@@ -352,3 +352,24 @@ class UsageEvent(Base):
     duration_ms = Column(Integer, default=0, nullable=False)
     ok          = Column(Boolean, default=True, nullable=False)
     created_at  = Column(DateTime, default=_now, nullable=False, index=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resume suggestions: the technical gaps for one job description, kept across versions
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ResumeSuggestion(Base):
+    """Created once, the first time a job description is processed for a user, and never recomputed: every
+    later version of the resume for that same job description reads and updates this list, so suggestions do
+    not change from one run to the next and anything not yet applied stays available."""
+    __tablename__ = "resume_suggestions"
+    __table_args__ = (Index("ix_resume_suggestions_user_jd", "user_id", "jd_hash", unique=True),)
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    user_id    = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    jd_hash    = Column(String(64), nullable=False)
+    job_title  = Column(String(300), nullable=True)
+    # [{term, kind: required|preferred|keyword|user, why, importance, status: open|applied}]
+    items      = Column(JSONB, nullable=False, default=list)
+    created_at = Column(DateTime, default=_now, nullable=False)
+    updated_at = Column(DateTime, default=_now, onupdate=_now, nullable=False)
