@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List
@@ -743,12 +744,19 @@ async def import_resume(
         )
 
     from app.agents.ai_agent import ai_agent
+    from app.services.usage import ensure_budget, mark_failed, record_usage, start_tally
+    await ensure_budget(db, user.id)
+    tally, started, ok = start_tally(), time.monotonic(), False
     # The LLM call is sync/blocking — keep it off the event loop
     try:
         parsed = await asyncio.to_thread(ai_agent.parse_resume, text)
+        ok = True
     except Exception as exc:
+        mark_failed()
         logger.error("Resume parse failed for user %s: %s", user.id, exc)
         raise HTTPException(status_code=502, detail="AI parsing failed — please try again")
+    finally:
+        await record_usage(user.id, "import", tally, started, ok and not tally["failed"])
 
     counts = {"skills": 0, "experience": 0, "projects": 0, "education": 0}
 

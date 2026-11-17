@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # few hundred thousand tokens a day per model, so these leave headroom.
     LLM_DAILY_TOKEN_CAP: int = 600_000
     LLM_USER_DAILY_TOKEN_CAP: int = 120_000
+    # Rough rupees per 1,000 tokens (Groq list price blend); only used for the admin page's cost estimate.
+    LLM_COST_INR_PER_1K_TOKENS: float = 0.05
     # Optional Google dork search of ATS job pages (Programmable Search Engine; free 100 queries/day).
     # Create a search engine at programmablesearchengine.google.com (search the entire web), then set both.
     GOOGLE_CSE_KEY: str = ""

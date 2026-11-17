@@ -1,7 +1,7 @@
 """Admin analytics. Access is by email allowlist (ADMIN_EMAILS), verified-only."""
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,14 +72,20 @@ async def _credit_stats(db: AsyncSession, since30: datetime, by_kind_tokens: int
     }
 
 
+def _day_key(d) -> str:
+    return d.date().isoformat()
+
+
 @admin_router.get("/stats")
-async def stats(db: AsyncSession = Depends(get_db), _: User = Depends(require_admin)):
+async def stats(days: int = Query(30, ge=7, le=90), db: AsyncSession = Depends(get_db),
+                _: User = Depends(require_admin)):
+    """Everything on the admin page for the last `days` days (7 to 90)."""
     now = datetime.utcnow()
     day, week = now - timedelta(days=1), now - timedelta(days=7)
-    since30 = now - timedelta(days=30)
+    since = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    dates = [_day_key(since + timedelta(days=i)) for i in range(days)]
 
     users_total = await _count(db, User)
-
     status_rows = (await db.execute(
         select(JobApplication.status, func.count(JobApplication.id)).group_by(JobApplication.status))).all()
     active_24h = int((await db.execute(
@@ -87,42 +93,97 @@ async def stats(db: AsyncSession = Depends(get_db), _: User = Depends(require_ad
     active_7d = int((await db.execute(
         select(func.count(func.distinct(UsageEvent.user_id))).where(UsageEvent.created_at >= week))).scalar() or 0)
 
-    # Per-day series for the last 14 days.
-    series_since = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=13)
-    su_day = func.date_trunc("day", User.created_at)
-    d_signups = {r[0].date().isoformat(): r[1] for r in (await db.execute(
-        select(su_day, func.count(User.id)).where(User.created_at >= series_since).group_by(su_day))).all()}
-    ue_day = func.date_trunc("day", UsageEvent.created_at)
-    d_usage = {r[0].date().isoformat(): (r[1], r[2], r[3]) for r in (await db.execute(
-        select(ue_day, func.count(UsageEvent.id),
-               func.coalesce(func.sum(UsageEvent.tokens), 0), func.coalesce(func.sum(UsageEvent.ok.cast(Integer)), 0))
-        .where(UsageEvent.created_at >= series_since).group_by(ue_day))).all()}
+    # ── per-day series ────────────────────────────────────────────────────────
+    def per_day(col, *cols, where=(), group=None):
+        g = func.date_trunc("day", col)
+        return select(g, *cols).where(col >= since, *where).group_by(g, *(group or []))
+
+    signups = {_day_key(r[0]): r[1] for r in (await db.execute(per_day(User.created_at, func.count(User.id)))).all()}
+    verified_signups = {_day_key(r[0]): r[1] for r in (await db.execute(
+        per_day(User.created_at, func.count(User.id), where=(User.is_verified.is_(True),)))).all()}
+    usage_day = {_day_key(r[0]): r[1:] for r in (await db.execute(per_day(
+        UsageEvent.created_at, func.count(UsageEvent.id), func.coalesce(func.sum(UsageEvent.tokens), 0),
+        func.coalesce(func.sum(UsageEvent.ok.cast(Integer)), 0), func.count(func.distinct(UsageEvent.user_id))))).all()}
+    tokens_kind_day: dict = {}
+    for d, kind, tokens in (await db.execute(per_day(
+            UsageEvent.created_at, UsageEvent.kind, func.coalesce(func.sum(UsageEvent.tokens), 0),
+            group=[UsageEvent.kind]))).all():
+        tokens_kind_day.setdefault(_day_key(d), {})[kind] = int(tokens)
+    revenue_day: dict = {}
+    for d, cur, amount in (await db.execute(per_day(
+            Payment.paid_at, Payment.currency, func.coalesce(func.sum(Payment.amount_minor), 0),
+            where=(Payment.status == "paid",), group=[Payment.currency]))).all():
+        revenue_day.setdefault(_day_key(d), {})[cur] = int(amount) / 100
+    ledger_day: dict = {}
+    for d, reason, n, total in (await db.execute(per_day(
+            CreditLedger.created_at, CreditLedger.reason, func.count(CreditLedger.id), func.sum(CreditLedger.delta),
+            group=[CreditLedger.reason]))).all():
+        ledger_day.setdefault(_day_key(d), {})[reason] = (n, int(total))
+
+    kinds = sorted({k for v in tokens_kind_day.values() for k in v})
     daily = []
-    for i in range(14):
-        d = (series_since + timedelta(days=i)).date().isoformat()
-        runs, tokens, oks = d_usage.get(d, (0, 0, 0))
-        daily.append({"date": d, "signups": d_signups.get(d, 0), "runs": runs,
-                      "tokens": int(tokens), "failed": int(runs - oks)})
+    for d in dates:
+        runs, tokens, oks, actives = usage_day.get(d, (0, 0, 0, 0))
+        led = ledger_day.get(d, {})
+        daily.append({
+            "date": d, "signups": signups.get(d, 0), "verified_signups": verified_signups.get(d, 0),
+            "runs": runs, "tokens": int(tokens), "failed": int(runs - oks), "active_users": actives,
+            "revenue_inr": revenue_day.get(d, {}).get("INR", 0), "revenue_usd": revenue_day.get(d, {}).get("USD", 0),
+            "unlocks": led.get("unlock", (0, 0))[0], "refunds": led.get("refund", (0, 0))[0],
+            "credits_bought": led.get("purchase", (0, 0))[1],
+            "credits_free": led.get("signup", (0, 0))[1] + led.get("referral", (0, 0))[1],
+            "tokens_by_kind": tokens_kind_day.get(d, {}),
+        })
 
+    # ── by kind, latency, and when people use it ──────────────────────────────
     by_kind = [{"kind": k, "runs": r, "tokens": int(t), "avg_seconds": round((ms or 0) / 1000, 1),
-                "failure_rate": round(1 - (ok or 0) / r, 3) if r else 0}
-               for k, r, t, ms, ok in (await db.execute(
+                "p95_seconds": round((p95 or 0) / 1000, 1), "failure_rate": round(1 - (ok or 0) / r, 3) if r else 0,
+                "tokens_per_run": round(int(t) / r) if r else 0}
+               for k, r, t, ms, p95, ok in (await db.execute(
                    select(UsageEvent.kind, func.count(UsageEvent.id), func.coalesce(func.sum(UsageEvent.tokens), 0),
-                          func.avg(UsageEvent.duration_ms), func.sum(UsageEvent.ok.cast(Integer)))
-                   .where(UsageEvent.created_at >= since30).group_by(UsageEvent.kind))).all()]
+                          func.avg(UsageEvent.duration_ms),
+                          func.percentile_cont(0.95).within_group(UsageEvent.duration_ms),
+                          func.sum(UsageEvent.ok.cast(Integer)))
+                   .where(UsageEvent.created_at >= since).group_by(UsageEvent.kind))).all()]
+    heat = [[0] * 24 for _ in range(7)]                       # weekday (Mon=0) x hour, UTC
+    for dow, hour, n in (await db.execute(
+            select(func.extract("isodow", UsageEvent.created_at), func.extract("hour", UsageEvent.created_at),
+                   func.count(UsageEvent.id)).where(UsageEvent.created_at >= since)
+            .group_by(func.extract("isodow", UsageEvent.created_at), func.extract("hour", UsageEvent.created_at)))).all():
+        heat[int(dow) - 1][int(hour)] = n
 
+    # ── the path from sign-up to paying ──────────────────────────────────────
+    async def distinct_users(model, *where):
+        return int((await db.execute(select(func.count(func.distinct(model.user_id))).where(*where))).scalar() or 0)
+    funnel = [
+        {"step": "Signed up", "users": users_total},
+        {"step": "Verified email", "users": await _count(db, User, User.is_verified.is_(True))},
+        {"step": "Started a job", "users": await distinct_users(Application)},
+        {"step": "Unlocked a job", "users": await distinct_users(Application, Application.unlock_level != "none")},
+        {"step": "Paid", "users": await distinct_users(Payment, Payment.status == "paid")},
+    ]
+
+    credit_block = await _credit_stats(db, since, by_kind_tokens=sum(k["tokens"] for k in by_kind))
+    tokens_window = sum(d["tokens"] for d in daily)
+    rev_inr = sum(d["revenue_inr"] for d in daily)
+    est_cost = round(tokens_window / 1000 * settings.LLM_COST_INR_PER_1K_TOKENS, 2)
     queue = {
         "pending": sum([await _count(db, m, m.status == "pending") for m in (JobApplication, CoverLetter, InterviewPrep)]),
         "running": sum([await _count(db, m, m.status == "running") for m in (JobApplication, CoverLetter, InterviewPrep)]),
     }
     return {
+        "days": days,
         "users": {"total": users_total, "active_24h": active_24h, "active_7d": active_7d,
-                  "verified": await _count(db, User, User.is_verified.is_(True))},
-        "credits": await _credit_stats(db, since30, by_kind_tokens=sum(k["tokens"] for k in by_kind)),
-        "resumes_by_status": {s: c for s, c in status_rows},
+                  "verified": funnel[1]["users"]},
+        "credits": credit_block,
+        "funnel": funnel,
+        "money": {"revenue_inr": rev_inr, "revenue_usd": sum(d["revenue_usd"] for d in daily),
+                  "est_ai_cost_inr": est_cost, "cost_per_1k_tokens_inr": settings.LLM_COST_INR_PER_1K_TOKENS,
+                  "margin_inr": round(rev_inr - est_cost, 2)},
+        "resumes_by_status": {s_: c for s_, c in status_rows},
         "queue": queue,
         "llm": {"tokens_today": await tokens_today(db), "daily_cap": settings.LLM_DAILY_TOKEN_CAP,
-                "per_user_cap": settings.LLM_USER_DAILY_TOKEN_CAP, "by_kind_30d": by_kind},
+                "per_user_cap": settings.LLM_USER_DAILY_TOKEN_CAP, "by_kind": by_kind, "kinds": kinds},
+        "heatmap": heat,
         "daily": daily,
     }
-

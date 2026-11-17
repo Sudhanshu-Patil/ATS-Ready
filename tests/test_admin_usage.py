@@ -30,7 +30,7 @@ async def test_admin_stats_only_for_allowlisted_verified_users(client, monkeypat
     r = await client.get("/api/admin/stats", headers=bearer(admin))
     assert r.status_code == 200
     body = r.json()
-    assert body["users"]["total"] >= 2 and len(body["daily"]) == 14
+    assert body["users"]["total"] >= 2 and len(body["daily"]) == 30
     assert "plans" not in body["users"] and body["users"]["verified"] >= 1
     credits = body["credits"]
     assert set(credits) >= {"revenue_total", "revenue_30d", "paying_users", "credits", "last_30d", "referrals"}
@@ -127,3 +127,33 @@ async def test_admin_sees_money_and_credits(client, monkeypatch):
     assert c["paying_users"] >= 1 and c["credits"]["sold"] >= 6 and c["credits"]["free_given"] >= 1
     assert c["credits"]["outstanding_job"] >= 7 and {"pack": "starter", "payments": 1} in c["by_pack"] or c["by_pack"]
     assert c["pack_prices_inr"]["single"] == 10
+
+
+async def test_follow_up_drafts_and_resume_imports_are_counted(client, monkeypatch):
+    import io
+
+    from app.agents.ai_agent import ai_agent
+    from app.api import application_routes
+    from app.services.usage import add_usage
+    monkeypatch.setattr(settings, "LLM_FAKE", False)
+    monkeypatch.setattr(settings, "BILLING_ENABLED", False)
+
+    def fake_call(*a, **k):
+        add_usage(1234)
+        return '{"subject": "Hello", "body": "Following up."}'
+    monkeypatch.setattr(application_routes.ai_agent, "_call", fake_call)
+    monkeypatch.setattr(ai_agent, "parse_resume", lambda text: (add_usage(777), {})[1])
+    monkeypatch.setattr("app.api.routes._extract_resume_text", lambda name, data: "x" * 400)
+
+    reg = await register(client, unique_email())
+    h = bearer(reg)
+    await client.post("/api/metabase/personal", headers=h, json={"full_name": "A B", "email": "a@atsready-tests.dev"})
+    job = (await client.post("/api/applications", headers=h, json={"company": "Acme", "role": "Dev"})).json()
+    assert (await client.post(f"/api/applications/{job['id']}/follow-up-draft", headers=h)).status_code == 200
+    r = await client.post("/api/metabase/import-resume", headers=h, files={"file": ("cv.pdf", io.BytesIO(b"%PDF"), "application/pdf")})
+    assert r.status_code == 200, r.text
+
+    uid = (await client.get("/api/auth/me", headers=h)).json()["id"]
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(UsageEvent).where(UsageEvent.user_id == uid))).scalars().all()
+    assert {(e.kind, e.tokens) for e in rows} == {("follow_up", 1234), ("import", 777)}
