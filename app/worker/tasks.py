@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
+from app.services.documents import fit_resume
 from app.services.usage import mark_failed, tracked
 from app.db.models import CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
@@ -183,11 +184,16 @@ async def generate_resume(
             title_slug   = _slugify(parsed_jd.job_title or "role", 20)
             filename     = f"resume_{title_slug}_{company_slug}.docx"
 
+            # One page, always: measure the real layout, shrink fonts slightly, then trim the lowest-value
+            # content until it fits. The same plan renders the DOCX now and the PDF later.
+            fitted = await asyncio.to_thread(fit_resume, {
+                "personal": profile["personal"], "tailored": tailored, "education": profile.get("education", [])})
             local_path = resume_builder.build(
-                personal=profile["personal"],
-                tailored=tailored,
-                education=profile.get("education", []),
+                personal=fitted["personal"],
+                tailored=fitted["tailored"],
+                education=fitted["education"],
                 filename=filename,
+                scale=fitted["scale"],
             )
 
             # ── Step 7: Upload to S3/R2 ───────────────────────────────────────
@@ -202,8 +208,7 @@ async def generate_resume(
             await _update_job_status(db, job_app_id, "done", {
                 "resume_s3_key":  s3_key,
                 "resume_filename": filename,
-                "resume_data": {"personal": profile["personal"], "tailored": tailored,
-                                "education": profile.get("education", [])},
+                "resume_data": fitted,
                 "ats_score":       score_data.get("total_score", 0),
                 "ats_breakdown":   score_data,
                 "skills_matched":  score_data.get("matched_skills", []),
@@ -240,7 +245,8 @@ async def generate_resume(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @tracked("cover_letter")
-async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone):
+async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone,
+                                     limit=None, limit_unit=None):
     """Fill in a pending CoverLetter row. Failures are recorded on the row (no
     arq retry: the user sees the error and can resubmit)."""
     async with AsyncSessionLocal() as db:
@@ -253,12 +259,12 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
             profile, parsed_jd, tailored, job_app = await build_context(
                 jd_text, uuid.UUID(user_id), db, job_app_id)
             result = await asyncio.to_thread(
-                ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone)
+                ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone, limit_unit, limit)
             row.job_app_id = job_app.id if job_app else None
             row.job_title, row.company = parsed_jd.job_title, parsed_jd.company
             row.subject = result.get("subject")
             row.body = result.get("body") or ""
-            row.word_count = result.get("word_count")
+            row.word_count = len(row.body.split())            # real count, not the model's estimate
             row.highlights = result.get("highlights", [])
             row.status = "done"
         except Exception as exc:

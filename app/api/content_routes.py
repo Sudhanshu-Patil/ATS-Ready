@@ -30,6 +30,7 @@ from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
+from app.services import letter_limit
 from app.services.cache_service import cache_service
 from app.services.content_service import ProfileIncomplete, friendly_error
 from app.services.metabase_service import metabase_service
@@ -48,6 +49,8 @@ class CoverLetterRequest(BaseModel):
     jd_text:    str
     job_app_id: Optional[str] = None   # link to an existing resume job
     tone:       str = "professional"   # professional | conversational | enthusiastic
+    limit:      Optional[int] = None   # the user's own cap, if the application has one
+    limit_unit: str = "words"          # words | chars
 
     class Config:
         json_schema_extra = {
@@ -105,12 +108,18 @@ async def generate_cover_letter(
     _check_jd(request.jd_text)
     if request.tone not in TONES:
         raise HTTPException(status_code=422, detail="tone must be professional, conversational, or enthusiastic")
+    if request.limit is not None:
+        try:
+            letter_limit.validate(request.limit_unit, request.limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
 
     row = CoverLetter(
         user_id=user.id, jd_text=request.jd_text[:3000], body="",
         tone=request.tone, status="pending", created_at=datetime.utcnow(),
+        length_limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
     )
     db.add(row)
     await db.commit()
@@ -120,6 +129,7 @@ async def generate_cover_letter(
         db, row, "generate_cover_letter_task",
         letter_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
         job_app_id=request.job_app_id, tone=request.tone,
+        limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
     )
     logger.info("Queued cover letter %s for user %s", row.id, user.id)
     return {"id": str(row.id), "status": "pending"}
@@ -144,6 +154,8 @@ async def list_cover_letters(
             "subject":    cl.subject,
             "word_count": cl.word_count,
             "tone":       cl.tone,
+            "length_limit": cl.length_limit,
+            "limit_unit":  cl.limit_unit,
             "status":     cl.status,
             "error":      cl.error,
             "created_at": str(cl.created_at),
@@ -182,6 +194,8 @@ async def get_cover_letter(
         "word_count": cl.word_count,
         "highlights": cl.highlights,
         "tone":       cl.tone,
+        "length_limit": cl.length_limit,
+        "limit_unit":  cl.limit_unit,
         "status":     cl.status,
         "error":      cl.error,
         "created_at": str(cl.created_at),
@@ -203,7 +217,8 @@ async def retry_cover_letter(
     cl.status, cl.error = "pending", None
     await db.commit()
     await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
-                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional")
+                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
+                           limit=cl.length_limit, limit_unit=cl.limit_unit)
     return {"id": str(cl.id), "status": "pending"}
 
 

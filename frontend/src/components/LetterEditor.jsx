@@ -15,6 +15,14 @@ export default function LetterEditor({ letter, onSaved }) {
 
   const dirty = subject !== (letter.subject || '') || body !== (letter.body || '')
   const words = body.trim() ? body.trim().split(/\s+/).length : 0
+  // The cap the user set when generating (if any); the live count warns when edits push past it.
+  const limit = letter.length_limit
+  const unit = letter.limit_unit
+  const used = unit === 'chars' ? body.length : words
+  const over = Boolean(limit) && used > limit
+  const counter = limit
+    ? `${used} / ${limit} ${unit === 'chars' ? 'characters' : 'words'}`
+    : `${words} words · ${body.length} characters`
 
   const save = async () => {
     if (!body.trim()) { toast.error('The letter cannot be empty'); return false }
@@ -62,7 +70,7 @@ export default function LetterEditor({ letter, onSaved }) {
           </div>
           <div>
             <label htmlFor={`cl-body-${letter.id}`} className="block text-xs text-text-muted mb-1">
-              Letter <span className="text-text-muted">({words} words)</span>
+              Letter <span className={over ? 'text-red-400 font-medium' : 'text-text-muted'} aria-live="polite">({counter}{over ? ': over your limit' : ''})</span>
             </label>
             <textarea id={`cl-body-${letter.id}`} className="input min-h-64 resize-y text-sm leading-relaxed font-sans"
                       value={body} onChange={e => setBody(e.target.value)} />
@@ -87,6 +95,10 @@ export default function LetterEditor({ letter, onSaved }) {
             <pre className="text-sm text-text-primary whitespace-pre-wrap font-sans leading-relaxed">{letter.body}</pre>
           </div>
         </>
+      )}
+
+      {!editing && (
+        <p className={over ? 'text-xs text-red-400' : 'text-xs text-text-muted'}>{counter}{over ? ': over your limit' : ''}</p>
       )}
 
       <div className="flex flex-wrap gap-2 mt-3">

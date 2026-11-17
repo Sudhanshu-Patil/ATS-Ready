@@ -10,7 +10,7 @@ for operations.
 # Backend (use the venv: venv/Scripts/python on Windows)
 pytest -q                                   # 150+ tests, needs local Postgres + Redis (docker compose up db redis)
 ruff check app main.py tests scripts evals  # lint (config in ruff.toml)
-alembic upgrade head                        # migrations (head: 0008)
+alembic upgrade head                        # migrations (head: 0011)
 uvicorn main:app --reload                   # API on :8000
 arq app.worker.tasks.WorkerSettings         # worker (LLM jobs run here, one at a time)
 python -m evals.run_evals                   # REAL model quality + prompt-injection evals (spends Groq quota)

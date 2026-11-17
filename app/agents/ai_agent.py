@@ -11,6 +11,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.config import settings
+from app.services import letter_limit
 from app.models.schemas import ParsedJD
 from app.services.compaction import (
     compact_jd, compact_profile, ground_skills, head_tail, local_ats_score, resume_text_for_scoring,
@@ -434,9 +435,12 @@ Always respond with valid JSON only."""
         candidate_data: Dict[str, Any],
         tailored_resume: Dict[str, Any],
         tone: str = "professional",  # professional | conversational | enthusiastic
+        limit_unit: Optional[str] = None,   # 'words' | 'chars': the user's own cap, if any
+        limit: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        Generate a personalized cover letter.
+        Generate a personalized cover letter. With a limit the letter is guaranteed to respect it.
+
 
         Args:
             parsed_jd       — structured JD from parse_jd()
@@ -470,7 +474,7 @@ Most Relevant Experience: {json.dumps([
 
 === INSTRUCTIONS ===
 Tone: {tone}
-Length: 250-320 words (3-4 paragraphs)
+{letter_limit.prompt_line(limit_unit, limit) if limit and limit_unit else "Length: 250-320 words (3-4 paragraphs)"}
 
 Paragraph 1: Hook — why this specific role at this specific company excites the candidate.
 Paragraph 2: Most relevant achievement (quantified) that directly maps to a key requirement.
@@ -494,18 +498,23 @@ Return JSON:
 
         response = self._call(self.SYSTEM_COVER_LETTER, prompt, max_tokens=2000)
         try:
-            return json.loads(response.strip())
+            result = json.loads(response.strip())
         except json.JSONDecodeError:
-            import re
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
-                return json.loads(match.group())
-            return {
-                "subject": f"Application for {parsed_jd.job_title}",
-                "body": response,
-                "word_count": len(response.split()),
-                "highlights": [],
-            }
+                result = json.loads(match.group())
+            else:
+                result = {
+                    "subject": f"Application for {parsed_jd.job_title}",
+                    "body": response,
+                    "highlights": [],
+                }
+        body = str(result.get("body") or "")
+        if limit and limit_unit:                      # models miscount: enforce the user's cap ourselves
+            body = letter_limit.fit_to_limit(body, limit_unit, limit)
+        result["body"] = body
+        result["word_count"] = len(body.split())
+        return result
 
     # ─── Stage 5: Interview Prep ──────────────────────────────────────────────
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
+from docx.shared import Pt, Inches, Mm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
@@ -107,6 +107,22 @@ def _add_plain_run(paragraph, text: str, size_pt: float = 8.5,
     run.font.color.rgb = color
 
 
+def _scale_document(doc: Document, k: float) -> None:
+    """Shrink every font size and paragraph spacing by k (the one-page fit plan). Done on the XML so the many
+    hand-set sizes above do not each need a scale argument."""
+    if k >= 0.999:
+        return
+    body = doc.element.body
+    for tag in ("w:sz", "w:szCs"):
+        for el in body.iter(qn(tag)):
+            el.set(qn("w:val"), str(max(2, round(int(el.get(qn("w:val"))) * k))))
+    for sp in body.iter(qn("w:spacing")):
+        for attr in ("w:before", "w:after"):
+            if sp.get(qn(attr)) is not None:
+                sp.set(qn(attr), str(round(int(sp.get(qn(attr))) * k)))
+    doc.styles["Normal"].font.size = Pt(9.5 * k)
+
+
 class ResumeBuilder:
 
     def __init__(self):
@@ -115,6 +131,7 @@ class ResumeBuilder:
     def _new_doc(self) -> Document:
         doc = Document()
         for section in doc.sections:
+            section.page_width, section.page_height = Mm(210), Mm(297)      # A4 (fit is measured to also fit Letter)
             section.top_margin    = Inches(0.5)
             section.bottom_margin = Inches(0.5)
             section.left_margin   = Inches(0.65)
@@ -334,7 +351,9 @@ class ResumeBuilder:
         tailored: Dict,
         education: List[Dict],
         filename: Optional[str] = None,
+        scale: float = 1.0,
     ) -> Path:
+        """scale < 1 shrinks fonts/spacing (the one-page plan from documents.fit_resume)."""
         self.doc = self._new_doc()
 
         self._header(personal)
@@ -361,6 +380,7 @@ class ResumeBuilder:
 
         out = settings.OUTPUT_DIR / filename
         out.parent.mkdir(parents=True, exist_ok=True)
+        _scale_document(self.doc, scale)
         self.doc.save(str(out))
         return out
 

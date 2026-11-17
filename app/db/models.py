@@ -302,6 +302,9 @@ class CoverLetter(Base):
     word_count  = Column(Integer(), nullable=True)
     highlights  = Column(JSONB, default=list)
     tone        = Column(String(30), default="professional")
+    # The user's own cap (application forms often limit words or characters); None = no cap
+    length_limit = Column(Integer(), nullable=True)
+    limit_unit  = Column(String(10), nullable=True)           # 'words' | 'chars'
     # pending -> running -> done | failed (generated in the arq worker)
     status      = Column(String(20), default="done", server_default="done", nullable=False)
     error       = Column(Text, nullable=True)

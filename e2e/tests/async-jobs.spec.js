@@ -135,3 +135,28 @@ test('a generated resume can be downloaded as PDF as well as DOCX', async ({ pag
   const { readFileSync } = await import('node:fs')
   expect(readFileSync(path).subarray(0, 5).toString()).toBe('%PDF-')
 })
+
+test('cover letter length limit: set it when generating, see the live count, get warned when over', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/cover-letter')
+  await page.locator('textarea').fill(JD)
+  await page.getByLabel(/^Length limit/).fill('50')
+  await page.getByLabel('Limit unit').selectOption('words')
+  await page.getByRole('button', { name: 'Generate Cover Letter' }).click()
+  await expect(page.getByText(/\d+ \/ 50 words/).first()).toBeVisible({ timeout: 30000 })
+
+  await page.getByRole('button', { name: 'Edit' }).click()
+  await page.getByLabel(/^Letter/).fill(Array(60).fill('word').join(' '))
+  await expect(page.getByText(/over your limit/).first()).toBeVisible()
+  await page.getByLabel(/^Letter/).fill('Short and within the limit.')
+  await expect(page.getByText(/over your limit/)).toHaveCount(0)
+})
+
+test('an out-of-range limit is refused before anything is queued', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/cover-letter')
+  await page.locator('textarea').fill(JD)
+  await page.getByLabel(/^Length limit/).fill('5')
+  await page.getByRole('button', { name: 'Generate Cover Letter' }).click()
+  await expect(page.getByText(/limit must be between 50 and 1500/)).toBeVisible()
+})
