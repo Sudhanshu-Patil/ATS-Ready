@@ -113,6 +113,7 @@ function PersonalTab() {
   const [form, setForm]   = useState({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
+  const [locationsText, setLocationsText] = useState(null)   // null = untouched, show the saved list
 
   useEffect(() => {
     metabaseAPI.getPersonal()
@@ -124,8 +125,13 @@ function PersonalTab() {
   const save = async () => {
     setSaving(true)
     try {
-      await metabaseAPI.savePersonal(form)
-      toast.success('Personal info saved')
+      await metabaseAPI.savePersonal({
+        ...form,
+        preferred_locations: (locationsText ?? (form.preferred_locations || []).join(', '))
+          .split(/[,;\n]+/).map(s => s.trim()).filter(Boolean),
+        remote_ok: form.remote_ok !== false,
+      })
+      toast.success('Personal info saved. Job suggestions will refresh.')
     } catch { toast.error('Save failed') }
     finally { setSaving(false) }
   }
@@ -163,6 +169,37 @@ function PersonalTab() {
         {field('location',  'Location',  'text',  'Bangalore, India')}
         {field('linkedin',  'LinkedIn',  'url',   'https://linkedin.com/in/...')}
         {field('github',    'GitHub',    'url',   'https://github.com/...')}
+      </div>
+      <div className="rounded-xl border border-bg-border p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-text-primary">Job search location</h3>
+        <div>
+          <label htmlFor="pref-locations" className="block text-sm font-medium text-text-secondary mb-1.5">
+            Where would you work?
+          </label>
+          <input
+            id="pref-locations"
+            className="input text-sm"
+            placeholder="Bangalore, Pune, India"
+            value={locationsText ?? (form.preferred_locations || []).join(', ')}
+            onChange={e => setLocationsText(e.target.value)}
+          />
+          <p className="text-xs text-text-muted mt-1.5">
+            Cities and/or countries, separated by commas. Job suggestions only show roles in these places
+            (leave empty to use the location above).
+          </p>
+        </div>
+        <label className="flex items-start gap-2 text-sm text-text-secondary cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={form.remote_ok !== false}
+            onChange={e => setForm(f => ({ ...f, remote_ok: e.target.checked }))}
+          />
+          <span>
+            Include remote jobs. Only remote roles open to your location are shown (a "Remote (US only)" role is
+            not shown if you work from India).
+          </span>
+        </label>
       </div>
       {field('portfolio',            'Portfolio URL',          'url',  'https://...')}
       {field('professional_summary', 'Professional summary',  'text', 'Senior engineer with...')}

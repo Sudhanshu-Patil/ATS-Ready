@@ -31,7 +31,8 @@ processes (PowerShell `Get-CimInstance Win32_Process`), not just the one you sta
 - `app/agents/ai_agent.py` prompts and pipeline stages; every system prompt gets `INJECTION_GUARD`.
 - `app/services/llm_client.py` provider access: fallback models, token-per-minute governor, `Retry-After`, 413 handling.
 - `app/services/compaction.py` local (no-LLM) context shrinking, `ground_skills` (drops skills the candidate does not have).
-- `app/services/job_recommendations.py` fetch + scoring of job suggestions; cold fetch runs in the background (`start_refresh`).
+- `app/services/job_recommendations.py` scoring + ranking of job suggestions (hard location gate in `rank_jobs`); cold fetch runs in the background (`start_refresh`).
+- `app/services/job_sources.py` the free job sources (YC, HN, RemoteOK, Himalayas, WWR, Jobicy, optional Google dork); `app/services/locations.py` place parsing and the user's location preferences.
 - `app/services/usage.py` token tally per run, daily spend caps, `UsageEvent` rows for the admin page.
 - `app/services/scraper.py` job-URL scraping with an SSRF guard (`validate_public_url`).
 - `app/worker/tasks.py` arq tasks (`@tracked` records usage; note `enqueue()` passes keyword arguments).

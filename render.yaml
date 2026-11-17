@@ -26,6 +26,8 @@ services:
       - { key: JWT_SECRET, generateValue: true }
       - { key: LLM_API_KEY, sync: false }
       - { key: APIFY_API_TOKEN, sync: false }
+      - { key: GOOGLE_CSE_KEY, sync: false }         # optional: dork search of Greenhouse/Lever/Ashby pages
+      - { key: GOOGLE_CSE_CX, sync: false }
       - { key: PAYPAL_CLIENT_ID, sync: false }
       - { key: PAYPAL_CLIENT_SECRET, sync: false }
       - { key: GOOGLE_CLIENT_ID, sync: false }

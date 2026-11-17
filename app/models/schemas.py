@@ -12,7 +12,7 @@ CHANGES vs. original:
 import uuid
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # ─────────────────────────────────────────────────────────────────────────────
 # JD Parsing
@@ -230,6 +230,9 @@ class PersonalInfoUpdate(BaseModel):
     github:               Optional[str] = None
     portfolio:            Optional[str] = None
     professional_summary: Optional[str] = None
+    # job-search preferences; None = leave unchanged
+    preferred_locations:  Optional[List[str]] = Field(default=None, max_length=10)
+    remote_ok:            Optional[bool] = None
 
 
 class JobApplicationOut(BaseModel):

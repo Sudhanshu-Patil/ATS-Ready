@@ -298,11 +298,17 @@ async def upsert_personal_info(
         select(PersonalInfo).where(PersonalInfo.user_id == user.id)
     )
     info = result.scalar_one_or_none()
+    values = data.model_dump()
+    if values.get("preferred_locations") is not None:
+        values["preferred_locations"] = [p.strip()[:80] for p in values["preferred_locations"] if p and p.strip()]
+    for key in ("preferred_locations", "remote_ok"):      # omitted -> keep what is saved
+        if values[key] is None:
+            del values[key]
     if info:
-        for k, v in data.model_dump().items():
+        for k, v in values.items():
             setattr(info, k, v)
     else:
-        info = PersonalInfo(user_id=user.id, **data.model_dump())
+        info = PersonalInfo(user_id=user.id, **values)
         db.add(info)
     await db.commit()
     await cache_service.invalidate_profile(user.id)
