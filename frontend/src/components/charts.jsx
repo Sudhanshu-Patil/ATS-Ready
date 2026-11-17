@@ -62,7 +62,7 @@ function useWidth() {
 export function ChartCard({ title, subtitle, table, children, className }) {
   const [view, setView] = useState('chart')
   return (
-    <section className={clsx('card', className)}>
+    <section className={clsx('card min-w-0', className)}>
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <h2 className="font-semibold text-text-primary">{title}</h2>
@@ -70,7 +70,7 @@ export function ChartCard({ title, subtitle, table, children, className }) {
         </div>
         {table && (
           <button onClick={() => setView(view === 'chart' ? 'table' : 'chart')}
-                  className="text-xs text-text-muted hover:text-text-primary underline flex-shrink-0">
+                  className="text-xs text-text-muted hover:text-text-primary underline flex-shrink-0 py-1 px-1">
             {view === 'chart' ? 'Table view' : 'Chart view'}
           </button>
         )}
@@ -142,10 +142,11 @@ export function LineChart({ data, series, height = 190, area = false, valueFmt =
   const h = hover === null ? null : data[hover]
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0 w-full">
       <Legend items={series} />
       <svg width={width} height={height} role="img" aria-label={label}
-           tabIndex={0} className="viz-hit block"
+           tabIndex={0} className="viz-hit block max-w-full" style={{ touchAction: 'pan-y' }}
+           onPointerDown={(e) => move(e.clientX, e.currentTarget.getBoundingClientRect())}
            onPointerMove={(e) => move(e.clientX, e.currentTarget.getBoundingClientRect())}
            onPointerLeave={() => setHover(null)}
            onKeyDown={(e) => {
@@ -212,10 +213,10 @@ export function Columns({ data, keys, height = 190, valueFmt = fmt, label }) {
   const h = hover === null ? null : data[hover]
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0 w-full">
       <Legend items={keys} />
-      <svg width={width} height={height} role="img" aria-label={label} tabIndex={0} className="viz-hit block"
-           onPointerLeave={() => setHover(null)}
+      <svg width={width} height={height} role="img" aria-label={label} tabIndex={0} className="viz-hit block max-w-full"
+           style={{ touchAction: 'pan-y' }} onPointerLeave={() => setHover(null)}
            onKeyDown={(e) => {
              if (e.key === 'ArrowRight') setHover((v) => Math.min(n - 1, (v ?? -1) + 1))
              if (e.key === 'ArrowLeft') setHover((v) => Math.max(0, (v ?? n) - 1))
@@ -245,7 +246,7 @@ export function Columns({ data, keys, height = 190, valueFmt = fmt, label }) {
                   : <rect key={k.key} x={cx - bw / 2} y={yy} width={bw} height={hgt} fill={k.color} />
               })}
               <rect x={PAD.l + slot * i} y={PAD.t} width={slot} height={plotH} fill="transparent" className="cursor-default"
-                    onPointerEnter={() => setHover(i)} onPointerMove={() => setHover(i)} />
+                    onPointerEnter={() => setHover(i)} onPointerDown={() => setHover(i)} onPointerMove={() => setHover(i)} />
               {i % labelEvery === 0 && <text x={cx} y={height - 5} textAnchor="middle" fontSize="10" fill="var(--viz-ink-3)">{shortDate(d.date)}</text>}
             </g>
           )

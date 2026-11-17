@@ -20,7 +20,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <BrowserRouter>
         <ErrorBoundary><App /></ErrorBoundary>
         <Toaster
-          position="top-right"
+          position={window.matchMedia('(max-width: 639px)').matches ? 'bottom-center' : 'top-right'}
+          containerStyle={{ bottom: 20 }}
           toastOptions={{
             style: {
               background: '#13131A',

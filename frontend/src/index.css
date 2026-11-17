@@ -182,3 +182,15 @@
     animation: none !important;
   }
 }
+
+/* ── Phones ─────────────────────────────────────────────────────────────────
+   iOS Safari zooms the whole page when a text field under 16px gets focus, and it stays zoomed. Keep fields at
+   16px on small screens. Touch screens also get 44px-high buttons (WCAG target size) instead of the dense desktop ones. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea { font-size: 16px !important; }
+}
+@media (pointer: coarse) {
+  .btn-primary, .btn-ghost { min-height: 44px; }
+  button.text-xs, button.text-sm:not(.btn-primary):not(.btn-ghost) { min-height: 36px; }
+  nav[aria-label='Sidebar'] a, .nav-item { min-height: 44px; }
+}
