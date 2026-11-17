@@ -24,7 +24,7 @@ const NAV = [
   { to: '/cover-letter',   icon: Mail,            label: 'Cover Letter' },
   { to: '/interview-prep', icon: BrainCircuit,    label: 'Interview Prep' },
   { to: '/assistant',      icon: MessageSquare,   label: 'Application Answers' },
-  { to: '/metabase',       icon: Database,        label: 'Metabase' },
+  { to: '/metabase',       icon: Database,        label: 'My profile' },
   { to: '/settings',       icon: Settings,        label: 'Settings' },
 ]
 

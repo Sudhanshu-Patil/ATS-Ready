@@ -136,7 +136,7 @@ export default function Dashboard() {
                   <FileText size={15} className="text-text-secondary" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-text-primary">Update Metabase</p>
+                  <p className="text-sm font-medium text-text-primary">Update your profile</p>
                   <p className="text-xs text-text-muted">Skills, experience, projects</p>
                 </div>
               </Link>

@@ -41,7 +41,7 @@ function seeded(i) {
 }
 
 const PHASES = [
-  { title: 'Parsing your profile',        desc: 'Skills, experience and projects are read from your Metabase and structured for semantic matching.' },
+  { title: 'Parsing your profile',        desc: 'Skills, experience and projects are read from your profile and structured for semantic matching.' },
   { title: 'Injecting targeted keywords', desc: 'The job description is parsed and missing ATS keywords flow into your strongest bullet points.' },
   { title: 'Synthesis complete',          desc: 'A recruiter-ready one-page resume (Word and PDF), scored against the exact job description you pasted.' },
 ]

@@ -100,14 +100,14 @@ async def test_not_configured_returns_503(client, monkeypatch):
     assert (await google(client)).status_code == 503
     assert (await client.get("/api/auth/config")).json() == {
         "google_client_id": None, "sentry_dsn": None, "environment": settings.ENVIRONMENT,
-        "contact_email": None, "contact_phone": None, "business_name": None}
+        "contact_email": settings.CONTACT_EMAIL or None, "contact_phone": None, "business_name": None}
 
 
 async def test_config_exposes_only_the_client_id(client):
     assert (await client.get("/api/auth/config")).json() == {
         "google_client_id": "test-client.apps.googleusercontent.com",
         "sentry_dsn": None, "environment": settings.ENVIRONMENT,
-        "contact_email": None, "contact_phone": None, "business_name": None}
+        "contact_email": settings.CONTACT_EMAIL or None, "contact_phone": None, "business_name": None}
 
 
 async def test_google_only_user_cannot_change_password_without_one(client, monkeypatch):

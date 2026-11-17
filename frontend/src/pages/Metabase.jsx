@@ -89,9 +89,9 @@ export default function Metabase() {
           <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
             <User size={18} className="text-brand" />
           </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Metabase</h1>
+          <h1 className="font-display text-2xl font-bold text-text-primary">My profile</h1>
         </div>
-        <p className="text-text-secondary">Your personal knowledge base — the AI uses this to tailor every resume.</p>
+        <p className="text-text-secondary">Your skills, experience and projects. Everything the AI writes for you is built from this, so keep it accurate.</p>
       </motion.div>
 
       <motion.div initial="hidden" animate="visible" variants={fadeInUp}>
