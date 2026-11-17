@@ -11,6 +11,7 @@ import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
 import ResumeHistory from '../components/ResumeHistory'
 import { useActivityStore } from '../store/activity'
+import { downloadFile } from '../lib/download'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -118,7 +119,7 @@ export default function Generator() {
         setResult(r)
         updateJob(jobId, {
           status: 'done', job_title: r.job_title, company: r.company,
-          ats_score: r.ats_score, download_url: r.download_url,
+          ats_score: r.ats_score, download_url: r.download_url, pdf_url: r.pdf_url,
         })
         refresh()
       }).catch(() => setError('Could not load the result — check History.'))
@@ -260,9 +261,17 @@ export default function Generator() {
                 </div>
               </div>
 
-              <a href={result.download_url} className="btn-primary inline-flex items-center gap-2 text-sm">
-                <Download size={14} /> Download Resume
-              </a>
+              <div className="flex flex-wrap gap-2">
+                <a href={result.download_url} className="btn-primary inline-flex items-center gap-2 text-sm">
+                  <Download size={14} /> Download DOCX
+                </a>
+                {result.pdf_url && (
+                  <button onClick={() => downloadFile(result.pdf_url, 'resume.pdf').catch(() => toast.error('Could not download the PDF'))}
+                          className="btn-ghost inline-flex items-center gap-2 text-sm">
+                    <Download size={14} /> Download PDF
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 

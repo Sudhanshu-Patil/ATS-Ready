@@ -265,6 +265,8 @@ class JobApplication(Base):
     resume_s3_key   = Column(String(500), nullable=True)
     resume_filename = Column(String(255), nullable=True)
     resume_path     = Column(String(500), nullable=True)   # legacy
+    # {personal, tailored, education} the .docx was built from; lets us render a PDF later
+    resume_data     = Column(JSONB, nullable=True)
 
     ats_score       = Column(Float, nullable=True)
     ats_breakdown   = Column(JSONB, nullable=True)

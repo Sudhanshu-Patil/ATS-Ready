@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { FileText, Sparkles, Copy, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { FileText, Sparkles, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/client'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import Tabs from '../components/Tabs'
 import EmptyState from '../components/EmptyState'
 import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
+import LetterEditor from '../components/LetterEditor'
+import ReferralMessage from '../components/ReferralMessage'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -20,6 +23,7 @@ const TONES = [
 
 const TAB_ITEMS = [
   { id: 'generate', label: 'Generate' },
+  { id: 'referral', label: 'Referral message' },
   { id: 'history',  label: 'History' },
 ]
 
@@ -30,7 +34,9 @@ const TONE_BADGE = {
 }
 
 export default function CoverLetter() {
-  const [tab, setTab]         = useState('generate')
+  // A job card can open this page straight on the referral tab, with the job prefilled.
+  const preset = useLocation().state || {}
+  const [tab, setTab]         = useState(preset.tab || 'generate')
   const [jdText, setJdText]   = useState('')
   const [tone, setTone]       = useState('professional')
   const [submitting, setSubmitting] = useState(false)
@@ -80,11 +86,6 @@ export default function CoverLetter() {
     } finally {
       setSubmitting(false)
     }
-  }
-
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text)
-    toast.success('Copied to clipboard')
   }
 
   const retryItem = async (id) => {
@@ -175,14 +176,6 @@ export default function CoverLetter() {
                 </div>
               </div>
 
-              {/* Subject line */}
-              {result.subject && (
-                <div className="mb-4 p-3 bg-bg-hover rounded-lg">
-                  <p className="text-xs text-text-muted mb-1">Email subject</p>
-                  <p className="text-sm text-text-primary font-medium">{result.subject}</p>
-                </div>
-              )}
-
               {/* Highlights */}
               {result.highlights?.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-4">
@@ -192,31 +185,16 @@ export default function CoverLetter() {
                 </div>
               )}
 
-              {/* Body */}
-              <div className="bg-bg-hover rounded-xl p-5 mb-4">
-                <pre className="text-sm text-text-primary whitespace-pre-wrap font-sans leading-relaxed">
-                  {result.body}
-                </pre>
-              </div>
-
-              <div className="flex flex-wrap gap-3">
-                <button onClick={() => copyToClipboard(result.body)}
-                  className="btn-ghost flex items-center gap-2 text-sm">
-                  <Copy size={14} /> Copy letter
-                </button>
-                <button onClick={() => copyToClipboard(`Subject: ${result.subject}\n\n${result.body}`)}
-                  className="btn-ghost flex items-center gap-2 text-sm">
-                  <Copy size={14} /> Copy with subject
-                </button>
-                <button onClick={() => { setResult(null); setJdText('') }}
-                  className="btn-ghost text-sm ml-auto">
-                  New
-                </button>
+              <LetterEditor key={result.id} letter={result} onSaved={setResult} />
+              <div className="mt-4 text-right">
+                <button onClick={() => { setResult(null); setJdText('') }} className="btn-ghost text-sm">New</button>
               </div>
             </motion.div>
           )}
         </div>
       )}
+
+      {tab === 'referral' && <ReferralMessage initial={preset} />}
 
       {tab === 'history' && (
         <div className="space-y-3">
@@ -263,7 +241,7 @@ export default function CoverLetter() {
                       </button>
                     </div>
                   </div>
-                  {expanded === cl.id && <ExpandedCoverLetter id={cl.id} onCopy={copyToClipboard} />}
+                  {expanded === cl.id && <ExpandedCoverLetter id={cl.id} />}
                 </motion.div>
               ))}
             </motion.div>
@@ -274,7 +252,7 @@ export default function CoverLetter() {
   )
 }
 
-function ExpandedCoverLetter({ id, onCopy }) {
+function ExpandedCoverLetter({ id }) {
   const [data, setData] = useState(null)
   useEffect(() => {
     api.get(`/cover-letters/${id}`).then(r => setData(r.data)).catch(() => {})
@@ -284,18 +262,7 @@ function ExpandedCoverLetter({ id, onCopy }) {
 
   return (
     <div className="mt-4 pt-4 border-t border-bg-border">
-      {data.subject && (
-        <div className="mb-3 p-3 bg-bg-hover rounded-lg">
-          <p className="text-xs text-text-muted mb-1">Subject</p>
-          <p className="text-sm text-text-primary">{data.subject}</p>
-        </div>
-      )}
-      <pre className="text-sm text-text-primary whitespace-pre-wrap font-sans leading-relaxed bg-bg-hover rounded-xl p-4 mb-3">
-        {data.body}
-      </pre>
-      <button onClick={() => onCopy(data.body)} className="btn-ghost text-sm flex items-center gap-2">
-        <Copy size={14} /> Copy
-      </button>
+      <LetterEditor letter={data} onSaved={setData} />
     </div>
   )
 }

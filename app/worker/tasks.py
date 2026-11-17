@@ -202,6 +202,8 @@ async def generate_resume(
             await _update_job_status(db, job_app_id, "done", {
                 "resume_s3_key":  s3_key,
                 "resume_filename": filename,
+                "resume_data": {"personal": profile["personal"], "tailored": tailored,
+                                "education": profile.get("education", [])},
                 "ats_score":       score_data.get("total_score", 0),
                 "ats_breakdown":   score_data,
                 "skills_matched":  score_data.get("matched_skills", []),
