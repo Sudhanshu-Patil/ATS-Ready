@@ -289,7 +289,7 @@ async def generate_resume(
 
 @tracked("cover_letter")
 async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone,
-                                     limit=None, limit_unit=None):
+                                     limit=None, limit_unit=None, company=None, company_skipped=False):
     """Fill in a pending CoverLetter row. Failures are recorded on the row (no
     arq retry: the user sees the error and can resubmit)."""
     async with AsyncSessionLocal() as db:
@@ -301,6 +301,16 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
         try:
             profile, parsed_jd, tailored, job_app = await build_context(
                 jd_text, uuid.UUID(user_id), db, job_app_id)
+            # A letter addressed to "the company" is useless, so ask before writing. The user can name it, or choose
+            # to go without (company_skipped). Status needs_input is shown as a popup until answered.
+            if company and company.strip():
+                parsed_jd.company = company.strip()[:200]
+            elif company_skipped:
+                parsed_jd.company = None
+            elif applications.is_unclear_company(parsed_jd.company):
+                row.status, row.job_title = "needs_input", parsed_jd.job_title
+                await db.commit()
+                return
             await _track_job(db, uuid.UUID(user_id), source="cover_letter", kind="cover_letter",
                              summary="Asked for a cover letter", jd_text=jd_text, jd_url=None, parsed_jd=parsed_jd,
                              asked_at=row.created_at)
@@ -340,6 +350,9 @@ async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_i
         try:
             profile, parsed_jd, tailored, job_app = await build_context(
                 jd_text, uuid.UUID(user_id), db, job_app_id)
+            await _track_job(db, uuid.UUID(user_id), source="interview_prep", kind="interview_prep",
+                             summary="Prepared for the interview", jd_text=jd_text, jd_url=None, parsed_jd=parsed_jd,
+                             asked_at=row.created_at)
             result = await asyncio.to_thread(
                 ai_agent.generate_interview_prep, parsed_jd, profile, tailored)
             row.job_app_id = job_app.id if job_app else None

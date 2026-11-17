@@ -35,6 +35,8 @@ export const useActivityStore = create((set, get) => ({
   track(kind, id) {
     set((s) => ({ _seen: { ...s._seen, [id]: true }, last: { ...s.last, [kind]: id } }))
     get().poke()
+    // The worker records the job (and may need to ask which company) a moment after it starts.
+    setTimeout(() => window.dispatchEvent(new Event('ats-attention')), 4000)
   },
 
   clearLast(kind) {
@@ -60,6 +62,7 @@ export const useActivityStore = create((set, get) => ({
       })
       set({ active: data.active, recent: data.recent, _seen: seen, finished })
       newlyDone.forEach(announce)
+      if (newlyDone.length) window.dispatchEvent(new Event('ats-attention'))      // tracking may now have a question
     } catch {
       // Network blip: keep what we have and retry while work is outstanding.
     }

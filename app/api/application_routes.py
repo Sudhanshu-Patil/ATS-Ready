@@ -15,7 +15,7 @@ from app.api.plan_limits import check_cover_letter_access
 from app.api.rate_limit import per_user_limit
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, User
+from app.db.models import APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter, User
 from app.services import applications
 from app.services.cache_service import cache_service
 from app.services.metabase_service import metabase_service
@@ -84,7 +84,11 @@ async def get_attention(db: AsyncSession = Depends(get_db), user: User = Depends
     """What needs the user: missing company/role (the back-question popup), follow-ups due, and jobs they asked about
     but never said whether they applied to. Server-side, so it survives refreshes and works on any device."""
     att = await applications.attention(db, user.id)
-    return {k: [_dict(a) for a in v] for k, v in att.items()} | {"count": sum(len(v) for v in att.values())}
+    letters = (await db.execute(select(CoverLetter).where(
+        CoverLetter.user_id == user.id, CoverLetter.status == "needs_input").order_by(CoverLetter.created_at))).scalars().all()
+    out = {k: [_dict(a) for a in v] for k, v in att.items()}
+    out["letters"] = [{"id": str(c.id), "job_title": c.job_title, "created_at": _iso(c.created_at)} for c in letters]
+    return out | {"count": sum(len(v) for v in out.values())}
 
 
 @application_router.post("/applications", status_code=201)

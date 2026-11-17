@@ -94,6 +94,8 @@ async def get_activity(
             ).order_by(model.created_at)
         )).scalars().all()
         for row in rows:
+            if row.status == "needs_input":      # waiting for the user: shown by the popup, not as running work
+                continue
             (active if row.status in ACTIVE else recent).append(_item(kind, row, error_col))
     active.sort(key=lambda i: i["created_at"])
     recent.sort(key=lambda i: i["created_at"], reverse=True)

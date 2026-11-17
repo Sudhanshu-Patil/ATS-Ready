@@ -40,6 +40,7 @@ export default function CoverLetter() {
   const preset = useLocation().state || {}
   const [tab, setTab]         = useState(preset.tab || 'generate')
   const [jdText, setJdText]   = useState('')
+  const [company, setCompany] = useState('')
   const [tone, setTone]       = useState('professional')
   const [limitValue, setLimitValue] = useState('')           // optional cap from the application form
   const [limitUnit, setLimitUnit]   = useState('words')
@@ -88,7 +89,7 @@ export default function CoverLetter() {
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await api.post('/cover-letter', { jd_text: jdText, tone, ...(limit ? { limit, limit_unit: limitUnit } : {}) })
+      const res = await api.post('/cover-letter', { jd_text: jdText, tone, ...(company.trim() ? { company: company.trim() } : {}), ...(limit ? { limit, limit_unit: limitUnit } : {}) })
       useActivityStore.getState().track('cover_letter', res.data.id)
       toast('Writing your cover letter — you can keep working while it runs.')
     } catch (err) {
@@ -146,6 +147,9 @@ export default function CoverLetter() {
               onChange={e => setJdText(e.target.value)}
               disabled={submitting}
             />
+            <input aria-label="Company (optional)" className="input text-sm mb-5" maxLength={200} value={company}
+                   onChange={e => setCompany(e.target.value)} disabled={submitting}
+                   placeholder="Company name (optional: if the posting does not name it, we will ask before writing)" />
 
             {/* Tone selector */}
             <label className="block text-sm font-medium text-text-secondary mb-3">Tone</label>
@@ -247,10 +251,10 @@ export default function CoverLetter() {
                   <div className="flex items-center flex-wrap justify-between gap-3">
                     <div>
                       <p className="font-medium text-text-primary">
-                        {cl.status === 'failed' ? 'Failed' : cl.status === 'done' ? (cl.job_title || 'Untitled') : 'Generating…'}
+                        {cl.status === 'failed' ? 'Failed' : cl.status === 'done' ? (cl.job_title || 'Untitled') : cl.status === 'needs_input' ? 'Waiting for the company name' : 'Generating…'}
                       </p>
                       <p className="text-sm text-text-secondary">
-                        {cl.status === 'failed' ? cl.error : cl.status === 'done' ? `${cl.company || ''} · ${cl.word_count} words · ${cl.tone}` : 'Queued — you can leave this page'}
+                        {cl.status === 'failed' ? cl.error : cl.status === 'done' ? `${cl.company || ''} · ${cl.word_count} words · ${cl.tone}` : cl.status === 'needs_input' ? 'Answer the question on screen and it will be written' : 'Queued — you can leave this page'}
                       </p>
                       <p className="text-xs text-text-muted mt-1">{formatDate(cl.created_at)}</p>
                     </div>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import api from '../api/client'
+import { useActivityStore } from '../store/activity'
 
 // The popup that asks "which company and role was this?" when we could not tell from the text.
 // The server decides what needs asking (GET /applications/attention), so a refresh, another tab or another device
@@ -28,6 +29,10 @@ export default function AttentionModal() {
       window.removeEventListener('ats-attention', load)
     }
   }, [load, location.pathname])
+
+  // A cover letter waiting for its company comes first: it is the one holding something up.
+  const letter = att?.letters?.[0]
+  if (letter) return <AskLetter key={letter.id} letter={letter} onDone={load} />
 
   const next = att?.needs?.find((a) => !hidden().includes(a.id))
   if (next) return <Ask key={next.id} app={next} onDone={() => { load() }} onLater={() => { hide(next.id); bump((n) => n + 1) }} />
@@ -82,6 +87,42 @@ function Ask({ app, onDone, onLater }) {
           <div className="flex gap-2">
             <button onClick={onLater} className="btn-ghost text-sm">Later</button>
             <button onClick={save} className="btn-primary text-sm px-5">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Asked BEFORE a cover letter is written, because the letter needs to name the company.
+function AskLetter({ letter, onDone }) {
+  const [company, setCompany] = useState('')
+  const send = async (skip) => {
+    if (!skip && !company.trim()) { toast.error('Enter the company, or choose to write it without'); return }
+    try {
+      await api.post(`/cover-letters/${letter.id}/company`, skip ? { skip: true } : { company: company.trim() })
+      useActivityStore.getState().track('cover_letter', letter.id)
+      onDone()
+    } catch (err) { toast.error(err.response?.data?.detail || 'Could not continue') }
+  }
+  const cancel = async () => { try { await api.delete(`/cover-letters/${letter.id}`) } finally { onDone() } }
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="att-letter-title">
+      <div className="card w-full max-w-md space-y-4">
+        <div>
+          <h2 id="att-letter-title" className="font-display text-lg font-bold text-text-primary">Which company is this letter for?</h2>
+          <p className="text-sm text-text-secondary mt-1">
+            The posting{letter.job_title ? ` for ${letter.job_title}` : ''} does not name the company, and a cover letter should.
+            I will write it as soon as you answer.
+          </p>
+        </div>
+        <input aria-label="Company" className="input text-sm" placeholder="Company" value={company} autoFocus
+               onChange={(e) => setCompany(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send(false)} />
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <button onClick={cancel} className="text-xs text-text-muted underline">Cancel this letter</button>
+          <div className="flex gap-2">
+            <button onClick={() => send(true)} className="btn-ghost text-sm">Write it without</button>
+            <button onClick={() => send(false)} className="btn-primary text-sm px-5">Write it</button>
           </div>
         </div>
       </div>

@@ -51,6 +51,7 @@ class CoverLetterRequest(BaseModel):
     tone:       str = "professional"   # professional | conversational | enthusiastic
     limit:      Optional[int] = None   # the user's own cap, if the application has one
     limit_unit: str = "words"          # words | chars
+    company:    Optional[str] = Field(default=None, max_length=200)   # when the posting does not name it
 
     class Config:
         json_schema_extra = {
@@ -130,6 +131,7 @@ async def generate_cover_letter(
         letter_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
         job_app_id=request.job_app_id, tone=request.tone,
         limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
+        company=(request.company or "").strip() or None,
     )
     logger.info("Queued cover letter %s for user %s", row.id, user.id)
     return {"id": str(row.id), "status": "pending"}
@@ -219,6 +221,36 @@ async def retry_cover_letter(
     await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
                            jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
                            limit=cl.length_limit, limit_unit=cl.limit_unit)
+    return {"id": str(cl.id), "status": "pending"}
+
+
+class CompanyAnswer(BaseModel):
+    company: Optional[str] = Field(default=None, max_length=200)
+    skip: bool = False                  # "write it without naming the company"
+
+
+@content_router.post("/cover-letters/{letter_id}/company", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def answer_company(
+    letter_id: str,
+    data: CompanyAnswer,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """The user's answer to "which company is this letter for?". Resumes the waiting letter."""
+    cl = await _own_letter(db, letter_id, user)
+    company = (data.company or "").strip()
+    if cl.status != "needs_input":
+        raise HTTPException(status_code=409, detail="This cover letter is not waiting for a company name")
+    if not company and not data.skip:
+        raise HTTPException(status_code=422, detail="Enter the company name, or choose to skip it")
+    await ensure_capacity(db, user.id)
+    cl.status, cl.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
+                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
+                           limit=cl.length_limit, limit_unit=cl.limit_unit,
+                           company=company or None, company_skipped=not company)
     return {"id": str(cl.id), "status": "pending"}
 
 

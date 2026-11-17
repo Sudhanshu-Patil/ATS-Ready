@@ -337,3 +337,78 @@ async def test_account_deletion_removes_applications_requests_and_persona(client
     async with AsyncSessionLocal() as db:
         for model in (Application, AssistantRequest, PersonaNode, ApplicationEvent):
             assert (await db.execute(select(model).where(model.user_id == uid))).first() is None
+
+
+# ── Dedup: one entry per job, never hiding a real one ────────────────────────
+
+def test_role_and_company_keys_ignore_noise_but_not_seniority():
+    k = applications.role_key
+    assert k("Backend Engineer") == k("engineer, backend") == k("Backend Engineer (Remote)")
+    assert k("Sr. Backend Engineer") == k("Senior Backend Engineer")
+    assert k("Senior Backend Engineer") != k("Backend Engineer")
+    assert k("Engineer II") != k("Engineer III")
+    assert k("Backend Engineer") != k("Frontend Engineer")
+    assert applications.company_key("Stripe, Inc.") == applications.company_key("stripe")
+    assert applications.company_key("Stripe") != applications.company_key("Stripe Payments")
+
+
+def test_links_match_without_tracking_noise_but_keep_job_ids():
+    n = applications.norm_url
+    assert n("https://www.Acme.com/jobs/42/?utm_source=x#apply") == n("http://acme.com/jobs/42")
+    assert n("https://acme.com/jobs?id=1") != n("https://acme.com/jobs?id=2")
+    assert n("") is None and n(None) is None
+
+
+async def test_same_company_different_role_stays_separate_but_the_same_role_merges(client, stub):
+    h, uid = await _user_with_profile(client)
+    async with AsyncSessionLocal() as db:
+        a = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Backend Engineer")
+        b = await applications.track(db, uid, source="cover_letter", kind="cover_letter", summary="x", company="ACME Inc", role="engineer, backend")
+        c = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Frontend Engineer")
+        d = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Senior Backend Engineer")
+        await db.commit()
+        assert a.id == b.id
+        assert len({a.id, c.id, d.id}) == 3
+
+
+async def test_a_mention_without_a_role_joins_only_when_it_can_only_be_one_job(client, stub):
+    h, uid = await _user_with_profile(client)
+    async with AsyncSessionLocal() as db:
+        a = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Backend Engineer")
+        same = await applications.track(db, uid, source="referral", kind="referral_request", summary="x", company="Acme")
+        assert same.id == a.id                                       # the only Acme application
+        b = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Data Engineer")
+        vague = await applications.track(db, uid, source="referral", kind="referral_request", summary="x", company="Acme")
+        await db.commit()
+        assert vague.id not in (a.id, b.id) and vague.needs == ["role"]      # two Acme jobs: ask, do not guess
+        again = await applications.track(db, uid, source="referral", kind="referral_request", summary="x", company="Acme")
+        assert again.id == vague.id                                  # but the open question is not duplicated
+        filled = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Data Engineer")
+        assert filled.id == b.id
+
+
+async def test_a_closed_application_does_not_swallow_a_new_posting(client, stub):
+    h, uid = await _user_with_profile(client)
+    async with AsyncSessionLocal() as db:
+        old = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Backend Engineer")
+        await applications.update_application(db, old, status="rejected")
+        new = await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Backend Engineer")
+        await db.commit()
+        assert new.id != old.id
+        # ...but the same job description still finds its own record
+        a = await applications.track(db, uid, source="resume", kind="resume", summary="x", jd_text=JD_TEXT, company="Beta", role="Dev")
+        await applications.update_application(db, a, status="rejected")
+        again = await applications.track(db, uid, source="cover_letter", kind="cover_letter", summary="x", jd_text=JD_TEXT)
+        assert again.id == a.id
+
+
+async def test_editing_a_role_less_draft_never_merges_it_by_guesswork(client, stub):
+    h, uid = await _user_with_profile(client)
+    async with AsyncSessionLocal() as db:
+        await applications.track(db, uid, source="resume", kind="resume", summary="x", company="Acme", role="Backend Engineer")
+        d = await applications.track(db, uid, source="manual", kind="note", summary="x", company="Other", role=None)
+        d = await applications.update_application(db, d, company="Acme", notes="remember this")
+        await db.commit()
+        assert d.role is None and d.needs == ["role"]
+        n = len((await db.execute(select(Application).where(Application.user_id == uid))).scalars().all())
+        assert n == 2
