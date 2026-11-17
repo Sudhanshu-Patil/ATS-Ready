@@ -6,7 +6,7 @@ and [.env.example](.env.example); values live only in the Render dashboard and G
 
 ## Before the first production deploy
 
-1. **Migrations**: the image runs `alembic upgrade head` at start. Current head: `0008`.
+1. **Migrations**: the image runs `alembic upgrade head` at start. Current head: `0011`.
 2. **Required env**: `ENVIRONMENT=production`, a strong `JWT_SECRET` (Render can generate one), real
    `DATABASE_URL` / `REDIS_URL` (the app refuses to boot with the dev password `secret`),
    `LLM_API_KEY`, `FRONTEND_URL`.

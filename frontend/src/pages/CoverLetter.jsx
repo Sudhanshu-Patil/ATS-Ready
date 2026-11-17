@@ -21,6 +21,8 @@ const TONES = [
   { id: 'enthusiastic',   label: 'Enthusiastic',    desc: 'Energetic, passionate, bold' },
 ]
 
+const LIMIT_RANGE = { words: [50, 1500], chars: [200, 10000] }   // mirrors the server
+
 const TAB_ITEMS = [
   { id: 'generate', label: 'Generate' },
   { id: 'referral', label: 'Referral message' },
@@ -39,6 +41,8 @@ export default function CoverLetter() {
   const [tab, setTab]         = useState(preset.tab || 'generate')
   const [jdText, setJdText]   = useState('')
   const [tone, setTone]       = useState('professional')
+  const [limitValue, setLimitValue] = useState('')           // optional cap from the application form
+  const [limitUnit, setLimitUnit]   = useState('words')
   const [submitting, setSubmitting] = useState(false)
   // Generation runs in the background; the activity store tells us when it ends.
   const lastId = useActivityStore(s => s.last.cover_letter)
@@ -75,10 +79,16 @@ export default function CoverLetter() {
       toast.error('Job description too short (min 100 characters)')
       return
     }
+    const limit = limitValue.trim() ? parseInt(limitValue, 10) : null
+    const [lo, hi] = LIMIT_RANGE[limitUnit]
+    if (limit !== null && !(limit >= lo && limit <= hi)) {
+      toast.error(`A ${limitUnit === 'words' ? 'word' : 'character'} limit must be between ${lo} and ${hi}`)
+      return
+    }
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await api.post('/cover-letter', { jd_text: jdText, tone })
+      const res = await api.post('/cover-letter', { jd_text: jdText, tone, ...(limit ? { limit, limit_unit: limitUnit } : {}) })
       useActivityStore.getState().track('cover_letter', res.data.id)
       toast('Writing your cover letter — you can keep working while it runs.')
     } catch (err) {
@@ -154,6 +164,25 @@ export default function CoverLetter() {
                 </button>
               ))}
             </div>
+
+            {/* Optional length limit: many applications cap the words or characters */}
+            <label htmlFor="cl-limit" className="block text-sm font-medium text-text-secondary mb-2">
+              Length limit <span className="text-text-muted font-normal">(optional)</span>
+            </label>
+            <div className="flex gap-2 mb-1.5 max-w-sm">
+              <input id="cl-limit" type="number" inputMode="numeric" min={LIMIT_RANGE[limitUnit][0]}
+                     max={LIMIT_RANGE[limitUnit][1]} className="input text-sm" placeholder={limitUnit === 'words' ? 'e.g. 300' : 'e.g. 1500'}
+                     value={limitValue} onChange={e => setLimitValue(e.target.value)} />
+              <select aria-label="Limit unit" className="input text-sm !w-auto" value={limitUnit}
+                      onChange={e => setLimitUnit(e.target.value)}>
+                <option value="words">words</option>
+                <option value="chars">characters</option>
+              </select>
+            </div>
+            <p className="text-xs text-text-muted mb-5">
+              Set this when the application has a cap. The letter is written to fit it and never goes over.
+              Characters include spaces.
+            </p>
 
             <button onClick={generate} disabled={submitting}
               className="btn-primary w-full flex items-center justify-center gap-2 py-3">
