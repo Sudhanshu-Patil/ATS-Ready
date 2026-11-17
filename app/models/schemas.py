@@ -66,6 +66,7 @@ class GenerateResumeRequest(BaseModel):
     jd_text:  Optional[str] = None
     emphasis: Optional[List[str]] = None
     baseline_id: Optional[str] = Field(default=None, max_length=64)   # an uploaded resume to compare against
+    application_id: Optional[str] = Field(default=None, max_length=64)   # work on a job you already started
 
     @field_validator("jd_text")
     @classmethod
@@ -93,6 +94,7 @@ class GenerateResumeResponse(BaseModel):
     """
     job_id:  str
     status:  str = "pending"         # pending | running | done | failed
+    application_id: Optional[str] = None
     message: str = ""
 
 

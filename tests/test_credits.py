@@ -430,3 +430,65 @@ async def test_catalog_is_public_and_prices_are_in_rupees(client):
     assert packs["single"]["inr"] == 1000 and packs["single"]["credits"] == 1
     assert packs["power"]["per_credit_inr"] < packs["starter"]["per_credit_inr"] < packs["single"]["per_credit_inr"]
     assert r.json()["signup"] == {"job": 1, "resume": 2}
+
+
+# ── one job, every tool: the posting is entered once ─────────────────────────
+
+async def test_a_job_started_once_serves_every_tool_without_pasting_again(client, billing):
+    h, uid = await _user_with_profile(client)
+    await give(uid, job=1)
+    job = (await client.post("/api/applications", headers=h, json={
+        "jd_text": JD_A, "company": "Acme", "role": "Backend Engineer"})).json()
+    assert job["unlock_level"] == "none" and job["has_jd"]
+
+    # the cover letter and the interview prep need nothing but the job id; one credit pays for both
+    cl = await client.post("/api/cover-letter", headers=h, json={"application_id": job["id"]})
+    pr = await client.post("/api/interview-prep", headers=h, json={"application_id": job["id"]})
+    assert cl.status_code == 202 and pr.status_code == 202
+    assert cl.json()["application_id"] == pr.json()["application_id"] == job["id"]
+    assert await balance(uid) == (0, 0)
+    assert billing[0][1]["jd_text"].strip() == JD_A.strip()          # the saved posting, not something sent now
+
+    detail = (await client.get(f"/api/applications/{job['id']}", headers=h)).json()
+    assert detail["unlock_level"] == "full" and detail["usage"] == {"cover_letter": 1, "interview_prep": 1}
+    assert detail["caps"]["cover_letter"] == 3
+    assert [c["status"] for c in detail["artifacts"]["cover_letters"]] == ["pending"]
+    assert len(detail["artifacts"]["interview_preps"]) == 1 and detail["artifacts"]["resumes"] == []
+
+    # pasting the same posting elsewhere lands on the same job (no second charge)
+    assert (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A})).status_code == 202
+    assert await balance(uid) == (0, 0)
+
+
+async def test_nobody_can_use_someone_elses_job_or_an_unknown_one(client):
+    h, uid = await _user_with_profile(client)
+    job = (await client.post("/api/applications", headers=h, json={"jd_text": JD_A, "company": "Acme", "role": "Dev"})).json()
+    h2, uid2 = await _user_with_profile(client)
+    await give(uid2, job=1)
+    assert (await client.post("/api/cover-letter", headers=h2, json={"application_id": job["id"]})).status_code == 404
+    assert (await client.post("/api/cover-letter", headers=h2, json={"application_id": "not-a-uuid"})).status_code == 404
+    assert (await client.get(f"/api/applications/{job['id']}", headers=h2)).status_code == 404
+    assert await balance(uid2) == (1, 0)
+
+
+async def test_a_job_without_a_saved_description_asks_for_one(client):
+    h, uid = await _user_with_profile(client)
+    await give(uid, job=1)
+    job = (await client.post("/api/applications", headers=h, json={"company": "Zoho", "role": "Dev"})).json()
+    r = await client.post("/api/cover-letter", headers=h, json={"application_id": job["id"]})
+    assert r.status_code == 422 and await balance(uid) == (1, 0)
+
+
+async def test_merging_two_records_of_one_job_keeps_what_was_paid_and_made(client, billing):
+    h, uid = await _user_with_profile(client)
+    await give(uid, job=1)
+    a = (await client.post("/api/applications", headers=h, json={"jd_text": JD_A})).json()
+    assert (await client.post("/api/cover-letter", headers=h, json={"application_id": a["id"]})).status_code == 202
+    b = (await client.post("/api/applications", headers=h, json={"company": "Acme", "role": "Backend Engineer"})).json()
+    assert (await client.patch(f"/api/applications/{a['id']}", headers=h, json={"company": "Acme", "role": "Backend Engineer"})).status_code == 200
+    items = (await client.get("/api/applications", headers=h)).json()["items"]
+    assert len(items) == 1
+    keep = (await client.get(f"/api/applications/{items[0]['id']}", headers=h)).json()
+    assert keep["unlock_level"] == "full" and len(keep["artifacts"]["cover_letters"]) == 1
+    assert items[0]["id"] == a["id"]                       # the older record survives; the other one is gone
+    assert (await client.get(f"/api/applications/{b['id']}", headers=h)).status_code == 404

@@ -21,7 +21,8 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest
+from app.db.models import (APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter,
+                           InterviewPrep, JobApplication)
 from app.services.suggestion_store import jd_hash
 
 FOLLOW_UP_DAYS = 7
@@ -191,7 +192,7 @@ async def get_or_create(db: AsyncSession, user_id: UUID, *, source: str, jd_text
     app = Application(user_id=user_id, source=source, status="interested", needs=[], usage={}, unlock_level="none",
                       job_url=norm_url(job_url))
     if jd_text and len(jd_text.strip()) >= 100:
-        app.jd_hash, app.jd_text = jd_hash(jd_text), jd_text.strip()[:8000]
+        app.jd_hash, app.jd_text = jd_hash(jd_text), jd_text.strip()[:12000]
     db.add(app)
     await db.flush()
     await add_event(db, app, "created", f"Started from {source.replace('_', ' ')}")
@@ -231,7 +232,7 @@ async def track(db: AsyncSession, user_id: UUID, *, source: str, kind: str, summ
     if not app.job_url and job_url:
         app.job_url = norm_url(job_url)
     if jd_text and len(jd_text.strip()) >= 100 and not app.jd_hash:
-        app.jd_hash, app.jd_text = jd_hash(jd_text), jd_text.strip()[:8000]
+        app.jd_hash, app.jd_text = jd_hash(jd_text), jd_text.strip()[:12000]
     _advance(app, status)
     app.needs = _needs(app)
     await db.flush()
@@ -302,12 +303,27 @@ async def _merge_duplicate(db: AsyncSession, app: Application) -> Application:
         keep.status = drop.status
     await db.execute(update(ApplicationEvent).where(ApplicationEvent.application_id == drop.id)
                      .values(application_id=keep.id))
-    await db.execute(update(AssistantRequest).where(AssistantRequest.application_id == drop.id)
-                     .values(application_id=keep.id))
+    for model in (AssistantRequest, JobApplication, CoverLetter, InterviewPrep):     # everything made for the job
+        await db.execute(update(model).where(model.application_id == drop.id).values(application_id=keep.id))
+    _merge_paid(keep, drop)
     await db.delete(drop)
     keep.needs = _needs(keep)
     await db.flush()
     return keep
+
+
+def _merge_paid(keep: Application, drop: Application) -> None:
+    """Two records of one job become one: keep the higher unlock level and add up what was used and paid."""
+    order = {"none": 0, "resume": 1, "full": 2}
+    if order.get(drop.unlock_level, 0) > order.get(keep.unlock_level, 0):
+        keep.unlock_level, keep.unlocked_at = drop.unlock_level, drop.unlocked_at
+    merged = dict(keep.usage or {})
+    for key, value in (drop.usage or {}).items():
+        if key == "_paid":
+            merged[key] = list(merged.get(key, [])) + list(value)
+        else:
+            merged[key] = merged.get(key, 0) + value
+    keep.usage = merged
 
 
 # ── What needs the user's attention ──────────────────────────────────────────

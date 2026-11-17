@@ -60,6 +60,10 @@ async def generate_resume(
     Poll GET /api/jobs/{job_id}/status to track progress.
     When status == "done", the full result including download_url is returned.
     """
+    app_id, resolved_text, resolved_url = await job_access.resolve(
+        db, user.id, request.application_id, request.jd_text, request.jd_url)
+    if app_id:
+        request.jd_text, request.jd_url = resolved_text, None
     # Validate: must have URL or text
     if not request.jd_url and not request.jd_text:
         raise HTTPException(status_code=422, detail="Either jd_url or jd_text is required.")
@@ -72,7 +76,7 @@ async def generate_resume(
     await ensure_capacity(db, user.id)
     # The job this resume is for: by its posting. Unlocks it (or fails with no_credits) and counts the use.
     job = await job_access.gate(db, user, "resume", source="resume", jd_text=request.jd_text,
-                                jd_url=str(request.jd_url) if request.jd_url else None)
+                                jd_url=str(request.jd_url) if request.jd_url else None, application_id=app_id)
 
     # Create the JobApplication row in "pending" state NOW so we have an ID
     job_app = JobApplication(
@@ -109,6 +113,7 @@ async def generate_resume(
 
     return GenerateResumeResponse(
         job_id=str(job_app.id),
+        application_id=str(job.id),
         status="pending",
         message="Resume generation started. Poll /api/jobs/{job_id}/status for updates.",
     )

@@ -14,8 +14,10 @@ from app.api.dependencies import get_current_user
 from app.api.rate_limit import per_user_limit
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter, User
-from app.services import applications, credits
+from app.db.models import (APPLICATION_STATUSES, Application, ApplicationEvent, AssistantRequest, CoverLetter,
+                           InterviewPrep, JobApplication, User)
+from app.services import applications, credits, pricing
+from app.services.scraper import ScraperError, scraper_service, validate_public_url
 from app.services.cache_service import cache_service
 from app.services.metabase_service import metabase_service
 
@@ -30,7 +32,7 @@ def _dict(a: Application) -> dict:
     return {"id": str(a.id), "company": a.company, "role": a.role, "job_url": a.job_url, "status": a.status,
             "source": a.source, "applied_at": _iso(a.applied_at), "follow_up_at": _iso(a.follow_up_at),
             "notes": a.notes, "needs": a.needs or [], "created_at": _iso(a.created_at), "updated_at": _iso(a.updated_at),
-            "has_jd": bool(a.jd_text)}
+            "has_jd": bool(a.jd_text), "unlock_level": a.unlock_level or "none"}
 
 
 async def _own(db: AsyncSession, application_id: str, user: User) -> Application:
@@ -61,6 +63,7 @@ class ApplicationIn(BaseModel):
     company: Optional[str] = Field(default=None, max_length=200)
     role: Optional[str] = Field(default=None, max_length=300)
     job_url: Optional[str] = Field(default=None, max_length=1000)
+    jd_text: Optional[str] = Field(default=None, max_length=50000)      # a posting to start a job from
     status: Optional[str] = None
     applied_at: Optional[str] = None            # the date the user applied (their own date)
     follow_up_at: Optional[str] = None
@@ -93,10 +96,26 @@ async def get_attention(db: AsyncSession = Depends(get_db), user: User = Depends
 @application_router.post("/applications", status_code=201)
 async def create_application(data: ApplicationIn, db: AsyncSession = Depends(get_db),
                              user: User = Depends(get_current_user)):
-    if not (data.company or data.role):
-        raise HTTPException(status_code=422, detail="Add a company or a role")
+    text = (data.jd_text or "").strip()
+    if not text and data.job_url and data.job_url.lower().startswith(("http://", "https://")):
+        try:                                    # a posting link: read it once now, so no tool asks for it again
+            await validate_public_url(data.job_url)
+            text, _ = await scraper_service.scrape(data.job_url)
+        except ScraperError as exc:
+            if not (data.company or data.role):
+                raise HTTPException(status_code=422, detail=f"{exc} Paste the job description instead.")
+            text = ""
+    if text and len(text) < 100:
+        raise HTTPException(status_code=422, detail="The job description is too short (min 100 characters)")
+    if not (text or data.company or data.role):
+        raise HTTPException(status_code=422, detail="Paste the job description, or add a company or a role")
+    hints = applications.extract_hints(text[:600]) if text else {"company": None, "role": None}
+    started = await applications.get_or_create(db, user.id, source="manual", jd_text=text or None,
+                                               job_url=data.job_url) if text else None
     app = await applications.track(db, user.id, source="manual", kind="note", summary="Added by you",
-                                   company=data.company, role=data.role, job_url=data.job_url)
+                                   company=data.company or hints["company"], role=data.role or hints["role"],
+                                   job_url=data.job_url, jd_text=text or None,
+                                   application_id=started.id if started else None)
     app = await applications.update_application(
         db, app, status=data.status, applied_at=_when(data.applied_at), follow_up_at=_when(data.follow_up_at),
         notes=data.notes)
@@ -111,7 +130,23 @@ async def get_application(application_id: str, db: AsyncSession = Depends(get_db
     events = (await db.execute(select(ApplicationEvent).where(ApplicationEvent.application_id == a.id)
                                .order_by(ApplicationEvent.occurred_at.desc()))).scalars().all()
     reqs = (await db.execute(select(AssistantRequest.id).where(AssistantRequest.application_id == a.id))).scalars().all()
+    resumes = (await db.execute(select(JobApplication).where(JobApplication.application_id == a.id)
+                                .order_by(JobApplication.created_at.desc()))).scalars().all()
+    letters = (await db.execute(select(CoverLetter).where(CoverLetter.application_id == a.id)
+                                .order_by(CoverLetter.created_at.desc()))).scalars().all()
+    preps = (await db.execute(select(InterviewPrep).where(InterviewPrep.application_id == a.id)
+                              .order_by(InterviewPrep.created_at.desc()))).scalars().all()
+    usage = {k: v for k, v in (a.usage or {}).items() if not k.startswith("_")}
     return {**_dict(a), "assistant_requests": [str(r) for r in reqs],
+            "jd_text": a.jd_text, "usage": usage, "caps": pricing.JOB_CAPS,
+            "artifacts": {
+                "resumes": [{"id": str(r.id), "status": r.status, "ats_score": r.ats_score, "created_at": _iso(r.created_at),
+                             "download_url": f"/api/download/{r.id}" if r.resume_s3_key else None,
+                             "pdf_url": f"/api/download/{r.id}?format=pdf" if r.resume_data else None} for r in resumes],
+                "cover_letters": [{"id": str(c.id), "status": c.status, "word_count": c.word_count,
+                                   "created_at": _iso(c.created_at)} for c in letters],
+                "interview_preps": [{"id": str(p.id), "status": p.status, "created_at": _iso(p.created_at)} for p in preps],
+            },
             "events": [{"id": str(e.id), "kind": e.kind, "summary": e.summary, "occurred_at": _iso(e.occurred_at)}
                        for e in events]}
 

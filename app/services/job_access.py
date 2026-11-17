@@ -8,6 +8,7 @@ stretched over different postings. Nothing here commits: the route does, togethe
 import uuid
 from typing import Optional
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Application, User
@@ -32,6 +33,20 @@ async def gate(db: AsyncSession, user: User, kind: str, *, source: str, jd_text:
     app = await job_for(db, user.id, source=source, jd_text=jd_text, jd_url=jd_url, application_id=application_id)
     await credits.ensure_unlocked(db, user, app, kind, amount)
     return app
+
+
+async def resolve(db: AsyncSession, user_id, application_id, jd_text: Optional[str], jd_url: Optional[str] = None):
+    """(application_id, jd_text, jd_url) for a request. With an application_id the job's own saved posting is used,
+    so the user never pastes it again and cannot swap it after paying."""
+    if not application_id:
+        return None, jd_text, jd_url
+    app_uuid = as_uuid(application_id)
+    app = await db.get(Application, app_uuid) if app_uuid else None
+    if app is None or app.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not (app.jd_text or "").strip():
+        raise HTTPException(status_code=422, detail="This job has no saved description yet. Paste the job description.")
+    return app.id, app.jd_text, None
 
 
 def stored_jd(app: Application, fallback: Optional[str]) -> Optional[str]:

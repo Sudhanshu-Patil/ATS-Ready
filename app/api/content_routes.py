@@ -45,7 +45,8 @@ TONES = ("professional", "conversational", "enthusiastic")
 # ── Request schemas ───────────────────────────────────────────────────────────
 
 class CoverLetterRequest(BaseModel):
-    jd_text:    str
+    jd_text:    Optional[str] = None        # not needed when application_id names a saved job
+    application_id: Optional[str] = None
     job_app_id: Optional[str] = None   # link to an existing resume job
     tone:       str = "professional"   # professional | conversational | enthusiastic
     limit:      Optional[int] = None   # the user's own cap, if the application has one
@@ -62,7 +63,8 @@ class CoverLetterRequest(BaseModel):
 
 
 class InterviewPrepRequest(BaseModel):
-    jd_text:    str
+    jd_text:    Optional[str] = None
+    application_id: Optional[str] = None
     job_app_id: Optional[str] = None
 
     class Config:
@@ -107,7 +109,8 @@ async def generate_cover_letter(
     Queue a personalized cover letter. Returns 202 immediately with an id;
     poll GET /api/activity (or GET /api/cover-letters/{id}) for the result.
     """
-    _check_jd(request.jd_text)
+    app_id, request.jd_text, _ = await job_access.resolve(db, user.id, request.application_id, request.jd_text)
+    _check_jd(request.jd_text or "")
     if request.tone not in TONES:
         raise HTTPException(status_code=422, detail="tone must be professional, conversational, or enthusiastic")
     if request.limit is not None:
@@ -117,7 +120,8 @@ async def generate_cover_letter(
             raise HTTPException(status_code=422, detail=str(exc))
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
-    job = await job_access.gate(db, user, "cover_letter", source="cover_letter", jd_text=request.jd_text)
+    job = await job_access.gate(db, user, "cover_letter", source="cover_letter", jd_text=request.jd_text,
+                                application_id=app_id)
 
     row = CoverLetter(
         user_id=user.id, application_id=job.id, jd_text=request.jd_text[:3000], body="",
@@ -136,7 +140,7 @@ async def generate_cover_letter(
         company=(request.company or "").strip() or None,
     )
     logger.info("Queued cover letter %s for user %s", row.id, user.id)
-    return {"id": str(row.id), "status": "pending"}
+    return {"id": str(row.id), "status": "pending", "application_id": str(job.id)}
 
 
 @content_router.get("/cover-letters")
@@ -319,6 +323,7 @@ class ReferralRequest(BaseModel):
     person_name: str = Field(default="", max_length=120)
     jd_text:     str = Field(default="", max_length=20000)
     job_url:     str = Field(default="", max_length=1000)
+    application_id: Optional[str] = None
 
 
 async def _track_referral(db: AsyncSession, user: User, request, application_id=None) -> None:
@@ -351,11 +356,13 @@ async def referral_message(
     user: User = Depends(get_current_user),     # outreach is part of the Pro writing tools
 ):
     """Draft a LinkedIn referral ask. One small LLM call, answered directly (not queued)."""
+    app_id, resolved, _ = await job_access.resolve(db, user.id, request.application_id, request.jd_text)
+    request.jd_text = resolved or ""
     if len(request.jd_text.strip()) < 100:
         raise HTTPException(status_code=422, detail="Paste the job description (min 100 characters)")
     await ensure_budget(db, user.id)
     job = await job_access.gate(db, user, "referral", source="referral", jd_text=request.jd_text,
-                                jd_url=request.job_url.strip() or None)
+                                jd_url=request.job_url.strip() or None, application_id=app_id)
     await db.commit()                                  # the use is counted before the model runs
 
     profile = await cache_service.get_profile(str(user.id))
@@ -415,10 +422,12 @@ async def generate_interview_prep(
     behavioral, technical, situational and cultural categories, using the
     candidate's real experience). Returns 202 immediately with an id.
     """
-    _check_jd(request.jd_text)
+    app_id, request.jd_text, _ = await job_access.resolve(db, user.id, request.application_id, request.jd_text)
+    _check_jd(request.jd_text or "")
     await ensure_profile(db, user.id)
     await ensure_capacity(db, user.id)
-    job = await job_access.gate(db, user, "interview_prep", source="interview_prep", jd_text=request.jd_text)
+    job = await job_access.gate(db, user, "interview_prep", source="interview_prep", jd_text=request.jd_text,
+                                application_id=app_id)
 
     row = InterviewPrep(user_id=user.id, application_id=job.id, jd_text=request.jd_text[:3000], status="pending",
                         created_at=datetime.utcnow())
@@ -432,7 +441,7 @@ async def generate_interview_prep(
         job_app_id=request.job_app_id,
     )
     logger.info("Queued interview prep %s for user %s", row.id, user.id)
-    return {"id": str(row.id), "status": "pending"}
+    return {"id": str(row.id), "status": "pending", "application_id": str(job.id)}
 
 
 @content_router.get("/interview-preps")
