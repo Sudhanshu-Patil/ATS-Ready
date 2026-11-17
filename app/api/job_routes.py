@@ -21,6 +21,9 @@ from app.api.plan_limits import check_resume_limit
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import JobApplication, User
+from app.models.schemas import ParsedJD
+from app.services import suggestion_store
+from app.services.ats_score import jd_terms, score_view, view_from_resume
 from app.services.storage_service import storage_service
 
 job_router = APIRouter()
@@ -137,9 +140,31 @@ async def get_job(
         "skills_missing": job.skills_missing,
         "download_url":   download_url,
         "pdf_url":        f"/api/download/{job.id}?format=pdf" if job.resume_data else None,
+        "jd_text":        job.jd_text,                      # lets "improve this resume" start from the same posting
+        "suggestions_now": await _suggestions_now(db, job),
         "created_at":     str(job.created_at),
         "updated_at":     str(job.updated_at),
     }
+
+
+async def _suggestions_now(db: AsyncSession, job: JobApplication) -> Optional[Dict[str, Any]]:
+    """Where this job description's suggestions stand TODAY. The list is shared by every version of the resume, so a
+    skill ticked on a later version is no longer open here. The score each version got stays as it was stored."""
+    if not (job.jd_text and job.resume_data and job.jd_parsed):
+        return None
+    try:
+        row = await suggestion_store.load(db, job.user_id, job.jd_text)
+        if row is None:
+            return None
+        open_items = suggestion_store.open_items(row)
+        rd = job.resume_data
+        view = view_from_resume(rd["personal"], rd["tailored"], rd.get("education", []))
+        terms = jd_terms(ParsedJD(**job.jd_parsed))
+        now = score_view(view, terms)["total_score"]
+        projected = score_view(view, terms, [i["term"] for i in open_items])["total_score"] if open_items else now
+        return {"open": open_items, "applied": suggestion_store.applied_terms(row), "projected_score": projected}
+    except Exception:
+        return None            # the stored breakdown is still shown
 
 
 @job_router.post("/jobs/{job_id}/retry")

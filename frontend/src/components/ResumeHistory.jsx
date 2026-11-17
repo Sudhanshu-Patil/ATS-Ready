@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Download, RefreshCw, Trash2, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { Download, RefreshCw, Trash2, CheckCircle, XCircle, Clock, BarChart3 } from 'lucide-react'
 import { useJobsStore } from '../store/jobs'
-import { jobsAPI } from '../api/client'
+import { jobsAPI, resumeAPI } from '../api/client'
+import { useActivityStore } from '../store/activity'
+import { ScoreBar, SuggestionsPanel } from './ResumeInsights'
+import Spinner from './Spinner'
 import { downloadFile } from '../lib/download'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import { scoreColorClass } from './ScoreRing'
@@ -33,6 +36,9 @@ const FILTERS = [
 export default function ResumeHistory() {
   const { jobs, total, loading, initialized, fetchAll, removeJob, refresh } = useJobsStore()
   const [filter, setFilter] = useState('')
+  const [openId, setOpenId] = useState(null)
+  const finishedCount = useActivityStore(s => Object.keys(s.finished).length)
+  useEffect(() => { if (initialized && finishedCount) refresh() }, [finishedCount])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!initialized) fetchAll()
@@ -101,7 +107,7 @@ export default function ResumeHistory() {
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-2">
           {filtered.map(job => (
             <motion.div key={job.id} variants={fadeInUp}
-              className="card p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 hover:border-brand/20 transition-colors">
+              className="card p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 hover:border-brand/20 transition-colors">
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <StatusBadge variant="icon" {...(STATUS_CONFIG[job.status] || STATUS_CONFIG.pending)} />
                 <div className="flex-1 min-w-0">
@@ -142,6 +148,14 @@ export default function ResumeHistory() {
                       <Download size={15} />
                     </a>
                   )}
+                  {job.status === 'done' && (
+                    <button onClick={() => setOpenId(openId === job.id ? null : job.id)}
+                      aria-expanded={openId === job.id}
+                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
+                      title="Score breakdown and suggestions" aria-label="Score breakdown and suggestions">
+                      <BarChart3 size={15} />
+                    </button>
+                  )}
                   {job.status === 'failed' && (
                     <button onClick={() => handleRetry(job.id)}
                       className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
@@ -158,6 +172,7 @@ export default function ResumeHistory() {
                   )}
                 </div>
               </div>
+              {openId === job.id && <div className="sm:basis-full w-full"><ResumeDetails job={job} onStarted={() => setOpenId(null)} /></div>}
             </motion.div>
           ))}
         </motion.div>
@@ -172,4 +187,66 @@ function formatDate(str) {
     month: 'short', day: 'numeric', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
   })
+}
+
+// The score breakdown a resume was given when it was made, with the job's suggestions as they stand today, so an
+// older version can be improved: tick the skills you have and generate a new version from the same posting.
+function ResumeDetails({ job, onStarted }) {
+  const [detail, setDetail] = useState(null)
+  const [failed, setFailed] = useState(false)
+  const [picked, setPicked] = useState('')
+  const [busy, setBusy] = useState(false)
+  const { addPendingJob } = useJobsStore()
+
+  useEffect(() => {
+    jobsAPI.get(job.id).then(r => setDetail(r.data)).catch(() => setFailed(true))
+  }, [job.id])
+
+  if (failed) return <p className="text-sm text-red-400 pt-3">Could not load the details. Try again.</p>
+  if (!detail) return <div className="pt-3"><Spinner size="sm" /></div>
+
+  const b = detail.ats_breakdown || {}
+  const now = detail.suggestions_now
+  const shown = now
+    ? { open_suggestions: now.open, applied_terms: now.applied, projected_score: now.projected_score }
+    : { open_suggestions: b.open_suggestions || [], applied_terms: b.applied_terms || [], projected_score: b.projected_score }
+  const selected = picked.split(',').map(t => t.trim()).filter(Boolean)
+
+  const improve = async () => {
+    if (!detail.jd_text) { toast.error('The job description for this resume was not kept'); return }
+    setBusy(true)
+    try {
+      const res = await resumeAPI.generate(detail.jd_text, null, selected.length ? selected : null, null)
+      addPendingJob(res.data.job_id)
+      useActivityStore.getState().track('resume', res.data.job_id)
+      toast.success('Writing an improved version. It will appear at the top.')
+      setPicked('')
+      onStarted()
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Could not start')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border-t border-bg-border pt-4 space-y-4">
+      <div className="space-y-3">
+        <p className="text-xs text-text-muted">What this version scored when it was made</p>
+        {[['Keywords', b.keyword_score], ['Skills', b.skills_score], ['Action verbs', b.action_verb_score], ['Format', b.format_score]]
+          .map(([label, score]) => <ScoreBar key={label} label={label} score={score ?? 0} />)}
+      </div>
+      {(b.matched_skills?.length > 0 || b.missing_skills?.length > 0) && (
+        <div className="text-xs space-y-1">
+          {b.matched_skills?.length > 0 && <p className="text-text-secondary"><span className="text-score">Matched:</span> {b.matched_skills.join(', ')}</p>}
+          {b.missing_skills?.length > 0 && <p className="text-text-secondary"><span className="text-red-400">Not shown:</span> {b.missing_skills.join(', ')}</p>}
+        </div>
+      )}
+      <SuggestionsPanel breakdown={shown} score={job.ats_score} emphasis={picked} setEmphasis={setPicked} onRegenerate={improve} />
+      {selected.length === 0 && shown.open_suggestions.length === 0 && shown.applied_terms.length === 0 && (
+        <p className="text-xs text-text-muted">No technical suggestions for this job.</p>
+      )}
+      {busy && <p className="text-xs text-text-muted flex items-center gap-2"><Spinner size="sm" /> Starting…</p>}
+    </div>
+  )
 }

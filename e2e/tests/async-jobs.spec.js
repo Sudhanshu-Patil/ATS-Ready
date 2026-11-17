@@ -189,3 +189,25 @@ test('score my current resume against the job, then suggestions only shrink acro
   await expect(page.getByRole('button', { name: /Docker/ })).toHaveCount(0)
   await expect(page.getByText(/1 skill this job asks for/)).toBeVisible()
 })
+
+test('an earlier resume keeps its breakdown and can be improved from History', async ({ page }) => {
+  await userWithProfile(page)
+  await page.goto('/generate')
+  await page.locator('textarea').first().fill(JD)
+  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await expect(page.getByRole('link', { name: 'Download DOCX' })).toBeVisible({ timeout: 60000 })
+
+  // Later, from History: the stored breakdown and the job's suggestions.
+  await page.goto('/generate?tab=history')
+  await page.getByRole('button', { name: 'Score breakdown and suggestions' }).first().click()
+  await expect(page.getByText('What this version scored when it was made')).toBeVisible()
+  await expect(page.getByText('Keywords', { exact: true })).toBeVisible()
+  await expect(page.getByText(/this job asks for that your profile does not show/)).toBeVisible()
+
+  // Tick one and make an improved version from the same posting.
+  await page.getByRole('button', { name: /Docker/ }).click()
+  await page.getByRole('button', { name: /Regenerate with 1 selected/ }).click()
+  await expect(page.getByRole('button', { name: 'Score breakdown and suggestions' })).toHaveCount(2, { timeout: 60000 })  // two done resumes
+  await page.getByRole('button', { name: 'Score breakdown and suggestions' }).first().click()
+  await expect(page.getByText(/Already added to your skills/)).toContainText('Docker')
+})
