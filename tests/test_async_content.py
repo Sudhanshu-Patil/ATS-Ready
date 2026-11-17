@@ -309,3 +309,53 @@ def test_referral_connection_note_is_capped_at_linkedins_limit(monkeypatch):
     monkeypatch.setattr(a, "_call", lambda *args, **kw: json.dumps({"connection_note": "x" * 500, "message": "m"}), raising=False)
     out = a.generate_referral_message("Sam", "d" * 200, "", {"personal": {"full_name": "A"}})
     assert len(out["connection_note"]) <= 300
+
+
+async def test_cover_letter_asks_for_the_company_before_writing(client, stub, monkeypatch):
+    h = await user_with_profile(client)
+    uid = await _uid(client, h)
+    real = tasks.build_context
+
+    async def hidden_company(*a, **k):
+        profile, parsed, tailored, job = await real(*a, **k)
+        parsed.company = "Confidential"
+        return profile, parsed, tailored, job
+    monkeypatch.setattr(tasks, "build_context", hidden_company)
+
+    letter_id = (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD})).json()["id"]
+    await tasks.generate_cover_letter_task({}, letter_id, uid, JD, None, "professional")
+
+    # waiting, not failed, not running, and visible to the popup after a refresh
+    got = (await client.get(f"/api/cover-letters/{letter_id}", headers=h)).json()
+    assert got["status"] == "needs_input" and not got["body"]
+    act = (await client.get("/api/activity", headers=h)).json()
+    assert act["active"] == [] and act["recent"] == []
+    att = (await client.get("/api/applications/attention", headers=h)).json()
+    assert [x["id"] for x in att["letters"]] == [letter_id] and att["needs"] == []   # one question, not two
+
+    assert (await client.post(f"/api/cover-letters/{letter_id}/company", headers=h, json={})).status_code == 422
+    r = await client.post(f"/api/cover-letters/{letter_id}/company", headers=h, json={"company": "Stripe"})
+    assert r.status_code == 202
+    assert stub[-1][1]["company"] == "Stripe"
+
+    await tasks.generate_cover_letter_task({}, letter_id, uid, JD, None, "professional", company="Stripe")
+    got = (await client.get(f"/api/cover-letters/{letter_id}", headers=h)).json()
+    assert got["status"] == "done" and got["company"] == "Stripe"
+    apps = (await client.get("/api/applications", headers=h)).json()["items"]
+    assert [a["company"] for a in apps] == ["Stripe"]
+    assert (await client.post(f"/api/cover-letters/{letter_id}/company", headers=h, json={"skip": True})).status_code == 409
+
+
+async def test_cover_letter_can_go_without_a_company_when_the_user_chooses(client, stub, monkeypatch):
+    h = await user_with_profile(client)
+    uid = await _uid(client, h)
+    real = tasks.build_context
+
+    async def hidden_company(*a, **k):
+        profile, parsed, tailored, job = await real(*a, **k)
+        parsed.company = None
+        return profile, parsed, tailored, job
+    monkeypatch.setattr(tasks, "build_context", hidden_company)
+    letter_id = (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD})).json()["id"]
+    await tasks.generate_cover_letter_task({}, letter_id, uid, JD, None, "professional", company=None, company_skipped=True)
+    assert (await client.get(f"/api/cover-letters/{letter_id}", headers=h)).json()["status"] == "done"

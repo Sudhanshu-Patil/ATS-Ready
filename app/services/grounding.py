@@ -21,6 +21,25 @@ from app.services.ats_score import _norm, term_in
 
 logger = logging.getLogger(__name__)
 
+# Technologies that must never appear in a claim the candidate did not make, whether or not the job mentions them.
+# (One- and two-letter names such as Go, R and C are left out: they are ordinary words.)
+COMMON_TECH = (
+    "Python", "Java", "JavaScript", "TypeScript", "Rust", "C++", "C#", "Ruby", "PHP", "Kotlin", "Scala", "SQL",
+    "React", "Angular", "Vue", "Svelte", "Django", "Flask", "FastAPI", "Spring Boot", "Node.js", "Express", "Rails",
+    "Laravel", "Next.js", ".NET", "GraphQL", "gRPC", "PostgreSQL", "MySQL", "MongoDB", "Redis", "Cassandra",
+    "DynamoDB", "Elasticsearch", "Kafka", "RabbitMQ", "Spark", "Hadoop", "Airflow", "dbt", "Snowflake", "BigQuery",
+    "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "Ansible", "Jenkins", "GitHub Actions", "GitLab CI",
+    "Linux", "Nginx", "TensorFlow", "PyTorch", "scikit-learn", "Pandas", "NumPy", "OpenAI", "Tableau", "Power BI",
+    "Salesforce", "SAP", "Figma", "Jira", "Selenium", "Cypress", "Prometheus", "Grafana", "Datadog", "Hugging Face",
+    "LangChain", "Pinecone", "Flutter", "React Native", "Unity",
+)
+
+
+def check_terms(jd_terms: Iterable[str]) -> List[str]:
+    """Terms whose appearance in a claim must be backed by the candidate's own material."""
+    return list(dict.fromkeys([*jd_terms, *COMMON_TECH]))
+
+
 _NUM = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _WORD = re.compile(r"[a-z0-9+#.]+")
 
@@ -82,7 +101,7 @@ def violation(text: str, allowed_nums: Set[str], corpus_norm: str, jd_terms: Ite
     if bad_nums:
         return f"number {sorted(bad_nums)[0]} is not in the candidate's data"
     norm = _norm(text)
-    for t in jd_terms:
+    for t in check_terms(jd_terms):
         if term_in(t, norm) and not term_in(t, corpus_norm):
             return f"'{t}' is not in the candidate's data"
     return None
@@ -218,7 +237,7 @@ def enforce_letter(body: str, profile: Dict[str, Any], jd_text: str, jd_terms: L
             for sent in [s for s in re.split(r"(?<=[.!?])\s+", line) if s]:
                 bad_num = numbers_in(sent) - allowed
                 claim = _FIRST_PERSON.search(sent) is not None
-                bad_term = [t for t in jd_terms if term_in(t, _norm(sent)) and not term_in(t, corpus_norm)] if claim else []
+                bad_term = [t for t in check_terms(jd_terms) if term_in(t, _norm(sent)) and not term_in(t, corpus_norm)] if claim else []
                 if bad_num or bad_term:
                     report.append(f"letter sentence removed ({sorted(bad_num) or bad_term})")
                     continue

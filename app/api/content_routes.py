@@ -30,7 +30,7 @@ from app.api.dependencies import get_current_user
 from app.api.plan_limits import check_cover_letter_access, check_interview_prep_access
 from app.db.database import get_db
 from app.db.models import CoverLetter, InterviewPrep, User
-from app.services import letter_limit
+from app.services import applications, letter_limit
 from app.services.cache_service import cache_service
 from app.services.content_service import ProfileIncomplete, friendly_error
 from app.services.metabase_service import metabase_service
@@ -51,6 +51,7 @@ class CoverLetterRequest(BaseModel):
     tone:       str = "professional"   # professional | conversational | enthusiastic
     limit:      Optional[int] = None   # the user's own cap, if the application has one
     limit_unit: str = "words"          # words | chars
+    company:    Optional[str] = Field(default=None, max_length=200)   # when the posting does not name it
 
     class Config:
         json_schema_extra = {
@@ -130,6 +131,7 @@ async def generate_cover_letter(
         letter_id=str(row.id), user_id=str(user.id), jd_text=request.jd_text,
         job_app_id=request.job_app_id, tone=request.tone,
         limit=request.limit, limit_unit=request.limit_unit if request.limit else None,
+        company=(request.company or "").strip() or None,
     )
     logger.info("Queued cover letter %s for user %s", row.id, user.id)
     return {"id": str(row.id), "status": "pending"}
@@ -222,6 +224,36 @@ async def retry_cover_letter(
     return {"id": str(cl.id), "status": "pending"}
 
 
+class CompanyAnswer(BaseModel):
+    company: Optional[str] = Field(default=None, max_length=200)
+    skip: bool = False                  # "write it without naming the company"
+
+
+@content_router.post("/cover-letters/{letter_id}/company", status_code=202,
+                     dependencies=[Depends(per_user_limit("content", 10))])
+async def answer_company(
+    letter_id: str,
+    data: CompanyAnswer,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(check_cover_letter_access),
+):
+    """The user's answer to "which company is this letter for?". Resumes the waiting letter."""
+    cl = await _own_letter(db, letter_id, user)
+    company = (data.company or "").strip()
+    if cl.status != "needs_input":
+        raise HTTPException(status_code=409, detail="This cover letter is not waiting for a company name")
+    if not company and not data.skip:
+        raise HTTPException(status_code=422, detail="Enter the company name, or choose to skip it")
+    await ensure_capacity(db, user.id)
+    cl.status, cl.error = "pending", None
+    await db.commit()
+    await _enqueue_or_fail(db, cl, "generate_cover_letter_task", letter_id=str(cl.id), user_id=str(user.id),
+                           jd_text=cl.jd_text, job_app_id=None, tone=cl.tone or "professional",
+                           limit=cl.length_limit, limit_unit=cl.limit_unit,
+                           company=company or None, company_skipped=not company)
+    return {"id": str(cl.id), "status": "pending"}
+
+
 class CoverLetterEdit(BaseModel):
     subject: Optional[str] = Field(default=None, max_length=500)
     body: str = Field(min_length=1, max_length=20000)
@@ -282,6 +314,28 @@ class ReferralRequest(BaseModel):
     job_url:     str = Field(default="", max_length=1000)
 
 
+async def _track_referral(db: AsyncSession, user: User, request) -> None:
+    """A referral request is a step in an application: put it on that job's timeline, dated now. The company
+    comes from the posting's cached analysis or its own text; if neither names it, the app asks the user."""
+    try:
+        jd = request.jd_text.strip()
+        cached = await cache_service.get_parsed_jd(jd)
+        company, role = (cached or {}).get("company"), (cached or {}).get("job_title")
+        if applications.is_unclear_company(company):
+            hints = applications.extract_hints(jd[:600])
+            company, role = hints["company"], role or hints["role"]
+        person = request.person_name.strip()
+        await applications.track(
+            db, user.id, source="referral", kind="referral_request",
+            summary="Drafted a referral request" + (f" to {person}" if person else ""), jd_text=jd,
+            company=company, role=role, job_url=request.job_url.strip() or None, status="referral_requested",
+            payload={"person": person} if person else None)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("Application tracking failed for referral (non-fatal)", exc_info=True)
+
+
 @content_router.post("/referral-message",
                      dependencies=[Depends(per_user_limit("content", 10))])
 async def referral_message(
@@ -308,6 +362,7 @@ async def referral_message(
             ai_agent.generate_referral_message, request.person_name.strip(), request.jd_text.strip(),
             request.job_url.strip(), profile), timeout=70)
         ok = True
+        await _track_referral(db, user, request)
         return result
     except asyncio.TimeoutError:
         mark_failed()

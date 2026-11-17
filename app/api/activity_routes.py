@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.db.database import get_db
-from app.db.models import CoverLetter, InterviewPrep, JobApplication, PersonalInfo, User
+from app.db.models import AssistantRequest, CoverLetter, InterviewPrep, JobApplication, PersonalInfo, User
 
 from app.services.usage import ensure_budget  # noqa: E402
 
@@ -30,6 +30,7 @@ KINDS = {
     "resume":         (JobApplication, "error_message"),
     "cover_letter":   (CoverLetter, "error"),
     "interview_prep": (InterviewPrep, "error"),
+    "assistant":      (AssistantRequest, "error"),
 }
 
 
@@ -93,6 +94,8 @@ async def get_activity(
             ).order_by(model.created_at)
         )).scalars().all()
         for row in rows:
+            if row.status == "needs_input":      # waiting for the user: shown by the popup, not as running work
+                continue
             (active if row.status in ACTIVE else recent).append(_item(kind, row, error_col))
     active.sort(key=lambda i: i["created_at"])
     recent.sort(key=lambda i: i["created_at"], reverse=True)
