@@ -74,7 +74,7 @@ export default function BuyCredits({ onPaid, compact = false }) {
   }
 
   return (
-    <div className={clsx('grid gap-3', compact ? 'sm:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-4')}>
+    <div className={clsx('grid gap-3 grid-cols-2', !compact && 'lg:grid-cols-4')}>
       {catalog.packs.map((p) => (
         <div key={p.id} className={clsx('rounded-xl border p-4 flex flex-col gap-2', p.id === 'hunt' ? 'border-brand/50 bg-brand/5' : 'border-bg-border')}>
           <div className="flex items-baseline justify-between">
@@ -91,8 +91,8 @@ export default function BuyCredits({ onPaid, compact = false }) {
             </button>
           )}
           {catalog.paypal && p.usd > 0 && (
-            <button disabled={!!busy} onClick={() => payPaypal(p)} className="btn-ghost text-xs py-1.5">
-              {busy === p.id + 'p' ? 'Opening…' : `Outside India: ${usd(p.usd)} with PayPal`}
+            <button disabled={!!busy} onClick={() => payPaypal(p)} className="btn-ghost text-xs py-1.5" title="For buyers outside India">
+              {busy === p.id + 'p' ? 'Opening…' : `${usd(p.usd)} PayPal`}
             </button>
           )}
         </div>

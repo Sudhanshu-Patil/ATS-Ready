@@ -64,7 +64,7 @@ export default function Admin() {
         <div className="flex items-center gap-2" role="group" aria-label="Time range">
           {RANGES.map((r) => (
             <button key={r} onClick={() => setDays(r)} aria-pressed={days === r}
-                    className={clsx('px-3 py-1.5 rounded-lg text-sm border transition-colors',
+                    className={clsx('px-3 py-2 rounded-lg text-sm border transition-colors',
                       days === r ? 'border-brand/50 bg-brand-muted text-brand' : 'border-bg-border text-text-secondary hover:text-text-primary')}>
               {r}d
             </button>
@@ -151,7 +151,21 @@ export default function Admin() {
       <div className="grid lg:grid-cols-3 gap-4">
         <ChartCard className="lg:col-span-2" title="By feature" subtitle="Cost and speed per run. Compare tokens per run with what the prices assume."
           table={null}>
-          <div className="overflow-x-auto">
+          <ul className="sm:hidden divide-y divide-bg-border" aria-label="By feature">
+            {llm.by_kind.map((k) => (
+              <li key={k.kind} className="py-2.5">
+                <p className="text-sm text-text-primary flex items-center gap-2">
+                  <span aria-hidden="true" className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: kindColor(k.kind) }} />{KIND_LABEL[k.kind] || k.kind}
+                  <span className={clsx('ml-auto text-xs tabular-nums', k.failure_rate > 0.1 ? 'text-red-400' : 'text-text-muted')}>{pct(k.failure_rate)} failed{k.failure_rate > 0.1 ? ' ▲' : ''}</span>
+                </p>
+                <p className="text-xs text-text-secondary mt-1 tabular-nums">
+                  {fmt(k.runs)} runs · {fmt(k.tokens_per_run)} tokens each · ≈ ₹{(k.tokens_per_run / 1000 * money.cost_per_1k_tokens_inr).toFixed(2)} · {k.avg_seconds}s avg, {k.p95_seconds}s slowest 5%
+                </p>
+              </li>
+            ))}
+            {!llm.by_kind.length && <li className="py-3 text-sm text-text-secondary">No runs yet.</li>}
+          </ul>
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-text-muted text-xs">
                 <tr><th className="py-1 pr-4 font-medium">Feature</th><th className="pr-4 font-medium">Runs</th><th className="pr-4 font-medium">Tokens/run</th>

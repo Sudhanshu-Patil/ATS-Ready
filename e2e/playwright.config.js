@@ -30,7 +30,7 @@ export default defineConfig({
     // Other engines and phones: public pages, auth and accessibility only (fast, no LLM flow).
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testMatch: /(auth|a11y|account)\.spec/ },
     { name: 'webkit', use: { ...devices['Desktop Safari'] }, testMatch: /(auth|a11y|account)\.spec/ },
-    { name: 'pixel-7', use: { ...devices['Pixel 7'] }, testMatch: /(auth|a11y|account)\.spec/ },
-    { name: 'iphone-14', use: { ...devices['iPhone 14'] }, testMatch: /(auth|a11y|account)\.spec/ },
+    { name: 'pixel-7', use: { ...devices['Pixel 7'] }, testMatch: /(auth|a11y|account|mobile)\.spec/ },
+    { name: 'iphone-14', use: { ...devices['iPhone 14'] }, testMatch: /(auth|a11y|account|mobile)\.spec/ },
   ],
 })

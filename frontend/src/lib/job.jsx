@@ -54,8 +54,8 @@ export function JobBanner({ job, jobId, missing, kind, toolPath }) {
         </div>
       </div>
       <div className="flex items-center gap-3 text-xs">
-        <Link to={`/jobs/${jobId}`} className="text-brand hover:underline">All of this job</Link>
-        <Link to={toolPath} className="text-text-muted hover:text-text-primary">Different job?</Link>
+        <Link to={`/jobs/${jobId}`} className="text-brand hover:underline py-2">All of this job</Link>
+        <Link to={toolPath} className="text-text-muted hover:text-text-primary py-2">Different job?</Link>
       </div>
     </div>
   )
