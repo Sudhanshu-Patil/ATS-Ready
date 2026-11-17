@@ -4,12 +4,14 @@ import { motion } from 'framer-motion'
 import { Settings as SettingsIcon } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
 import { authAPI, billingAPI } from '../api/client'
+import BuyCredits from '../components/BuyCredits'
+import { useCreditsStore } from '../store/credits'
 import { fadeInUp } from '../lib/motion'
 import Spinner from '../components/Spinner'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const SECTIONS = ['account', 'security', 'plan']
+const SECTIONS = ['account', 'security', 'billing']
 
 export default function Settings() {
   const { user, login, accessToken } = useAuthStore()
@@ -19,7 +21,7 @@ export default function Settings() {
   // /settings?section=plan changes only the search params, so the component
   // doesn't remount (Layout keys its route transition on pathname alone).
   const [searchParams] = useSearchParams()
-  const sectionParam = searchParams.get('section')
+  const sectionParam = searchParams.get('section') === 'plan' ? 'billing' : searchParams.get('section')   // old links
   const [activeSection, setActiveSection] = useState(
     SECTIONS.includes(sectionParam) ? sectionParam : 'account'
   )
@@ -39,7 +41,7 @@ export default function Settings() {
           </div>
           <h1 className="font-display text-2xl font-bold text-text-primary">Settings</h1>
         </div>
-        <p className="text-text-secondary">Manage your account and subscription.</p>
+        <p className="text-text-secondary">Manage your account, credits and invites.</p>
       </motion.div>
 
       <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
@@ -71,7 +73,7 @@ export default function Settings() {
         <div className="flex-1">
           {activeSection === 'account'  && <AccountSection user={user} login={login} accessToken={accessToken} />}
           {activeSection === 'security' && <SecuritySection />}
-          {activeSection === 'plan'     && <PlanSection user={user} />}
+          {activeSection === 'billing'  && <BillingSection />}
         </div>
       </div>
     </div>
@@ -294,70 +296,81 @@ function PrivacySection({ email }) {
   )
 }
 
-// PayPal checkout is a redirect: send the browser to PayPal, which returns to
-// /settings?token=<order_id>; we then ask the backend to capture that order.
-function PlanSection({ user }) {
-  const { accessToken, login } = useAuthStore()
-  const [loading, setLoading] = useState(false)
+// Credits: balance, packs, invite link and the ledger. PayPal returns here with ?token=<order id>.
+function BillingSection() {
+  const { credits, referral, ledger, billingEnabled, refresh } = useCreditsStore()
 
   useEffect(() => {
     const orderId = new URLSearchParams(window.location.search).get('token')
-    if (!orderId) return
-    window.history.replaceState({}, '', '/settings?section=plan')
-    billingAPI.sync(orderId)
-      .then(({ data }) => {
-        if (data.plan !== user?.plan) toast.success(`You're on the ${data.plan} plan!`)
-        login(accessToken, { ...user, plan: data.plan })
-      })
-      .catch(() => toast.error('Could not confirm your PayPal payment'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (orderId) {
+      window.history.replaceState({}, '', '/settings?section=billing')
+      billingAPI.sync(orderId)
+        .then(() => { toast.success('Payment received. Credits added.'); refresh() })
+        .catch(() => toast.error('Could not confirm your PayPal payment'))
+    } else {
+      refresh()
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleUpgrade = async (plan) => {
-    setLoading(true)
-    try {
-      const res = await billingAPI.checkout(plan)
-      if (!res.data.billing_enabled || !res.data.approve_url) {
-        toast(res.data.message || 'Billing not enabled yet.', { icon: 'ℹ️' })
-        return
-      }
-      window.location.href = res.data.approve_url
-    } catch { toast.error('Could not start checkout') }
-    finally { setLoading(false) }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(referral.link); toast.success('Invite link copied') }
+    catch { toast.error('Could not copy. Select the link and copy it.') }
   }
-
-  const plans = [
-    { id: 'free', label: 'Free', price: '$0', features: ['3 resumes/month', 'ATS scoring', 'DOCX download'], current: user?.plan === 'free' },
-    { id: 'pro',  label: 'Pro',  price: '$19/mo', features: ['Unlimited resumes', 'Cover letters', 'Interview prep', 'Priority AI'], current: user?.plan === 'pro' },
-    { id: 'team', label: 'Team', price: '$49/mo', features: ['Everything in Pro', 'API access', '5 seats'], current: user?.plan === 'team' },
-  ]
+  const REASON = { signup: 'Welcome gift', purchase: 'Purchase', referral: 'Friend joined', unlock: 'Unlocked a job',
+                   refund: 'Refund (it did not work out)', admin: 'Added by us' }
 
   return (
-    <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="space-y-4">
-      <h2 className="font-semibold text-text-primary">Subscription</h2>
-      {plans.map(plan => (
-        <div key={plan.id} className={clsx('card flex flex-col sm:flex-row sm:items-center justify-between gap-3', plan.current && 'border-brand/40 bg-brand/5')}>
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <p className="font-semibold text-text-primary">{plan.label}</p>
-              {plan.current && <span className="badge bg-brand-muted text-brand">Current</span>}
-            </div>
-            <p className="text-sm text-text-secondary mb-2">{plan.price}</p>
-            <ul className="space-y-0.5">
-              {plan.features.map(f => <li key={f} className="text-xs text-text-muted">✓ {f}</li>)}
-            </ul>
-          </div>
-          {plan.id === 'pro' && user?.plan === 'team' ? null : !plan.current && plan.id !== 'free' && (
-            <button
-              onClick={() => handleUpgrade(plan.id)}
-              disabled={loading}
-              className="btn-primary text-sm flex-shrink-0"
-            >
-              Upgrade
-            </button>
-          )}
+    <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="space-y-5">
+      <div className="card">
+        <h2 className="font-semibold text-text-primary mb-3">Your credits</h2>
+        <div className="flex gap-6 flex-wrap">
+          <div><p className="text-3xl font-bold text-text-primary" data-testid="credits-job">{credits?.job ?? '…'}</p>
+            <p className="text-xs text-text-muted">job credits</p></div>
+          <div><p className="text-3xl font-bold text-text-primary" data-testid="credits-resume">{credits?.resume ?? '…'}</p>
+            <p className="text-xs text-text-muted">resume-only credits</p></div>
         </div>
-      ))}
+        <p className="text-xs text-text-muted mt-3">
+          A job credit unlocks one job completely: up to 3 resumes, 3 cover letters, the application answers,
+          interview prep and reach-out messages. A resume-only credit unlocks just that job's resume. Credits never expire.
+        </p>
+      </div>
+
+      {billingEnabled && (
+        <div className="card space-y-3">
+          <h2 className="font-semibold text-text-primary">Get more credits</h2>
+          <BuyCredits />
+        </div>
+      )}
+
+      {referral && (
+        <div className="card space-y-3">
+          <h2 className="font-semibold text-text-primary">Invite friends, get credits</h2>
+          <p className="text-sm text-text-secondary">
+            You get {referral.reward} free job credit when a friend joins with your link, verifies their email and
+            starts their first job (up to {referral.cap}). They get their free starter credits too.
+          </p>
+          <div className="flex gap-2">
+            <input readOnly aria-label="Your invite link" className="input text-sm" value={referral.link} onFocus={(e) => e.target.select()} />
+            <button onClick={copy} className="btn-primary text-sm px-4">Copy</button>
+          </div>
+          <p className="text-xs text-text-muted">{referral.rewarded} rewarded · {referral.pending} waiting to start their first job</p>
+        </div>
+      )}
+
+      {ledger.length > 0 && (
+        <div className="card">
+          <h2 className="font-semibold text-text-primary mb-3">History</h2>
+          <ul className="divide-y divide-bg-border">
+            {ledger.map((r) => (
+              <li key={r.id} className="py-2 flex items-center justify-between text-sm">
+                <span className="text-text-secondary">{REASON[r.reason] || r.reason}
+                  <span className="text-text-muted"> · {r.kind === 'job' ? 'job' : 'resume-only'} · {new Date(r.created_at).toLocaleDateString()}</span></span>
+                <span className={clsx('font-mono', r.delta > 0 ? 'text-score' : 'text-text-secondary')}>{r.delta > 0 ? '+' : ''}{r.delta}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </motion.div>
   )
 }

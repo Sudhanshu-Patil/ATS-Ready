@@ -1,4 +1,5 @@
 import asyncio
+from typing import Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
@@ -26,6 +27,7 @@ from app.services.auth_service import (
     verify_refresh_token,
     verify_reset_token,
 )
+from app.services import credits
 from app.services.email_service import send_password_reset_email, send_verification_email
 from app.config import settings
 
@@ -38,6 +40,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     full_name: str = ""
+    ref: Optional[str] = None            # referral code from an invite link (?ref=...)
 
     @field_validator("password")
     @classmethod
@@ -115,10 +118,14 @@ async def register(
         is_active=True,
         is_verified=False,   # set True after email verification
         plan="free",
+        email_canonical=credits.canonical_email(data.email),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
     db.add(user)
+    await db.flush()
+    await credits.ensure_codes(db, user)
+    await credits.link_referral(db, user, data.ref)      # the starter credits come once the email is verified
     await db.commit()
     await db.refresh(user)
 
@@ -139,6 +146,7 @@ async def register(
 
 class GoogleLoginRequest(BaseModel):
     credential: str            # the ID token from Google Identity Services
+    ref: Optional[str] = None  # referral code, for a brand-new account
 
 
 @auth_router.get("/config")
@@ -191,12 +199,17 @@ async def google_login(
             user = User(
                 email=email, full_name=claims.get("name") or "", google_id=sub,
                 hashed_password=None, is_active=True, is_verified=True, plan="free",
+                email_canonical=credits.canonical_email(email),
                 created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
             )
             db.add(user)
+            await db.flush()
+            await credits.ensure_codes(db, user)
+            await credits.link_referral(db, user, data.ref)
             created = True
         await db.commit()
         await db.refresh(user)
+        await credits.grant_signup(db, user)             # Google has verified the address
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")
@@ -530,4 +543,5 @@ async def verify_email(
         user.is_verified = True
         user.updated_at = datetime.utcnow()
         await db.commit()
+    await credits.grant_signup(db, user)                 # starter credits, once per person
     return {"message": "Email verified successfully"}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, Eye, EyeOff } from 'lucide-react'
 import { useAuthStore } from '../store/auth'
@@ -17,6 +17,11 @@ export default function Register() {
   const [loading, setLoading]   = useState(false)
   const { login } = useAuthStore()
   const navigate = useNavigate()
+  // An invite link (/register?ref=code) is remembered, so the code survives a detour through Google sign-in.
+  const [params] = useSearchParams()
+  const ref = params.get('ref')
+  if (ref) { try { localStorage.setItem('ats-ref', ref) } catch { /* private mode */ } }
+  const inviteCode = ref || (() => { try { return localStorage.getItem('ats-ref') } catch { return null } })()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -26,7 +31,7 @@ export default function Register() {
     }
     setLoading(true)
     try {
-      const res = await authAPI.register(email, password, fullName)
+      const res = await authAPI.register(email, password, fullName, inviteCode)
       login(res.data.access_token, {
         id:        res.data.user_id,
         email:     res.data.email,
@@ -68,7 +73,7 @@ export default function Register() {
         >
           <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Create account</h1>
           <p className="text-sm text-text-secondary mb-6">
-            Start with 3 free resumes/month. No credit card required.
+            Your first job is free, plus 2 more resumes. No card needed.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">

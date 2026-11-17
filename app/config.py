@@ -163,6 +163,11 @@ class Settings(BaseSettings):
     PAYPAL_CLIENT_SECRET: str = ""
     PAYPAL_API: str = "https://api-m.sandbox.paypal.com"  # live: https://api-m.paypal.com
 
+    # ── Razorpay (INR; UPI, cards, netbanking) ───────────────────────────────
+    RAZORPAY_KEY_ID: str = ""          # public; also sent to the browser for Checkout
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
     # ── Observability ─────────────────────────────────────────────────────────
     SENTRY_DSN: str = ""
     SENTRY_FRONTEND_DSN: str = ""      # browser DSN (public by design); served via /auth/config
@@ -171,6 +176,9 @@ class Settings(BaseSettings):
     # ── Billing ───────────────────────────────────────────────────────────────
     # Master switch — PayPal settings live in the PayPal section above.
     BILLING_ENABLED: bool = False
+    # Starter credits normally wait for a verified email. Without SMTP nobody can verify, so a beta without email
+    # set up can turn this on (Google sign-in is always verified). Raises the risk of throwaway sign-ups.
+    GRANT_WITHOUT_VERIFICATION: bool = False
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

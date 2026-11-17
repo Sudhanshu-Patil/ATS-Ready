@@ -106,15 +106,17 @@ python cli.py history     # show past generated resumes
 
 ---
 
-## 💳 Payments (PayPal sandbox)
+## 💳 Credits and payments
 
-Pro ($19) and Team ($49) upgrades use the PayPal Orders v2 REST API
-(`app/services/billing_service.py`). Checkout is a redirect: the backend creates
-an order, the user approves it on PayPal, and on return the backend captures the
-payment and grants the plan for 30 days. Set `BILLING_ENABLED=true`,
-`PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` (sandbox keys from
-developer.paypal.com) and pay with a sandbox Personal test account. No real
-money moves.
+You pay per job, not per month. One **job credit** unlocks one job (one job description) completely, within
+per-job limits: 3 resumes, 3 cover letters, 40 answers, 2 interview preps, 5 reach-out messages and 3 follow-up
+drafts. New accounts get 1 job credit and 2 resume-only credits after verifying their email; inviting a friend earns a
+job credit. Packs (never expire): ₹10 (1), ₹49 (6), ₹99 (15), ₹199 (35); USD for buyers outside India.
+
+- **Razorpay** (INR): `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`. Use test keys first and add the webhook
+  `https://<host>/api/billing/razorpay/webhook` (events `payment.captured`, `order.paid`).
+- **PayPal** (USD): `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`; sandbox by default.
+- `BILLING_ENABLED=true` turns it on. Prices and limits are in `app/services/pricing.py`.
 
 ## 🔄 AI Pipeline
 

@@ -103,8 +103,8 @@ async def test_checkout_graceful_when_billing_disabled(client, monkeypatch):
     email = unique_email()
     reg = await register(client, email)
     r = await client.post(
-        "/api/billing/checkout", json={"plan": "pro"}, headers=bearer(reg)
+        "/api/billing/checkout", json={"pack_id": "single"}, headers=bearer(reg)
     )
     assert r.status_code == 200
     assert r.json()["billing_enabled"] is False
-    assert r.json()["order_id"] is None
+    assert "order_id" not in r.json()

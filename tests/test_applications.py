@@ -318,7 +318,7 @@ async def test_other_users_cannot_read_or_change_your_requests_or_applications(c
     assert (await client.delete(f"/api/assistant/requests/{b['id']}", headers=other)).status_code == 404
 
 
-async def test_the_assistant_is_a_pro_feature_but_tracking_is_free(client, stub, monkeypatch):
+async def test_the_assistant_needs_a_credit_but_manual_tracking_is_free(client, stub, monkeypatch):
     h, _ = await _user_with_profile(client)
     monkeypatch.setattr(settings, "BILLING_ENABLED", True)
     assert (await post(client, h, ["Tell me about yourself."])).status_code == 402

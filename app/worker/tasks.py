@@ -34,12 +34,12 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from arq import cron
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.ai_agent import ai_agent
 from app.db.database import AsyncSessionLocal
-from app.services import applications, assistant, persona, suggestion_store
+from app.services import applications, assistant, credits, persona, suggestion_store
 from app.services.ats_score import jd_terms as extract_terms
 from app.services.ats_score import score_view, terms_owned, view_from_resume, view_from_text
 from app.services.documents import fit_resume
@@ -91,6 +91,7 @@ async def generate_resume(
     jd_text: Optional[str],
     emphasis: Optional[list],
     baseline_id: Optional[str] = None,       # the user's uploaded resume to compare against
+    application_id: Optional[str] = None,    # the job this resume belongs to (credits and tracking)
 ) -> Dict[str, Any]:
     """
     Full resume generation pipeline as an ARQ background task.
@@ -175,7 +176,8 @@ async def generate_resume(
 
             # Tracking: this job is now on the user's list, dated when they asked. Never fails the resume.
             await _track_job(db, user_id, source="resume", kind="resume", summary="Tailored a resume",
-                             jd_text=jd_text, jd_url=jd_url, parsed_jd=parsed_jd, asked_at=job_asked_at)
+                             jd_text=jd_text, jd_url=jd_url, parsed_jd=parsed_jd, asked_at=job_asked_at,
+                             application_id=application_id)
 
             # ── Step 4: What the user already has, and the suggestion list for this JD ──
             terms = extract_terms(parsed_jd)
@@ -273,12 +275,14 @@ async def generate_resume(
                                   + (f"\n{scrape_warning}" if scrape_warning else ""),
             }
             logger.info("Job %s completed — ATS score=%.1f", job_app_id, result["ats_score"])
+            await _credit_done(db, application_id)
             return result
 
         except Exception as exc:
             error_msg = str(exc)
             logger.error("Job %s FAILED: %s", job_app_id, error_msg, exc_info=True)
             await _update_job_status(db, job_app_id, "failed", {"error_message": error_msg})
+            await _credit_release(db, application_id, "resume")
             # Re-raise so ARQ records the failure and can retry
             raise
 
@@ -289,7 +293,8 @@ async def generate_resume(
 
 @tracked("cover_letter")
 async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_id, tone,
-                                     limit=None, limit_unit=None, company=None, company_skipped=False):
+                                     limit=None, limit_unit=None, company=None, company_skipped=False,
+                                     application_id=None):
     """Fill in a pending CoverLetter row. Failures are recorded on the row (no
     arq retry: the user sees the error and can resubmit)."""
     async with AsyncSessionLocal() as db:
@@ -313,7 +318,7 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
                 return
             await _track_job(db, uuid.UUID(user_id), source="cover_letter", kind="cover_letter",
                              summary="Asked for a cover letter", jd_text=jd_text, jd_url=None, parsed_jd=parsed_jd,
-                             asked_at=row.created_at)
+                             asked_at=row.created_at, application_id=application_id)
             result = await asyncio.to_thread(
                 ai_agent.generate_cover_letter, parsed_jd, profile, tailored, tone, limit_unit, limit)
             row.job_app_id = job_app.id if job_app else None
@@ -332,15 +337,18 @@ async def generate_cover_letter_task(ctx, letter_id, user_id, jd_text, job_app_i
             row.word_count = len(row.body.split())            # real count, not the model's estimate
             row.highlights = result.get("highlights", [])
             row.status = "done"
+            await credits.succeeded(db, application_id)
         except Exception as exc:
             logger.error("Cover letter %s FAILED: %s", letter_id, exc, exc_info=True)
+            await db.rollback()
             row.status, row.error = "failed", friendly_error(exc)
+            await credits.release(db, application_id, "cover_letter")
             mark_failed()
         await db.commit()
 
 
 @tracked("interview_prep")
-async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_id):
+async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_id, application_id=None):
     async with AsyncSessionLocal() as db:
         row = await db.get(InterviewPrep, uuid.UUID(prep_id))
         if row is None:
@@ -352,7 +360,7 @@ async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_i
                 jd_text, uuid.UUID(user_id), db, job_app_id)
             await _track_job(db, uuid.UUID(user_id), source="interview_prep", kind="interview_prep",
                              summary="Prepared for the interview", jd_text=jd_text, jd_url=None, parsed_jd=parsed_jd,
-                             asked_at=row.created_at)
+                             asked_at=row.created_at, application_id=application_id)
             result = await asyncio.to_thread(
                 ai_agent.generate_interview_prep, parsed_jd, profile, tailored)
             row.job_app_id = job_app.id if job_app else None
@@ -362,14 +370,37 @@ async def generate_interview_prep_task(ctx, prep_id, user_id, jd_text, job_app_i
             row.red_flags_to_avoid = result.get("red_flags_to_avoid", [])
             row.questions_to_ask = result.get("questions_to_ask", [])
             row.status = "done"
+            await credits.succeeded(db, application_id)
         except Exception as exc:
             logger.error("Interview prep %s FAILED: %s", prep_id, exc, exc_info=True)
+            await db.rollback()
             row.status, row.error = "failed", friendly_error(exc)
+            await credits.release(db, application_id, "interview_prep")
             mark_failed()
         await db.commit()
 
 
-async def _track_job(db, user_id, *, source, kind, summary, jd_text, jd_url, parsed_jd, asked_at) -> None:
+async def _credit_done(db, application_id) -> None:
+    """Credit bookkeeping must never break the feature it belongs to."""
+    try:
+        await credits.succeeded(db, credits.parse_uuid(application_id))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("Could not record a successful run", exc_info=True)
+
+
+async def _credit_release(db, application_id, kind) -> None:
+    try:
+        await credits.release(db, credits.parse_uuid(application_id), kind)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning("Could not give a failed run back", exc_info=True)
+
+
+async def _track_job(db, user_id, *, source, kind, summary, jd_text, jd_url, parsed_jd, asked_at,
+                     application_id=None) -> None:
     """Add this job to the user's application list, dated when THEY asked (not when the worker got to it).
     Company/role come from the job description's analysis; if the posting hides the company, the application is
     created anyway and the UI asks the user. Tracking must never break the feature it is attached to."""
@@ -377,7 +408,8 @@ async def _track_job(db, user_id, *, source, kind, summary, jd_text, jd_url, par
         company = parsed_jd.company if not applications.is_unclear_company(parsed_jd.company) else None
         app = await applications.track(
             db, user_id, source=source, kind=kind, summary=summary, jd_text=jd_text, company=company,
-            role=parsed_jd.job_title, job_url=jd_url, occurred_at=asked_at)
+            role=parsed_jd.job_title, job_url=jd_url, occurred_at=asked_at,
+            application_id=credits.parse_uuid(application_id))
         await persona.record_target(db, user_id, parsed_jd.job_title, [t.term for t in extract_terms(parsed_jd)[:5]])
         await db.commit()
         logger.info("Tracked %s for user %s -> application %s (needs=%s)", source, user_id, app.id, app.needs)
@@ -397,9 +429,13 @@ async def generate_assistant_answers_task(ctx, request_id, user_id, only=None):
         await db.commit()
         try:
             await assistant.process_request(db, req, only)
+            await credits.succeeded(db, req.application_id)
         except Exception as exc:
             logger.error("Assistant request %s FAILED: %s", request_id, exc, exc_info=True)
+            await db.rollback()
             req.status, req.error = "failed", friendly_error(exc)
+            if only is None:                       # a partial re-run did not count its questions again
+                await credits.release(db, req.application_id, "answers", len(req.questions or []))
             mark_failed()
         await db.commit()
 
@@ -413,15 +449,17 @@ async def reap_stale_jobs(ctx):
     so the UI never spins forever and the per-user active cap frees up."""
     cutoff = datetime.utcnow() - STALE_AFTER
     async with AsyncSessionLocal() as db:
-        for model, col in ((JobApplication, "error_message"), (CoverLetter, "error"),
-                           (InterviewPrep, "error")):
+        for model, col, kind in ((JobApplication, "error_message", "resume"), (CoverLetter, "error", "cover_letter"),
+                                 (InterviewPrep, "error", "interview_prep")):
+            stale = model.status.in_(("pending", "running")) & (model.created_at < cutoff)
+            jobs = (await db.execute(select(model.application_id).where(stale))).scalars().all()
             res = await db.execute(
-                update(model)
-                .where(model.status.in_(("pending", "running")), model.created_at < cutoff)
-                .values(status="failed", **{col: "Timed out. Please try again."})
+                update(model).where(stale).values(status="failed", **{col: "Timed out. Please try again."})
             )
             if res.rowcount:
                 logger.warning("Reaped %d stale %s rows", res.rowcount, model.__tablename__)
+            for application_id in jobs:                       # a run that never finished gives its use back
+                await credits.release(db, application_id, kind)
         await db.commit()
 
 

@@ -173,21 +173,22 @@ async def test_retry_is_owner_only(client, stub):
     assert (await client.post(f"/api/cover-letters/{cl}/retry", headers=other)).status_code == 404
 
 
-async def test_interview_prep_is_a_pro_feature(client, stub, monkeypatch):
+async def test_interview_prep_needs_a_credit(client, stub, monkeypatch):
     monkeypatch.setattr(settings, "BILLING_ENABLED", True)
     h = await user_with_profile(client)
 
     r = await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})
     assert r.status_code == 402
-    assert r.json()["detail"]["message"] == "Interview prep is a Pro feature."
+    assert r.json()["detail"]["error"] == "no_credits"
     assert not stub                                              # nothing was queued
 
     from app.db.models import User
+    from app.services import credits
     from sqlalchemy import select
     async with AsyncSessionLocal() as db:
         me = (await client.get("/api/auth/me", headers=h)).json()["email"]
         u = (await db.execute(select(User).where(User.email == me))).scalar_one()
-        u.plan = "pro"
+        await credits.apply(db, u.id, "job", 1, "admin", f"test:{u.id}")
         await db.commit()
     ok = await client.post("/api/interview-prep", headers=h, json={"jd_text": JD})
     assert ok.status_code == 202 and stub[0][0] == "generate_interview_prep_task"
@@ -297,7 +298,7 @@ async def test_referral_message(client, stub, monkeypatch):
     no_profile = bearer(await register(client, unique_email()))
     assert (await client.post("/api/referral-message", headers=no_profile, json={"jd_text": JD})).status_code == 400
 
-    monkeypatch.setattr(settings, "BILLING_ENABLED", True)          # outreach is a Pro tool
+    monkeypatch.setattr(settings, "BILLING_ENABLED", True)          # outreach needs an unlocked job
     assert (await client.post("/api/referral-message", headers=h, json={"jd_text": JD})).status_code == 402
 
 

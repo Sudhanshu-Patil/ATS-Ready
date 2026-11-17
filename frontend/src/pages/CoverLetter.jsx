@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { FileText, Sparkles, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/client'
@@ -11,6 +11,7 @@ import Spinner from '../components/Spinner'
 import LetterEditor from '../components/LetterEditor'
 import ReferralMessage from '../components/ReferralMessage'
 import { useActivityStore } from '../store/activity'
+import { ContinueJob, JobBanner, useJob } from '../lib/job'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { confirmDialog } from '../components/ConfirmDialog'
@@ -38,7 +39,10 @@ const TONE_BADGE = {
 export default function CoverLetter() {
   // A job card can open this page straight on the referral tab, with the job prefilled.
   const preset = useLocation().state || {}
-  const [tab, setTab]         = useState(preset.tab || 'generate')
+  const { jobId, job, missing: jobMissing } = useJob()
+  const [startedJobId, setStartedJobId] = useState(null)
+  const [qs] = useSearchParams()
+  const [tab, setTab]         = useState(preset.tab || qs.get('tab') || 'generate')
   const [jdText, setJdText]   = useState('')
   const [company, setCompany] = useState('')
   const [tone, setTone]       = useState('professional')
@@ -76,7 +80,7 @@ export default function CoverLetter() {
   }
 
   const generate = async () => {
-    if (jdText.trim().length < 100) {
+    if (!jobId && jdText.trim().length < 100) {
       toast.error('Job description too short (min 100 characters)')
       return
     }
@@ -89,8 +93,9 @@ export default function CoverLetter() {
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await api.post('/cover-letter', { jd_text: jdText, tone, ...(company.trim() ? { company: company.trim() } : {}), ...(limit ? { limit, limit_unit: limitUnit } : {}) })
+      const res = await api.post('/cover-letter', { ...(jobId ? { application_id: jobId } : { jd_text: jdText }), tone, ...(company.trim() ? { company: company.trim() } : {}), ...(limit ? { limit, limit_unit: limitUnit } : {}) })
       useActivityStore.getState().track('cover_letter', res.data.id)
+      setStartedJobId(res.data.application_id || null)
       toast('Writing your cover letter — you can keep working while it runs.')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Generation failed')
@@ -139,6 +144,9 @@ export default function CoverLetter() {
         <div className="space-y-5">
           {/* Input */}
           <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
+            {jobId ? (
+              <JobBanner job={job} jobId={jobId} missing={jobMissing} kind="cover_letter" toolPath="/cover-letter" />
+            ) : (<>
             <label className="block text-sm font-medium text-text-secondary mb-2">Job Description</label>
             <textarea
               className="input min-h-36 resize-y font-mono text-sm mb-5"
@@ -147,6 +155,7 @@ export default function CoverLetter() {
               onChange={e => setJdText(e.target.value)}
               disabled={submitting}
             />
+            </>)}
             <input aria-label="Company (optional)" className="input text-sm mb-5" maxLength={200} value={company}
                    onChange={e => setCompany(e.target.value)} disabled={submitting}
                    placeholder="Company name (optional: if the posting does not name it, we will ask before writing)" />
@@ -219,6 +228,7 @@ export default function CoverLetter() {
               )}
 
               <LetterEditor key={result.id} letter={result} onSaved={setResult} />
+              <div className="mt-3"><ContinueJob applicationId={jobId ? null : startedJobId} /></div>
               <div className="mt-4 text-right">
                 <button onClick={() => { setResult(null); setJdText('') }} className="btn-ghost text-sm">New</button>
               </div>
@@ -227,7 +237,7 @@ export default function CoverLetter() {
         </div>
       )}
 
-      {tab === 'referral' && <ReferralMessage initial={preset} />}
+      {tab === 'referral' && <ReferralMessage initial={preset} applicationId={jobId} />}
 
       {tab === 'history' && (
         <div className="space-y-3">

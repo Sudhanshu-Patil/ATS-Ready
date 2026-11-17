@@ -13,6 +13,7 @@ import ResumeHistory from '../components/ResumeHistory'
 import { ScoreBar, SuggestionsPanel } from '../components/ResumeInsights'
 import { useActivityStore } from '../store/activity'
 import { downloadFile } from '../lib/download'
+import { ContinueJob, JobBanner, useJob } from '../lib/job'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -45,6 +46,8 @@ export default function Generator() {
   } = useGeneratorStore()
 
   const { addPendingJob, updateJob, refresh } = useJobsStore()
+  const { jobId: openJobId, job: openJob, missing: jobMissing } = useJob()
+  const [startedJobId, setStartedJobId] = useState(null)
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const jobId = useGeneratorStore(s => s.jobId)
@@ -69,10 +72,10 @@ export default function Generator() {
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = async () => {
-    const text = mode === 'text' ? jdText : null
-    const url  = mode === 'url'  ? jdUrl  : null
+    const text = openJobId ? null : mode === 'text' ? jdText : null
+    const url  = openJobId ? null : mode === 'url'  ? jdUrl  : null
 
-    if (!text && !url) { toast.error('Please provide a job description'); return }
+    if (!openJobId && !text && !url) { toast.error('Please provide a job description'); return }
     if (text && text.trim().length < 100) { toast.error('Job description is too short (min 100 characters)'); return }
 
     // The result panel follows the newest job; earlier ones keep running in
@@ -85,9 +88,10 @@ export default function Generator() {
     const emphasisList = emphasis.split(',').map(s => s.trim()).filter(Boolean)
 
     try {
-      const res = await resumeAPI.generate(text, url, emphasisList.length ? emphasisList : null, baselineId)
+      const res = await resumeAPI.generate(text, url, emphasisList.length ? emphasisList : null, baselineId, openJobId)
       setEmphasis('')       // ticked suggestions are now saved server-side as applied
       const id = res.data.job_id
+      setStartedJobId(res.data.application_id || null)
       setJobId(id)
       addPendingJob(id)  // Optimistically add to history store
       useActivityStore.getState().track('resume', id)
@@ -144,9 +148,13 @@ export default function Generator() {
       {tab === 'history' ? <ResumeHistory /> : (<>
       {/* Input card */}
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card mb-6">
-        <Tabs tabs={MODE_TABS} active={mode} onChange={setMode} className="mb-5" />
+        {openJobId ? (
+          <JobBanner job={openJob} jobId={openJobId} missing={jobMissing} kind="resume" toolPath="/generate" />
+        ) : (
+          <Tabs tabs={MODE_TABS} active={mode} onChange={setMode} className="mb-5" />
+        )}
 
-        {mode === 'text' ? (
+        {openJobId ? null : mode === 'text' ? (
           <textarea className="input min-h-40 resize-y font-mono text-sm"
             placeholder="Paste the full job description here…"
             value={jdText} onChange={e => setJdText(e.target.value)} disabled={submitting} />
@@ -279,6 +287,8 @@ export default function Generator() {
               </div>
             </div>
           </div>
+
+          <div className="mt-4"><ContinueJob applicationId={openJobId ? null : startedJobId} /></div>
 
           {result.ats_breakdown?.baseline_expired && (
             <p className="mt-4 text-xs text-text-muted">Your uploaded resume is no longer held (it is kept for 2 hours). Upload it again to compare.</p>

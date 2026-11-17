@@ -18,7 +18,8 @@ for (const scheme of ['light', 'dark']) for (const path of PAGES) {
 }
 
 // Signed-in screens.
-const APP_PAGES = ['/dashboard', '/generate', '/cover-letter', '/interview-prep', '/metabase', '/settings?section=security']
+const APP_PAGES = ['/dashboard', '/jobs', '/generate', '/cover-letter', '/interview-prep', '/metabase',
+  '/settings?section=security', '/settings?section=billing']
 
 for (const scheme of ['light', 'dark']) {
   test(`no serious accessibility violations in the signed-in app (${scheme})`, async ({ page }) => {

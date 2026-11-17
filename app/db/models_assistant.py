@@ -40,6 +40,11 @@ class Application(Base):
     follow_up_at = Column(DateTime, nullable=True)
     notes        = Column(Text, nullable=True)
     needs        = Column(JSONB, nullable=False, default=list)   # fields still to ask the user: ["company", "role"]
+    # What the job has paid for: none -> resume (resume credit) -> full (job credit). `usage` counts generations per
+    # kind against the per-job caps in app/services/pricing.py. Once unlocked the JD is read-only.
+    unlock_level = Column(String(10), default="none", server_default="none", nullable=False)
+    unlocked_at  = Column(DateTime, nullable=True)
+    usage        = Column(JSONB, nullable=False, default=dict, server_default="{}")
     created_at   = Column(DateTime, default=_now, nullable=False)
     updated_at   = Column(DateTime, default=_now, onupdate=_now, nullable=False)
 

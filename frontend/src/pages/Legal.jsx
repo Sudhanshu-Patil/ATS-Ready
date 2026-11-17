@@ -22,7 +22,7 @@ export function Privacy() {
       <H>Who processes it</H>
       <ul className="list-disc pl-6 space-y-1">
         <li>Groq: receives your profile and job description text to generate documents.</li>
-        <li>PayPal: handles payments. We never see your card details.</li>
+        <li>Razorpay (rupees) and PayPal (dollars): handle payments. We never see your card details.</li>
         <li>Google: only if you choose "Continue with Google".</li>
         <li>Apify and public job boards: receive search terms (roles, skills, location), not your identity.</li>
         <li>Sentry: error reports, without personal data, when enabled.</li>
@@ -53,7 +53,7 @@ export function Terms() {
       <H>Acceptable use</H>
       <p>Do not abuse the service, attempt to bypass limits, or submit content you have no right to use.</p>
       <H>Payments</H>
-      <p>Paid plans are billed through PayPal for the period shown at checkout and do not renew automatically.</p>
+      <p>Credits are one-time purchases through Razorpay or PayPal at the price shown at checkout. There are no subscriptions and nothing renews. Credits do not expire and are not refundable, except that a credit is returned automatically when the first generation for a job fails. Free starter and invite credits have no cash value. One job credit covers the job described by one job description, within the per-job limits shown in the app.</p>
       <H>No warranty</H>
       <p>The service is provided as is, and we do not guarantee interviews, offers or specific ATS scores.</p>
     </Page>

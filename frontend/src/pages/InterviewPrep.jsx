@@ -10,6 +10,7 @@ import { Skeleton } from '../components/Skeleton'
 import Spinner from '../components/Spinner'
 import StatusBadge from '../components/StatusBadge'
 import { useActivityStore } from '../store/activity'
+import { JobBanner, useJob } from '../lib/job'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { confirmDialog } from '../components/ConfirmDialog'
@@ -37,6 +38,7 @@ const TAB_ITEMS = [
 
 export default function InterviewPrep() {
   const [tab, setTab]         = useState('generate')
+  const { jobId, job, missing: jobMissing } = useJob()
   const [jdText, setJdText]   = useState('')
   const [submitting, setSubmitting] = useState(false)
   const lastId = useActivityStore(s => s.last.interview_prep)
@@ -70,7 +72,7 @@ export default function InterviewPrep() {
   }
 
   const generate = async () => {
-    if (jdText.trim().length < 100) {
+    if (!jobId && jdText.trim().length < 100) {
       toast.error('Job description too short (min 100 characters)')
       return
     }
@@ -78,7 +80,7 @@ export default function InterviewPrep() {
     setResult(null)
     setOpenQ(null)
     try {
-      const res = await api.post('/interview-prep', { jd_text: jdText })
+      const res = await api.post('/interview-prep', jobId ? { application_id: jobId } : { jd_text: jdText })
       useActivityStore.getState().track('interview_prep', res.data.id)
       toast('Preparing your interview kit — you can keep working while it runs.')
     } catch (err) {
@@ -128,6 +130,9 @@ export default function InterviewPrep() {
       {tab === 'generate' && (
         <div className="space-y-5">
           <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
+            {jobId ? (
+              <div className="mb-5"><JobBanner job={job} jobId={jobId} missing={jobMissing} kind="interview_prep" toolPath="/interview-prep" /></div>
+            ) : (<>
             <label className="block text-sm font-medium text-text-secondary mb-2">Job Description</label>
             <textarea
               className="input min-h-36 resize-y font-mono text-sm mb-5"
@@ -136,6 +141,7 @@ export default function InterviewPrep() {
               onChange={e => setJdText(e.target.value)}
               disabled={submitting}
             />
+            </>)}
             <button onClick={generate} disabled={submitting}
               className={clsx(
                 'w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-white transition-all',

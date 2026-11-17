@@ -6,7 +6,11 @@ and [.env.example](.env.example); values live only in the Render dashboard and G
 
 ## Before the first production deploy
 
-1. **Migrations**: the image runs `alembic upgrade head` at start. Current head: `0013`.
+1. **Migrations**: the image runs `alembic upgrade head` at start. Current head: `0014`.
+   **Credits and email**: starter credits wait for a verified email, and verification needs SMTP (see below). Until SMTP is set
+   up, use Google sign-in or set `GRANT_WITHOUT_VERIFICATION=true` (accepts more throwaway sign-ups).
+   **Razorpay**: set the three `RAZORPAY_*` vars (test keys first) and add the webhook
+   `https://<host>/api/billing/razorpay/webhook` with events `payment.captured` and `order.paid`.
 2. **Required env**: `ENVIRONMENT=production`, a strong `JWT_SECRET` (Render can generate one), real
    `DATABASE_URL` / `REDIS_URL` (the app refuses to boot with the dev password `secret`),
    `LLM_API_KEY`, `FRONTEND_URL`.
@@ -55,7 +59,7 @@ toggle); a job outside those places is never shown.
 - Per-user request limits protect the expensive endpoints (resume, cover letter, interview prep, import,
   recommendations), and a user can have at most 3 jobs in flight.
 - In the provider consoles turn on usage alerts: Render, Neon (storage/compute), Upstash (commands),
-  PayPal (none needed in sandbox).
+  Razorpay and PayPal (none needed in sandbox/test mode).
 
 ## Backups
 
