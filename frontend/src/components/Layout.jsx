@@ -57,8 +57,9 @@ export default function Layout() {
   const element = useOutlet()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [unverified, setUnverified] = useState(false)
   useEffect(() => {
-    authAPI.me().then((r) => setIsAdmin(!!r.data.is_admin)).catch(() => {})
+    authAPI.me().then((r) => { setIsAdmin(!!r.data.is_admin); setUnverified(r.data.is_verified === false) }).catch(() => {})
   }, [])
 
   // Drawer shouldn't survive a navigation on mobile — otherwise the next
@@ -207,7 +208,17 @@ export default function Layout() {
 
         {/* Main content — route transitions scoped here via useOutlet(), so the
             sidebar above (and its nav pill) never remounts on navigation. */}
-        <main id="main" tabIndex={-1} className="flex-1 overflow-hidden outline-none">
+        <main id="main" tabIndex={-1} className="flex-1 overflow-hidden outline-none flex flex-col">
+          {unverified && (
+            <div role="status" className="px-4 py-2 text-sm bg-brand/10 border-b border-brand/20 flex items-center gap-3 flex-wrap">
+              <span className="text-text-primary">Verify your email to get your free credits. We sent a link to {user?.email}.</span>
+              <button className="text-brand underline"
+                onClick={() => authAPI.sendVerification().then(() => toast.success('Verification email sent'))
+                  .catch((e) => toast.error(e.response?.data?.detail || 'Could not send the email'))}>
+                Send it again
+              </button>
+            </div>
+          )}
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
@@ -215,7 +226,7 @@ export default function Layout() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
-              className="h-full overflow-y-auto"
+              className="flex-1 min-h-0 overflow-y-auto"
             >
               {element}
             </motion.div>

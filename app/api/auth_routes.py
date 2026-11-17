@@ -520,7 +520,9 @@ async def send_verification(request: Request, user: User = Depends(get_current_u
     """Resend the verification email for the logged-in user."""
     if user.is_verified:
         return {"message": "Email is already verified", "already_verified": True}
-    await send_verification_email(user.email, create_email_verify_token(user.id))
+    sent = await send_verification_email(user.email, create_email_verify_token(user.id))
+    if not sent:                                          # say so, instead of pretending it went out
+        raise HTTPException(status_code=503, detail="We could not send the email right now. Please try again later.")
     return {"message": "Verification email sent", "already_verified": False}
 
 
