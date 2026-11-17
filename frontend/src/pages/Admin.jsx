@@ -3,6 +3,11 @@ import api from '../api/client'
 import Spinner from '../components/Spinner'
 
 const fmt = (n) => Number(n || 0).toLocaleString()
+const SYMBOL = { INR: '₹', USD: '$' }
+const money = (byCurrency) => {
+  const parts = Object.entries(byCurrency || {}).map(([c, v]) => `${SYMBOL[c] || c + ' '}${fmt(v.amount)}`)
+  return parts.length ? parts.join(' + ') : '₹0'
+}
 
 function Stat({ label, value, hint }) {
   return (
@@ -25,7 +30,7 @@ export default function Admin() {
   if (error) return <div className="p-8 text-text-secondary">{error}</div>
   if (!data) return <div className="p-8 flex justify-center"><Spinner size="lg" /></div>
 
-  const { users, llm, queue, daily, resumes_by_status: statuses } = data
+  const { users, llm, queue, daily, credits, resumes_by_status: statuses } = data
   const capPct = llm.daily_cap ? Math.round((llm.tokens_today / llm.daily_cap) * 100) : null
   const maxRuns = Math.max(1, ...daily.map((d) => d.runs))
 
@@ -34,13 +39,37 @@ export default function Admin() {
       <h1 className="font-display text-2xl font-bold text-text-primary">Admin</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat label="Users" value={fmt(users.total)}
-              hint={Object.entries(users.plans).map(([p, c]) => `${c} ${p}`).join(' · ')} />
+        <Stat label="Users" value={fmt(users.total)} hint={`${fmt(users.verified)} verified · ${fmt(credits.paying_users)} paid`} />
         <Stat label="Active (24h / 7d)" value={`${fmt(users.active_24h)} / ${fmt(users.active_7d)}`} />
         <Stat label="Queue now" value={`${fmt(queue.running)} running`} hint={`${fmt(queue.pending)} waiting`} />
         <Stat label="AI tokens today" value={fmt(llm.tokens_today)}
               hint={capPct === null ? 'no cap' : `${capPct}% of ${fmt(llm.daily_cap)} daily cap`} />
       </div>
+
+      <section aria-label="Revenue and credits" className="space-y-4">
+        <h2 className="font-semibold text-text-primary">Revenue and credits</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Stat label="Revenue (30 days)" value={money(credits.revenue_30d)}
+                hint={`${money(credits.revenue_total)} all time`} />
+          <Stat label="Credits sold / given free" value={`${fmt(credits.credits.sold)} / ${fmt(credits.credits.free_given)}`}
+                hint={`${fmt(credits.referrals.rewarded)} referral rewards`} />
+          <Stat label="Credits unspent" value={fmt(credits.credits.outstanding_job)}
+                hint={`+ ${fmt(credits.credits.outstanding_resume)} resume-only · what you still owe in AI use`} />
+          <Stat label="Jobs unlocked" value={fmt(credits.credits.jobs_unlocked)}
+                hint={`${fmt(credits.last_30d.unlocks)} in 30 days · ${fmt(credits.last_30d.refunds)} refunded`} />
+        </div>
+        <div className="card">
+          <p className="text-sm text-text-secondary">
+            Model tokens per unlocked job (30 days):{' '}
+            <strong className="text-text-primary">{credits.last_30d.tokens_per_unlock === null ? 'no unlocks yet' : fmt(credits.last_30d.tokens_per_unlock)}</strong>.
+            The prices assume a fully used job is about 40,000 tokens (about ₹2 at Groq list prices). If this number stays well above that,
+            tighten the per-job limits in <code>pricing.py</code>; if far below, you can loosen them.
+          </p>
+          {credits.by_pack.length > 0 && (
+            <p className="text-xs text-text-muted mt-2">Packs sold: {credits.by_pack.map((p) => `${p.payments} × ${p.pack}`).join(' · ')}</p>
+          )}
+        </div>
+      </section>
 
       <section className="card">
         <h2 className="font-semibold text-text-primary mb-3">Runs per day (last 14 days)</h2>
