@@ -216,3 +216,24 @@ async def test_baseline_upload_endpoint(client, monkeypatch):
     assert (await client.post("/api/resume-baseline", headers=h,
                               files={"file": ("bad.docx", b"this is not a zip")})).status_code == 422   # corrupt file
     assert store.jd_hash("A  b\nC") == store.jd_hash("a b c")        # same job description, whatever its spacing
+
+
+async def test_an_older_resume_keeps_its_breakdown_and_shows_todays_suggestions(client, pipeline):
+    h, uid = await _user_with_profile(client)
+    v1 = (await _run(uid))["breakdown"]
+    await _run(uid, emphasis=["Kubernetes", "FastAPI"])              # a later version applies two of them
+
+    jobs = (await client.get("/api/jobs", headers=h)).json()["items"]
+    oldest = sorted(jobs, key=lambda j: j["created_at"])[0]
+    got = (await client.get(f"/api/jobs/{oldest['id']}", headers=h)).json()
+
+    # what that version scored, stored with it, unchanged
+    assert got["ats_breakdown"]["total_score"] == v1["total_score"]
+    assert "Kubernetes" in [i["term"] for i in got["ats_breakdown"]["open_suggestions"]]
+    assert got["jd_text"].strip() == JD_TEXT.strip()                  # enough to improve it from the same posting
+    # what is still open today: the two ticked later are not offered again
+    now = got["suggestions_now"]
+    open_now = [i["term"] for i in now["open"]]
+    assert "Kubernetes" not in open_now and "FastAPI" not in open_now and "Kafka" in open_now
+    assert set(now["applied"]) == {"Kubernetes", "FastAPI"}
+    assert now["projected_score"] > v1["total_score"]

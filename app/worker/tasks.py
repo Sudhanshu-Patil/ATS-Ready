@@ -140,7 +140,7 @@ async def generate_resume(
                 raise ValueError("Job description is too short or empty.")
 
             # ── Step 2: Parse JD with AI ──────────────────────────────────────
-            await _update_job_status(db, job_app_id, "running", {"jd_text": jd_text[:5000]})
+            await _update_job_status(db, job_app_id, "running", {"jd_text": jd_text[:12000]})
 
             cached_parse = await cache_service.get_parsed_jd(jd_text)
             if cached_parse:
