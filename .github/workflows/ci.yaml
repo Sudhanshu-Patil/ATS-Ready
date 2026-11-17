@@ -109,6 +109,9 @@ jobs:
           # The e2e suite registers many accounts from one IP and must not spend LLM quota
           echo "RATE_LIMIT_ENABLED=false" >> .env
           echo "LLM_FAKE=true" >> .env
+          # .env.example has placeholder R2 credentials; blank them so resumes are stored on local disk
+          echo "S3_ACCESS_KEY_ID=" >> .env
+          echo "S3_SECRET_ACCESS_KEY=" >> .env
 
       - name: Start the dev stack
         run: docker compose -f docker-compose.yaml up -d --build api worker frontend db redis mailpit

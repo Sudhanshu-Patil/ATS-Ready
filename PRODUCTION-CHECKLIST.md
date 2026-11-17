@@ -32,6 +32,19 @@ and [.env.example](.env.example); values live only in the Render dashboard and G
 | Spend | See below. Every cap also logs a `SPEND ALERT` error at 80%, which Sentry turns into an email. |
 | Performance | Lighthouse CI budgets run on every push (see `frontend/lighthouserc.json`). Sentry traces sample 10%. |
 
+## Job sources
+
+Suggestions come from free public sources (YC jobs, HN job posts and Who's Hiring, RemoteOK, Himalayas, We Work
+Remotely, Jobicy, Remotive, Arbeitnow, The Muse) and need no setup. Two optional extras add reach for local roles:
+
+- **Google dork search** of Greenhouse/Lever/Ashby/Workable pages: set `GOOGLE_CSE_KEY` and `GOOGLE_CSE_CX` (steps in
+  `.env.example`; the free tier is 100 queries/day, capped by `DORK_DAILY_QUERY_CAP`).
+- **Apify** crawlers for LinkedIn/Naukri/Indeed (`APIFY_API_TOKEN`). The LinkedIn actor needs a one-time approval in
+  the Apify console; Naukri and Indeed currently return no listings (their pages changed), so do not rely on them.
+
+Each user's results are filtered by the location preferences saved in Metabase (cities/countries plus a remote
+toggle); a job outside those places is never shown.
+
 ## Spend caps (so a free tier cannot be exhausted or surprise-billed)
 
 - `LLM_USER_DAILY_TOKEN_CAP` (default 120 000) and `LLM_DAILY_TOKEN_CAP` (default 600 000): tokens per UTC day.

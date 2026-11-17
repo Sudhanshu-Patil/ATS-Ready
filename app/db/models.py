@@ -110,6 +110,9 @@ class PersonalInfo(Base):
     github       = Column(String(500), nullable=True)
     portfolio    = Column(String(500), nullable=True)
     professional_summary = Column(Text, nullable=True)
+    # Job search: places the user will work (cities/countries), and whether remote jobs open to them count
+    preferred_locations = Column(JSONB, nullable=True)
+    remote_ok    = Column(Boolean, default=True, server_default="true", nullable=False)
     updated_at   = Column(DateTime, default=_now, onupdate=_now, nullable=False)
 
     user = relationship("User", back_populates="personal_info")

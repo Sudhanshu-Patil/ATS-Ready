@@ -8,7 +8,8 @@ SOURCES:
   1. Remotive      — remote tech jobs JSON API (free, no key)
   2. Arbeitnow     — international tech jobs JSON API (free, no key)
   3. The Muse      — curated tech jobs JSON API (free, no key)
-  4. HN Who's Hiring — Hacker News monthly thread via Algolia (free, no key)
+  4. More sources live in job_sources.py: HN Who's Hiring, HN Jobs and YC Jobs (YC companies), RemoteOK,
+     Himalayas, We Work Remotely, Jobicy, and an optional Google dork search of ATS job pages.
   5. LinkedIn      — crawled via Apify (see below)
   6. Naukri        — crawled via Apify (see below)
   7. Indeed        — crawled via Apify (see below)
@@ -64,6 +65,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 from app.config import settings
 from app.db.models import PersonalInfo, Skill, WorkExperience
 from app.services.cache_service import cache_service
+from app.services.locations import location_ok, search_locations
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -98,7 +100,9 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 CACHE_TTL = 7_200          # 2 hours
-MIN_MATCH_SCORE = 60.0     # only show jobs above this threshold
+MIN_MATCH_SCORE = 60.0     # jobs at or above this are a real match
+NEAR_MATCH_FLOOR = 48.0    # ...and when fewer than MIN_RESULTS qualify, near matches down to here fill in
+MIN_RESULTS = 15
 MAX_AGE_DAYS = 30          # drop listings with a known posting date older than this
 REFRESH_COOLDOWN = 300     # seconds between forced refetches per user
 MAX_RESULTS = 60           # cap the returned list — kept generous (vs. the ~20
@@ -206,10 +210,16 @@ class UserProfile:
     titles: List[str] = field(default_factory=list)   # current/most recent first
     years: Optional[float] = None                     # years of experience
     location: str = ""
+    preferred_locations: List[str] = field(default_factory=list)   # where they will work (cities/countries)
+    remote_ok: bool = True                            # count remote jobs open to their location
+
+    def effective_locations(self) -> List[str]:
+        """Explicit preferences, else the city on their profile: jobs elsewhere are never shown."""
+        return self.preferred_locations or ([self.location] if self.location.strip() else [])
 
     def fingerprint(self) -> str:
-        raw = "|".join([",".join(self.skills), ",".join(self.titles),
-                        str(self.years), self.location])
+        raw = "|".join([",".join(self.skills), ",".join(self.titles), str(self.years), self.location,
+                        ",".join(self.preferred_locations), str(self.remote_ok)])
         return hashlib.sha1(raw.encode()).hexdigest()[:10]
 
 
@@ -420,7 +430,8 @@ async def _fetch_remotive(client: httpx.AsyncClient, queries: List[str]) -> List
             JobListing(
                 title=j.get("title", ""),
                 company=j.get("company_name", ""),
-                location="Remote",
+                # candidate_required_location is the real fence ("USA Only", "Worldwide", "India")
+                location="Remote - " + (j.get("candidate_required_location") or "Worldwide"),
                 url=j.get("url", ""),
                 source="Remotive",
                 tags=j.get("tags", []),
@@ -468,12 +479,13 @@ async def _fetch_arbeitnow(client: httpx.AsyncClient) -> List[JobListing]:
         return []
 
 
-async def _fetch_themuse(client: httpx.AsyncClient) -> List[JobListing]:
+async def _fetch_themuse(client: httpx.AsyncClient, places: Optional[List[str]] = None) -> List[JobListing]:
     """The Muse public JSON API — no key needed."""
     try:
         pages = await asyncio.gather(*(
             _get_with_retry(client, "https://www.themuse.com/api/public/jobs",
-                            params={"page": n, "category": "Engineering"})
+                            params={"page": n, "category": "Engineering",
+                                    **({"location": places[0]} if places else {})})
             for n in (0, 1)
         ), return_exceptions=True)
         jobs = []
@@ -503,67 +515,6 @@ async def _fetch_themuse(client: httpx.AsyncClient) -> List[JobListing]:
         logger.warning("The Muse fetch failed: %s", exc)
         return []
 
-
-async def _fetch_hn_hiring(client: httpx.AsyncClient) -> List[JobListing]:
-    """
-    Hacker News 'Who is Hiring?' monthly thread via Algolia search API.
-    Finds the most recent thread, parses top-level comments as job listings.
-    """
-    try:
-        # Latest monthly thread, posted by the "whoishiring" account. Sorted by
-        # date (plain /search ranks by relevance and can return an old thread
-        # or the "Who wants to be hired?" one).
-        search = await _get_with_retry(
-            client,
-            "https://hn.algolia.com/api/v1/search_by_date",
-            params={
-                "tags":        "story,author_whoishiring",
-                "query":       "Ask HN: Who is hiring?",
-                "hitsPerPage": 5,
-            },
-        )
-        hits = [h for h in search.json().get("hits", [])
-                if "who is hiring" in (h.get("title") or "").lower()]
-        if not hits:
-            return []
-
-        story_id = hits[0].get("objectID")
-        if not story_id:
-            return []
-
-        # Fetch the story's comments
-        story = await _get_with_retry(client, f"https://hn.algolia.com/api/v1/items/{story_id}")
-        children = story.json().get("children", [])[:80]
-
-        listings = []
-        for c in children:
-            text = c.get("text", "") or ""
-            if len(text) < 100:
-                continue
-            # Strip HTML tags
-            clean = BeautifulSoup(text, "html.parser").get_text(separator=" ")
-            # First line is usually "Company | Role | Location"
-            first_line = clean.strip().split("\n")[0][:200]
-            parts = [p.strip() for p in first_line.split("|")]
-            title   = parts[1] if len(parts) > 1 else "Software Engineer"
-            company = parts[0] if parts else "Unknown"
-            location = parts[2] if len(parts) > 2 else "Remote"
-
-            hn_url = f"https://news.ycombinator.com/item?id={c.get('objectID', story_id)}"
-            listings.append(JobListing(
-                title=title,
-                company=company,
-                location=location,
-                url=hn_url,
-                source="HN Hiring",
-                tags=[],
-                description=clean,
-                posted_at=None,
-            ))
-        return listings
-    except Exception as exc:
-        logger.warning("HN Hiring fetch failed: %s", exc)
-        return []
 
 
 async def _apify_run_allowed() -> bool:
@@ -806,7 +757,10 @@ async def _fetch_all_jobs(profile: UserProfile) -> List[JobListing]:
     title_query = profile.titles[0] if profile.titles else "Software Engineer"
     # Remotive searches by text: try the role and the strongest skill.
     queries = [title_query] + profile.skills[:1]
-    location = profile.location or "India"   # default market of the first users
+    from app.services import job_sources as src
+    prefs = profile.effective_locations()
+    places = search_locations(prefs, profile.location)
+    location = places[0] if places else ""   # board-side search term; the user's filter is applied in rank_jobs
 
     all_jobs: List[JobListing] = []
 
@@ -818,11 +772,18 @@ async def _fetch_all_jobs(profile: UserProfile) -> List[JobListing]:
         results = await asyncio.gather(
             _fetch_remotive(client, queries),
             _fetch_arbeitnow(client),
-            _fetch_themuse(client),
-            _fetch_hn_hiring(client),
-            _fetch_apify_linkedin(client, title_query, location),
+            _fetch_themuse(client, places),
+            src.fetch_hn_hiring(client),
+            src.fetch_hn_jobs(client),
+            src.fetch_yc_jobs(client, profile.titles),
+            src.fetch_remoteok(client),
+            src.fetch_himalayas(client),
+            src.fetch_weworkremotely(client),
+            src.fetch_jobicy(client, profile.skills),
+            src.fetch_web_dork(client, profile.titles, places, profile.remote_ok),
+            _fetch_apify_linkedin(client, title_query, location or "Remote"),
             _fetch_apify_naukri(client, title_query),
-            _fetch_apify_indeed(client, title_query, location),
+            _fetch_apify_indeed(client, title_query, location or "Remote"),
             return_exceptions=True,
         )
         for r in results:
@@ -866,18 +827,42 @@ async def load_user_profile(user_id: UUID, db: AsyncSession) -> UserProfile:
         titles=[str(e.role) for e in exps if e.role],
         years=float(datetime.now().year - min(starts)) if starts else None,
         location=str(info.location) if info and info.location else "",
+        preferred_locations=[str(p) for p in (info.preferred_locations or [])] if info else [],
+        remote_ok=bool(info.remote_ok) if info and info.remote_ok is not None else True,
     )
 
 
 def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
-    """Score, drop stale and weak matches, dedupe, best first."""
+    """Score, drop stale and out-of-location jobs, dedupe, best first.
+
+    The location filter is a hard gate (a job outside the places the user will work is never shown). Because
+    it narrows the pool, a thin day could leave only a handful of 60%+ matches: when fewer than MIN_RESULTS
+    qualify, the best near-matches (FLOOR to 60%) are added, labelled "Partial match", so the list is useful
+    without lowering the bar for everyone."""
+    prefs = profile.effective_locations()
     for job in jobs:
         score_job(job, profile.skills, profile.titles, profile.years, profile.location)
-    def keep(j: JobListing) -> bool:
-        age = _age_days(j.posted_at)          # None = unknown date: keep
-        return bool(j.url) and j.match_score >= MIN_MATCH_SCORE and (age is None or age <= MAX_AGE_DAYS)
 
-    return _dedupe([j for j in jobs if keep(j)])
+    eligible: List[JobListing] = []
+    for j in jobs:
+        age = _age_days(j.posted_at)          # None = unknown date: keep
+        if not j.url or (age is not None and age > MAX_AGE_DAYS) or j.match_score < NEAR_MATCH_FLOOR:
+            continue
+        ok, reason = location_ok(j.location, prefs, profile.remote_ok, extra=j.title)
+        if not ok:
+            continue                           # never show jobs outside the places the user will work
+        if reason:
+            j.match_reasons.insert(0, reason)
+        eligible.append(j)
+
+    eligible = _dedupe(eligible)
+    strong = [j for j in eligible if j.match_score >= MIN_MATCH_SCORE]
+    if len(strong) < MIN_RESULTS:
+        near = [j for j in eligible if j.match_score < MIN_MATCH_SCORE][:MIN_RESULTS - len(strong)]
+        for j in near:
+            j.match_reasons.append("Partial match")
+        strong += near
+    return strong
 
 
 # One fetch per user at a time: a double-click or two tabs share the same run
