@@ -17,7 +17,7 @@ test('register, logout, and log back in', async ({ page }) => {
 
   // Register.jsx sends a fresh account straight to /metabase
   await expect(page).toHaveURL(/\/metabase/, { timeout: 15000 })
-  await expect(page.getByRole('heading', { name: 'Metabase' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'My profile' })).toBeVisible()
 
   await logout(page)
   await expect(page).toHaveURL(/\/login/, { timeout: 10000 })

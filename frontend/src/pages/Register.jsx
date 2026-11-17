@@ -38,7 +38,7 @@ export default function Register() {
         full_name: res.data.full_name,
         plan:      res.data.plan,
       })
-      toast.success('Account created! Fill in your Metabase to get started.')
+      toast.success('Account created! Fill in your profile to get started.')
       navigate('/metabase')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Registration failed')
