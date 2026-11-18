@@ -188,6 +188,8 @@ class Settings(BaseSettings):
     # Starter credits normally wait for a verified email. Without SMTP nobody can verify, so a beta without email
     # set up can turn this on (Google sign-in is always verified). Raises the risk of throwaway sign-ups.
     GRANT_WITHOUT_VERIFICATION: bool = False
+    # AI features need a verified email, so throwaway sign-ups cannot spend model tokens. Always on in production.
+    REQUIRE_VERIFIED_EMAIL: bool = False
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @property

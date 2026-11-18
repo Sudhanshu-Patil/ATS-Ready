@@ -62,7 +62,7 @@ async def ensure_profile(db: AsyncSession, user_id) -> None:
     if not exists:
         raise HTTPException(
             status_code=400,
-            detail="Profile incomplete — fill in Personal Info in Metabase first.",
+            detail="Profile incomplete — fill in Personal Info under My profile first.",
         )
 
 

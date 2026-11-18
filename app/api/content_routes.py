@@ -371,7 +371,7 @@ async def referral_message(
         await cache_service.set_profile(str(user.id), profile)
     if not profile.get("personal"):
         raise HTTPException(status_code=400, detail=str(ProfileIncomplete(
-            "Profile incomplete — fill in Personal Info in Metabase first.")))
+            "Profile incomplete — fill in Personal Info under My profile first.")))
 
     tally, started, ok = start_tally(), time.monotonic(), False
     try:

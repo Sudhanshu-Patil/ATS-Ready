@@ -130,7 +130,7 @@ JD URL / Text
 [2] JD Analyzer      → GPT-4 parses: title, skills, keywords (25-40), seniority
      │
      ▼
-[3] Metabase Query   → pulls your skills, experience, projects from SQLite
+[3] Profile query    → pulls your skills, experience, projects from the database
      │
      ▼
 [4] Resume Tailor    → GPT-4 selects + rewrites content to mirror JD language

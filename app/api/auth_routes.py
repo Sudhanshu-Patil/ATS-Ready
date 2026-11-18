@@ -58,6 +58,7 @@ class TokenResponse(BaseModel):
     full_name: str
     plan: str
     is_new: bool = False      # Google sign-in created this account just now
+    verification_email_sent: bool | None = None   # at registration: did the provider accept the verification email
 
 
 # ── Cookie helper ─────────────────────────────────────────────────────────────
@@ -103,6 +104,8 @@ async def register(
     Returns tokens immediately — no email verification required in dev.
     (Add email verification in production before launch.)
     """
+    if str(data.email).rsplit("@", 1)[-1].lower() in credits.DISPOSABLE_DOMAINS:
+        raise HTTPException(status_code=422, detail="Please use a permanent email address, not a disposable one.")
     # Check if email already exists
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
@@ -133,7 +136,7 @@ async def register(
 
     # Best-effort verification email — registration must succeed even when
     # SMTP is down/unconfigured (send_email never raises).
-    await send_verification_email(user.email, create_email_verify_token(user.id))
+    sent = await send_verification_email(user.email, create_email_verify_token(user.id))
 
     return TokenResponse(
         access_token=access_token,
@@ -141,6 +144,7 @@ async def register(
         email=user.email,
         full_name=user.full_name or "",
         plan=user.plan,
+        verification_email_sent=sent,
     )
 
 
