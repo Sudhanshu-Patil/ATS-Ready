@@ -171,7 +171,7 @@ async def generate_resume(
 
             if not profile.get("personal"):
                 raise ValueError(
-                    "Profile incomplete — please fill in Personal Info in the Metabase first."
+                    "Profile incomplete — fill in Personal Info under My profile first."
                 )
 
             # Tracking: this job is now on the user's list, dated when they asked. Never fails the resume.

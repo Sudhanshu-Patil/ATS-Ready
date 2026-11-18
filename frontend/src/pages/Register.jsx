@@ -38,7 +38,11 @@ export default function Register() {
         full_name: res.data.full_name,
         plan:      res.data.plan,
       })
-      toast.success('Account created! Fill in your profile to get started.')
+      if (res.data.verification_email_sent === false) {
+        toast.error('Account created, but we could not send the verification email. Use "Send it again" at the top of the page.', { duration: 8000 })
+      } else {
+        toast.success('Account created! Check your inbox (and spam) for the verification link, then fill in your profile.', { duration: 7000 })
+      }
       navigate('/metabase')
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Registration failed')

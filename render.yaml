@@ -37,6 +37,7 @@ services:
       - { key: SENTRY_DSN, sync: false }
       - { key: SENTRY_FRONTEND_DSN, sync: false }
       - { key: ADMIN_EMAILS, sync: false }
+      - { key: REQUIRE_VERIFIED_EMAIL, value: "true" }
       - { key: CONTACT_EMAIL, value: sudhanshupatil588@gmail.com }   # shown in the footer and legal pages
       - { key: CONTACT_PHONE, sync: false }          # optional
       - { key: BUSINESS_NAME, sync: false }          # optional: the legal or trading name

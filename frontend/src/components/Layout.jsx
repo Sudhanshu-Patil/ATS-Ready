@@ -211,7 +211,7 @@ export default function Layout() {
         <main id="main" tabIndex={-1} className="flex-1 overflow-hidden outline-none flex flex-col">
           {unverified && (
             <div role="status" className="px-4 py-2 text-sm bg-brand/10 border-b border-brand/20 flex items-center gap-3 flex-wrap">
-              <span className="text-text-primary">Verify your email to get your free credits. We sent a link to {user?.email}.</span>
+              <span className="text-text-primary">Verify your email to use the AI tools and get your free credits. Link sent to {user?.email}: check spam, and make sure the address is spelled right.</span>
               <button className="text-brand underline"
                 onClick={() => authAPI.sendVerification().then(() => toast.success('Verification email sent'))
                   .catch((e) => toast.error(e.response?.data?.detail || 'Could not send the email'))}>

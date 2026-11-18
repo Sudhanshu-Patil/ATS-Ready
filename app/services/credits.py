@@ -31,6 +31,18 @@ DISPOSABLE_DOMAINS = {
 }
 
 
+def verification_required() -> bool:
+    return settings.REQUIRE_VERIFIED_EMAIL or settings.is_production
+
+
+def require_verified(user: User) -> None:
+    """AI features are for verified emails: a made-up address cannot burn model tokens."""
+    if verification_required() and not user.is_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+            "error": "verify_email",
+            "message": f"Please verify your email first. We sent a link to {user.email}; check your spam folder too."})
+
+
 class InsufficientCredits(Exception):
     pass
 
@@ -164,6 +176,7 @@ def _no_credits(user: User, kind: str) -> HTTPException:
 async def ensure_unlocked(db: AsyncSession, user: User, app: Application, kind: str, amount: int = 1) -> None:
     """Spend a credit if this job is not yet unlocked far enough for `kind`, then count the use against the job's
     cap. Raises 402 no_credits or 429 (job limit). The caller commits."""
+    require_verified(user)
     if not settings.BILLING_ENABLED:
         return
     app = await _lock_app(db, app.id)

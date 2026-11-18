@@ -114,7 +114,11 @@ async def test_one_grant_per_person_not_per_alias_and_none_for_disposable_domain
     tag = uuid.uuid4().hex[:8]
     h1, u1, _ = await _register(client, f"pat.{tag}@gmail.com")
     h2, u2, _ = await _register(client, f"p.a.t.{tag}+x@gmail.com")        # same Gmail person
-    h3, u3, _ = await _register(client, f"x{tag}@mailinator.com")
+    h3, u3, _ = await _register(client, f"x{tag}@example-mail.org")
+    async with AsyncSessionLocal() as db:                                  # an address that slipped past the register check
+        row = (await db.execute(select(User).where(User.id == u3))).scalar_one()
+        row.email = f"x{tag}@mailinator.com"
+        await db.commit()
     for u in (u1, u2, u3):
         await _verify(u)
     for h in (h1, h2, h3):
@@ -501,3 +505,46 @@ async def test_without_email_set_up_the_grant_can_be_allowed_by_flag(client, mon
     monkeypatch.setattr(settings, "GRANT_WITHOUT_VERIFICATION", True)
     await client.get("/api/billing/status", headers=h)
     assert await balance(uid) == (1, 2)
+
+
+# ── AI features need a verified email ────────────────────────────────────────
+
+async def test_unverified_accounts_cannot_use_ai_features_when_verification_is_required(client, billing, monkeypatch):
+    import io
+    monkeypatch.setattr(settings, "REQUIRE_VERIFIED_EMAIL", True)
+    monkeypatch.setattr("app.api.routes._extract_resume_text", lambda name, data: "x" * 400)
+    h, uid = await _user_with_profile(client)                       # registered, never verified
+    await give(uid, job=3)
+    for call in (
+        client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A}),
+        client.post("/api/interview-prep", headers=h, json={"jd_text": JD_A}),
+        client.post("/api/metabase/import-resume", headers=h, files={"file": ("cv.pdf", io.BytesIO(b"%PDF"), "application/pdf")}),
+    ):
+        r = await call
+        assert r.status_code == 403 and r.json()["detail"]["error"] == "verify_email", r.text
+    assert await balance(uid) == (3, 0) and not billing            # nothing was charged or queued
+
+    await _verify(uid)
+    assert (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A})).status_code == 202
+
+
+async def test_verification_is_always_required_in_production(client, monkeypatch):
+    monkeypatch.setattr(settings, "REQUIRE_VERIFIED_EMAIL", False)
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    assert credits.verification_required() is True
+    monkeypatch.setattr(settings, "ENVIRONMENT", "development")
+    assert credits.verification_required() is False
+
+
+async def test_disposable_email_addresses_cannot_register(client):
+    r = await client.post("/api/auth/register", json={"email": f"x{uuid.uuid4().hex[:8]}@mailinator.com", "password": "pw-for-tests-123"})
+    assert r.status_code == 422 and "permanent" in r.json()["detail"]
+
+
+async def test_registration_reports_whether_the_verification_email_went_out(client, monkeypatch):
+    for sent in (True, False):
+        async def fake_send(to, token, ok=sent):
+            return ok
+        monkeypatch.setattr("app.api.auth_routes.send_verification_email", fake_send)
+        r = await client.post("/api/auth/register", json={"email": unique_email(), "password": "pw-for-tests-123"})
+        assert r.status_code == 201 and r.json()["verification_email_sent"] is sent

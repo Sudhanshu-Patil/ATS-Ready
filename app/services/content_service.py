@@ -50,7 +50,7 @@ async def build_context(
         await cache_service.set_profile(str(user_id), profile)
 
     if not profile.get("personal"):
-        raise ProfileIncomplete("Profile incomplete — fill in Personal Info in Metabase first.")
+        raise ProfileIncomplete("Profile incomplete — fill in Personal Info under My profile first.")
 
     parsed_jd = None
     job_app = None
