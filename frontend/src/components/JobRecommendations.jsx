@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { ExternalLink, RefreshCw, Briefcase, MapPin, Zap, AlertCircle, Sparkles, X } from 'lucide-react'
+import { ExternalLink, RefreshCw, Briefcase, MapPin, Zap, AlertCircle, Search, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import api, { recommendationsAPI } from '../api/client'
 import toast from 'react-hot-toast'
@@ -18,23 +18,8 @@ import clsx from 'clsx'
 const DISPLAY_CAP = 20
 
 // ── Source badge ──────────────────────────────────────────────────────────────
-const SOURCE_COLORS = {
-  'Remotive':  'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  'Arbeitnow': 'bg-bg-hover text-text-secondary border-bg-border',
-  'The Muse':  'bg-bg-hover text-text-secondary border-bg-border',
-  'HN Hiring': 'bg-orange-500/15 text-orange-400 border-orange-500/30',
-  'LinkedIn':  'bg-sky-500/15 text-sky-400 border-sky-500/30',
-  'Naukri':    'bg-warn/15 text-warn border-yellow-500/30',
-  'Indeed':    'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
-}
-
 function SourceBadge({ source }) {
-  const cls = SOURCE_COLORS[source] || 'bg-bg-hover text-text-muted border-border'
-  return (
-    <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border', cls)}>
-      {source}
-    </span>
-  )
+  return <span className="text-[11px] text-text-muted">{source}</span>
 }
 
 // ── Relative time ─────────────────────────────────────────────────────────────
@@ -53,10 +38,28 @@ function relativeTime(dateStr) {
   }
 }
 
+function exactTime(dateStr) {
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+// Which day heading a posting belongs under (used when the list is sorted by newest).
+function dayGroup(postedAt) {
+  if (!postedAt) return 'Date not given'
+  const days = Math.floor((Date.now() - new Date(postedAt).getTime()) / 86_400_000)
+  if (days < 1) return 'Today'
+  if (days < 2) return 'Yesterday'
+  if (days < 7) return 'This week'
+  if (days < 30) return 'This month'
+  return 'Older'
+}
+
 // ── Filters ──────────────────────────────────────────────────────────────────
 const DATE_FILTERS = [
   { id: 'any', label: 'Any time' },
+  { id: '3h',  label: 'Last 3 hours',  hours: 3 },
   { id: '1d',  label: 'Last 24 hours', hours: 24 },
+  { id: '3d',  label: 'Last 3 days',   hours: 24 * 3 },
   { id: '7d',  label: 'Last 7 days',   hours: 24 * 7 },
   { id: '30d', label: 'Last 30 days',  hours: 24 * 30 },
 ]
@@ -67,7 +70,17 @@ const SCORE_FILTERS = [
   { id: '70',  label: '70%+ match', min: 70 },
 ]
 
-const DEFAULT_FILTERS = { location: 'any', source: 'any', date: 'any', score: 'any' }
+const DEFAULT_FILTERS = { q: '', location: 'any', source: 'any', date: 'any', score: 'any', sort: 'match', remote: false }
+const STORE_KEY = 'ats.jobFilters'
+// The choices (not the search words) are remembered between visits.
+function loadFilters() {
+  try { return { ...DEFAULT_FILTERS, ...JSON.parse(localStorage.getItem(STORE_KEY) || '{}'), q: '' } } catch { return DEFAULT_FILTERS }
+}
+const isRemote = (j) => /remote|anywhere|worldwide/i.test(`${j.location} ${j.title}`)
+const matchesQuery = (j, q) => {
+  const hay = `${j.title} ${j.company} ${j.location} ${(j.matched_skills || []).join(' ')} ${j.description || ''}`.toLowerCase()
+  return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))
+}
 
 function jobWithinDateFilter(postedAt, filterId) {
   if (filterId === 'any') return true
@@ -80,6 +93,18 @@ function jobWithinDateFilter(postedAt, filterId) {
 function FilterBar({ filters, setFilter, locationOptions, sourceOptions, onClear, isActive }) {
   return (
     <div className="flex items-center gap-2 flex-wrap mb-4">
+      <div className="relative w-full sm:w-64">
+        <Search size={14} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+        <input type="search" aria-label="Search jobs" className="input text-sm !pl-9 py-1.5" placeholder="Search title, company or skill"
+               value={filters.q} onChange={(e) => setFilter('q', e.target.value)} />
+      </div>
+      <select aria-label="Sort" className="input text-xs !w-auto py-1.5" value={filters.sort} onChange={(e) => setFilter('sort', e.target.value)}>
+        <option value="match">Best match first</option>
+        <option value="new">Newest first</option>
+      </select>
+      <label className="flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer px-1">
+        <input type="checkbox" checked={filters.remote} onChange={(e) => setFilter('remote', e.target.checked)} /> Remote only
+      </label>
       <select
         className="input text-xs !w-auto py-1.5"
         value={filters.location}
@@ -154,7 +179,7 @@ function JobCard({ job }) {
               <MapPin size={10} /> {job.location}
             </span>
             {posted && (
-              <span className="text-[11px] text-text-muted">{posted}</span>
+              <time dateTime={job.posted_at} title={exactTime(job.posted_at)} className="text-[11px] text-text-muted">{posted}</time>
             )}
             <SourceBadge source={job.source} />
           </div>
@@ -256,14 +281,16 @@ function SkeletonCard() {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function JobRecommendations() {
+// `bare` drops the top margin when it is the main content of a tab; `compact` (dashboard) shows only a few and links on.
+export default function JobRecommendations({ bare = false }) {
   const [jobs, setJobs]           = useState([])
   const [loading, setLoading]     = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError]         = useState(null)
   const [lastFetched, setLastFetched] = useState(null)
   const [total, setTotal]         = useState(0)
-  const [filters, setFilters]     = useState(DEFAULT_FILTERS)
+  const [filters, setFilters]     = useState(loadFilters)
+  const [shown, setShown]         = useState(DISPLAY_CAP)
 
   // The server answers at once; a cold fetch (live job-board crawls) continues in the
   // background and reports status "pending" until it is done, so poll rather than wait.
@@ -317,24 +344,36 @@ export default function JobRecommendations() {
 
   const filteredJobs = useMemo(() => {
     const minScore = SCORE_FILTERS.find(f => f.id === filters.score)?.min ?? 0
-    return jobs.filter(job =>
+    const out = jobs.filter(job =>
       (filters.location === 'any' || job.location === filters.location) &&
       (filters.source   === 'any' || job.source === filters.source) &&
       jobWithinDateFilter(job.posted_at, filters.date) &&
-      job.match_score >= minScore
+      job.match_score >= minScore &&
+      (!filters.remote || isRemote(job)) &&
+      (!filters.q.trim() || matchesQuery(job, filters.q))
     )
+    if (filters.sort === 'new') {
+      const t = (j) => (j.posted_at ? new Date(j.posted_at).getTime() : 0)
+      out.sort((a, b) => t(b) - t(a))
+    }
+    return out
   }, [jobs, filters])
 
-  const visibleJobs = filteredJobs.slice(0, DISPLAY_CAP)
-  const filtersActive = filters.location !== 'any' || filters.source !== 'any' || filters.date !== 'any' || filters.score !== 'any'
+  useEffect(() => {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify({ ...filters, q: '' })) } catch { /* private mode */ }
+    setShown(DISPLAY_CAP)
+  }, [filters])
+
+  const visibleJobs = filteredJobs.slice(0, shown)
+  const filtersActive = filters.q !== '' || filters.remote || filters.location !== 'any' || filters.source !== 'any' || filters.date !== 'any' || filters.score !== 'any'
   const isEmpty = !loading && !refreshing && jobs.length === 0
   const isFilteredEmpty = !loading && !refreshing && jobs.length > 0 && filteredJobs.length === 0
 
   const setFilter = (key, value) => setFilters(f => ({ ...f, [key]: value }))
-  const clearFilters = () => setFilters(DEFAULT_FILTERS)
+  const clearFilters = () => setFilters((f) => ({ ...DEFAULT_FILTERS, sort: f.sort }))
 
   return (
-    <section className="mt-10" id="job-recommendations">
+    <section className={bare ? '' : 'mt-10'} id="job-recommendations">
       {/* Section header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
@@ -347,7 +386,7 @@ export default function JobRecommendations() {
                 {total > 0
                   ? filtersActive
                     ? `${filteredJobs.length} of ${total} openings match your filters`
-                    : `${total} openings with strong match · sorted by relevance`
+                    : `${total} openings with strong match · ${filters.sort === 'new' ? 'newest first' : 'best match first'}`
                   : 'Fetching fresh listings…'}
                 {lastFetched && (
                   <span className="ml-2">
@@ -422,7 +461,7 @@ export default function JobRecommendations() {
           <EmptyState
             icon={Briefcase}
             title="No jobs match your filters"
-            description="Try widening the location, date, or match-score filter."
+            description="Try a different search word, or widen the location, time or match filter."
             actionLabel="Clear filters"
             onAction={clearFilters}
           />
@@ -433,14 +472,24 @@ export default function JobRecommendations() {
           plain divs on purpose: per-card stagger replayed on every filter
           change, which read as cards randomly placing themselves. */}
       {!loading && !refreshing && visibleJobs.length > 0 && (
-        <motion.div
-          initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-60px' }}
-          variants={fadeInUp}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-        >
-          {visibleJobs.map((job, i) => (
-            <JobCard key={job.url || i} job={job} />
+        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-60px' }} variants={fadeInUp}>
+          {(filters.sort === 'new' ? [...new Set(visibleJobs.map((j) => dayGroup(j.posted_at)))] : [null]).map((group) => (
+            <div key={group || 'all'} className="mb-6">
+              {group && <h3 className="eyebrow mb-3">{group}</h3>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {visibleJobs.filter((j) => !group || dayGroup(j.posted_at) === group).map((job, i) => (
+                  <JobCard key={job.url || i} job={job} />
+                ))}
+              </div>
+            </div>
           ))}
+          {filteredJobs.length > shown && (
+            <div className="text-center">
+              <button onClick={() => setShown((n) => n + DISPLAY_CAP)} className="btn-ghost text-sm">
+                Show {Math.min(DISPLAY_CAP, filteredJobs.length - shown)} more of {filteredJobs.length - shown}
+              </button>
+            </div>
+          )}
         </motion.div>
       )}
     </section>
