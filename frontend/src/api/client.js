@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuthStore } from '../store/auth'
+import { begin, end, isQuiet } from '../store/network'
 
 const api = axios.create({
   baseURL: '/api',
@@ -10,15 +11,17 @@ const api = axios.create({
 let refreshPromise = null
 
 api.interceptors.request.use((config) => {
+  if (!isQuiet(config.url)) { config.__counted = true; begin() }
   const token = useAuthStore.getState().accessToken
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => { if (response.config?.__counted) end(); return response },
   async (error) => {
     const original = error.config
+    if (original?.__counted) { end(); original.__counted = false }
     if (
       error.response?.status === 401 &&
       !original._retry &&

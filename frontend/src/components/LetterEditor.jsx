@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Copy, Download, Pencil, Check, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import CopyButton from './CopyButton'
 import api from '../api/client'
 import { downloadFile } from '../lib/download'
 
@@ -38,11 +39,6 @@ export default function LetterEditor({ letter, onSaved }) {
     } finally {
       setSaving(false)
     }
-  }
-
-  const copy = (text) => {
-    navigator.clipboard.writeText(text)
-    toast.success('Copied to clipboard')
   }
 
   const download = async (format) => {
@@ -107,12 +103,10 @@ export default function LetterEditor({ letter, onSaved }) {
             <Pencil size={14} /> Edit
           </button>
         )}
-        <button onClick={() => copy(body)} className="btn-ghost flex items-center gap-2 text-sm">
-          <Copy size={14} /> Copy letter
-        </button>
-        <button onClick={() => copy(`Subject: ${subject}\n\n${body}`)} className="btn-ghost flex items-center gap-2 text-sm">
-          <Copy size={14} /> Copy with subject
-        </button>
+        <CopyButton text={body} label="Copy letter" />
+        <CopyButton text={() => `Subject: ${subject}
+
+${body}`} label="Copy with subject" />
         <button onClick={() => download('docx')} disabled={!!busy} className="btn-ghost flex items-center gap-2 text-sm">
           <Download size={14} /> {busy === 'docx' ? 'Preparing…' : 'DOCX'}
         </button>

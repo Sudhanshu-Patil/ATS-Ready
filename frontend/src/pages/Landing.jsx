@@ -61,7 +61,7 @@ export default function Landing() {
         </section>
 
         {/* How it works: an ordered list, not three cards */}
-        <section id="how-it-works" className="border-t border-bg-border">
+        <section id="how-it-works" className="scroll-mt-16 border-t border-bg-border">
           <div className="max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-12 gap-x-12 gap-y-10">
             <h2 className="lg:col-span-4 font-display text-4xl font-medium tracking-[-0.02em] leading-tight">How it works</h2>
             <ol className="lg:col-span-8 divide-y divide-bg-border border-y border-bg-border">
@@ -79,7 +79,7 @@ export default function Landing() {
         </section>
 
         {/* What you get: a ruled list */}
-        <section id="features" className="border-t border-bg-border bg-bg-card">
+        <section id="features" className="scroll-mt-16 border-t border-bg-border bg-bg-card">
           <div className="max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-12 gap-x-12 gap-y-10">
             <div className="lg:col-span-4">
               <h2 className="font-display text-4xl font-medium tracking-[-0.02em] leading-tight">What you get for each job</h2>

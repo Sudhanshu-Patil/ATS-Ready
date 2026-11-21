@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Zap, Mail, MessageSquare, BrainCircuit, Send, Download, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Zap, Mail, MessageSquare, BrainCircuit, Send, Download, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/client'
 import { fadeInUp } from '../lib/motion'
 import { downloadFile } from '../lib/download'
@@ -93,15 +93,16 @@ export default function JobWorkspace() {
 
       <div className="grid sm:grid-cols-2 gap-3">
         {tools.map((t) => (
-          <Link key={t.title} to={t.to} className="card hover:border-text-muted/60 transition-colors flex items-start gap-3">
+          <Link key={t.title} to={t.to} className="group card hover:border-text-muted/60 transition-colors flex items-start gap-3">
             <div className="w-9 h-9 rounded-lg bg-bg-hover flex items-center justify-center flex-shrink-0">
               <t.icon size={16} className="text-text-secondary" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="font-medium text-text-primary">{t.title}</p>
               <p className="text-xs text-text-secondary">{t.detail}</p>
               {billing && <p className="text-xs text-text-muted mt-1">{used(t.kind)} of {cap(t.kind)} used</p>}
             </div>
+            <ArrowRight size={14} aria-hidden="true" className="mt-1 text-text-muted opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-[opacity,transform] duration-150" />
           </Link>
         ))}
       </div>

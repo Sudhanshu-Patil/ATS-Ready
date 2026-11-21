@@ -15,12 +15,14 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
   const { login } = useAuthStore()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
+    setError('')
     try {
       const res = await authAPI.login(email, password)
       login(res.data.access_token, {
@@ -32,7 +34,9 @@ export default function Login() {
       toast.success(`Welcome back, ${res.data.full_name || res.data.email}!`)
       navigate('/dashboard')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Invalid email or password')
+      const msg = err.response?.data?.detail || 'Invalid email or password'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -65,6 +69,7 @@ export default function Login() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && <p role="alert" className="text-sm text-bad rounded-lg border border-bad/30 bg-bad/5 px-3 py-2">{error}</p>}
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">
                 Email

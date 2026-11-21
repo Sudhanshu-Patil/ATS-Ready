@@ -29,14 +29,14 @@ export default function ConfirmHost() {
       aria-labelledby="confirm-title"
       onCancel={(e) => { e.preventDefault(); finish(false) }}
       onClick={(e) => { if (e.target === ref.current) finish(false) }}
-      className="card p-0 backdrop:bg-black/60 text-text-primary max-w-sm w-[calc(100%-2rem)] m-auto"
+      className="card p-0 backdrop:bg-black/50 text-text-primary max-w-sm w-[calc(100%-2rem)] m-auto"
     >
       {message && (
         <div className="p-5 space-y-4">
           <p id="confirm-title" className="text-sm">{message}</p>
           <div className="flex justify-end gap-2">
             <button className="btn-ghost text-sm" autoFocus onClick={() => finish(false)}>Cancel</button>
-            <button className="btn-primary text-sm bg-red-600 hover:bg-red-500" onClick={() => finish(true)}>Delete</button>
+            <button className="btn-primary text-sm !bg-bad hover:!bg-bad/90" onClick={() => finish(true)}>Delete</button>
           </div>
         </div>
       )}

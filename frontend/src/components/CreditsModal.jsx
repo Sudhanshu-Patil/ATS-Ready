@@ -17,9 +17,9 @@ export default function CreditsModal() {
   if (!detail) return null
   const resumeOnly = detail.kind === 'resume'
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center p-3 sm:p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="credits-title"
+    <div className="modal-wrap fixed inset-0 z-[95] flex items-center justify-center p-3 sm:p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="credits-title"
          onClick={() => setDetail(null)}>
-      <div className="card w-full max-w-2xl space-y-4 max-h-[92dvh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-panel card w-full max-w-2xl space-y-4 max-h-[92dvh] overflow-y-auto relative" onClick={(e) => e.stopPropagation()}>
         <button onClick={() => setDetail(null)} aria-label="Close"
                 className="absolute top-2 right-2 w-10 h-10 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover text-xl leading-none">×</button>
         <div className="pr-8">

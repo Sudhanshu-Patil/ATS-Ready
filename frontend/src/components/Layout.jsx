@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useOutlet, useLocation, NavLink, useNavigate, Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -14,6 +14,8 @@ import QueuePanel from './QueuePanel'
 import AttentionModal from './AttentionModal'
 import CreditsModal from './CreditsModal'
 import { useCreditsStore } from '../store/credits'
+import { prefetch } from '../lib/prefetch'
+import { PageSkeleton } from './Skeleton'
 import { useActivityStore } from '../store/activity'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
@@ -31,7 +33,7 @@ const NAV = [
 
 function NavItem({ to, icon: Icon, label, onClick }) {
   return (
-    <NavLink to={to} onClick={onClick}
+    <NavLink to={to} onClick={onClick} onMouseEnter={() => prefetch(to)} onFocus={() => prefetch(to)}
              className={({ isActive }) => clsx('nav-item', isActive && 'bg-bg-hover !text-text-primary font-medium')}>
       {({ isActive }) => (
         <>
@@ -193,7 +195,7 @@ export default function Layout() {
               transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
               className="flex-1 min-h-0 overflow-y-auto"
             >
-              {element}
+              <Suspense fallback={<PageSkeleton />}>{element}</Suspense>
             </motion.div>
           </AnimatePresence>
         </main>

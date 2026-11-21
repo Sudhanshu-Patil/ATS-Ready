@@ -68,8 +68,8 @@ function Ask({ app, onDone, onLater }) {
   const skip = async () => { try { await api.delete(`/applications/${app.id}`) } finally { onDone() } }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="att-title">
-      <div className="card w-full max-w-md space-y-4">
+    <div className="modal-wrap fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="att-title">
+      <div className="modal-panel card w-full max-w-md space-y-4">
         <div>
           <h2 id="att-title" className="text-lg font-semibold text-text-primary">Which job was this for?</h2>
           <p className="text-sm text-text-secondary mt-1">
@@ -107,8 +107,8 @@ function AskLetter({ letter, onDone }) {
   }
   const cancel = async () => { try { await api.delete(`/cover-letters/${letter.id}`) } finally { onDone() } }
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="att-letter-title">
-      <div className="card w-full max-w-md space-y-4">
+    <div className="modal-wrap fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="att-letter-title">
+      <div className="modal-panel card w-full max-w-md space-y-4">
         <div>
           <h2 id="att-letter-title" className="text-lg font-semibold text-text-primary">Which company is this letter for?</h2>
           <p className="text-sm text-text-secondary mt-1">

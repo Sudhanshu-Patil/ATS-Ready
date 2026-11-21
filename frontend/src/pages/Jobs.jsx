@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Briefcase, Plus, Clock } from 'lucide-react'
+import { ArrowRight, Briefcase, Plus, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../api/client'
 import { fadeInUp } from '../lib/motion'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 import { STATUS_LABEL, day } from '../components/JobPanel'
+import CharCount from '../components/CharCount'
 
 const LEVEL = { none: null, resume: 'Resume unlocked', full: 'Unlocked' }
 
@@ -63,7 +64,7 @@ export default function Jobs() {
           {items.map((a) => {
             const due = a.follow_up_at && new Date(a.follow_up_at) <= new Date() && ['applied', 'referral_requested'].includes(a.status)
             return (
-              <Link key={a.id} to={`/jobs/${a.id}`} className="card flex items-center justify-between gap-3 flex-wrap hover:border-text-muted/60 transition-colors">
+              <Link key={a.id} to={`/jobs/${a.id}`} className="group card flex items-center justify-between gap-3 flex-wrap hover:border-text-muted/60 transition-colors">
                 <div className="min-w-0">
                   <p className="font-medium text-text-primary truncate">
                     {a.company || <span className="text-text-muted">Company not set</span>}{a.role ? ` · ${a.role}` : ''}
@@ -74,7 +75,7 @@ export default function Jobs() {
                   </p>
                   {due && <p className="text-xs text-brand mt-1 flex items-center gap-1"><Clock size={12} /> Time to follow up</p>}
                 </div>
-                <span className="badge bg-bg-hover text-text-secondary">{STATUS_LABEL[a.status] || a.status}</span>
+                <span className="flex items-center gap-3"><span className="badge bg-bg-hover text-text-secondary">{STATUS_LABEL[a.status] || a.status}</span><ArrowRight size={14} aria-hidden="true" className="text-text-muted opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-[opacity,transform] duration-150" /></span>
               </Link>
             )
           })}
@@ -113,6 +114,7 @@ function NewJob({ onCreated }) {
       <label htmlFor="nj-jd" className="block text-sm font-medium text-text-secondary">Job description</label>
       <textarea id="nj-jd" className="input min-h-36 resize-y text-sm" placeholder="Paste the full job description here…"
                 value={f.jd} onChange={(e) => set({ jd: e.target.value })} />
+<CharCount value={f.jd} />
       <input aria-label="Job link" className="input text-sm" placeholder="Or a link to the posting (we read it once)" value={f.url}
              onChange={(e) => set({ url: e.target.value })} />
       <div className="grid sm:grid-cols-2 gap-3">

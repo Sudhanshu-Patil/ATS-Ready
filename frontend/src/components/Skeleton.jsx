@@ -30,4 +30,17 @@ export function SkeletonText({ lines = 2, className }) {
   )
 }
 
+// What a page looks like before its data arrives: a title, a line of text and a couple of panels.
+export function PageSkeleton({ rows = 3 }) {
+  return (
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto" aria-busy="true" aria-label="Loading">
+      <Skeleton className="h-8 w-56 mb-3" />
+      <Skeleton className="h-4 w-80 max-w-full mb-8" />
+      <div className="space-y-3">
+        {Array.from({ length: rows }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+      </div>
+    </div>
+  )
+}
+
 export default Skeleton

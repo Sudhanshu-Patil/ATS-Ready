@@ -16,6 +16,7 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
   const { login } = useAuthStore()
   const navigate = useNavigate()
   // An invite link (/register?ref=code) is remembered, so the code survives a detour through Google sign-in.
@@ -31,6 +32,7 @@ export default function Register() {
       return
     }
     setLoading(true)
+    setError('')
     try {
       const res = await authAPI.register(email, password, fullName, inviteCode)
       login(res.data.access_token, {
@@ -46,7 +48,9 @@ export default function Register() {
       }
       navigate('/metabase')
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Registration failed')
+      const msg = err.response?.data?.detail || 'Registration failed'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -79,6 +83,7 @@ export default function Register() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && <p role="alert" className="text-sm text-bad rounded-lg border border-bad/30 bg-bad/5 px-3 py-2">{error}</p>}
             <div>
               <label className="block text-sm font-medium text-text-secondary mb-1.5">
                 Full name

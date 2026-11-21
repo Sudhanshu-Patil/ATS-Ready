@@ -8,6 +8,7 @@ import BuyCredits from '../components/BuyCredits'
 import { useCreditsStore } from '../store/credits'
 import { fadeInUp } from '../lib/motion'
 import Spinner from '../components/Spinner'
+import AnimatedNumber from '../components/AnimatedNumber'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
@@ -321,7 +322,7 @@ function BillingSection() {
       <div className="card">
         <h2 className="font-semibold text-text-primary mb-3">Your credits</h2>
         <div className="flex gap-6 flex-wrap">
-          <div><p className="text-3xl font-semibold text-text-primary" data-testid="credits-job">{credits?.job ?? '…'}</p>
+          <div><p className="text-3xl font-semibold text-text-primary" data-testid="credits-job"><AnimatedNumber value={credits?.job ?? '…'} /></p>
             <p className="text-xs text-text-muted">job credits</p></div>
           <div><p className="text-3xl font-semibold text-text-primary" data-testid="credits-resume">{credits?.resume ?? '…'}</p>
             <p className="text-xs text-text-muted">resume-only credits</p></div>
