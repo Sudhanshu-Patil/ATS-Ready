@@ -45,7 +45,7 @@ test('forgot password -> email link -> new password -> log in', async ({ page, r
   await page.getByPlaceholder('you@example.com').fill(email)
   await page.getByPlaceholder('••••••••').fill(oldPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByText(/invalid email or password/i)).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('alert').filter({ hasText: /invalid email or password/i })).toBeVisible({ timeout: 10000 })
 
   await page.getByPlaceholder('••••••••').fill(newPassword)
   await page.getByRole('button', { name: 'Sign in' }).click()

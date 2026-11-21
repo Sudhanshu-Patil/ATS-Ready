@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion'
+import AnimatedNumber from './AnimatedNumber'
 
 // Consolidates the two score rings that used to be hand-rolled independently
 // (JobRecommendations' conic-gradient div, Generator's inline SVG) into one
@@ -51,7 +52,7 @@ export default function ScoreRing({ score = 0, size = 'sm' }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span className={`font-medium figure ${cfg.fontSize}`} style={{ color }}>
-          {size === 'lg' ? score.toFixed(1) : `${Math.round(score)}%`}
+          {size === 'lg' ? <AnimatedNumber value={score} decimals={1} /> : <><AnimatedNumber value={Math.round(score)} />%</>}
         </span>
         {cfg.showLabel && <span className="text-xs text-text-muted">ATS Score</span>}
       </div>

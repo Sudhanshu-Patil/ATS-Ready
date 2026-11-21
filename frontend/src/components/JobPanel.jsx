@@ -4,6 +4,7 @@ import { Copy, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../api/client'
 import { confirmDialog } from './ConfirmDialog'
+import CopyButton from './CopyButton'
 
 export const STATUS_LABEL = {
   interested: 'Interested', applied: 'Applied', referral_requested: 'Referral asked', interviewing: 'Interviewing',
@@ -76,9 +77,7 @@ export default function JobPanel({ job, statuses, reload, onDeleted }) {
       {draft && (
         <div className="space-y-2">
           <textarea aria-label="Follow-up draft" className="input text-sm min-h-32" value={draft} onChange={(e) => setDraft(e.target.value)} />
-          <button className="btn-ghost text-sm flex items-center gap-2" onClick={() => { navigator.clipboard.writeText(draft); toast.success('Copied') }}>
-            <Copy size={14} /> Copy
-          </button>
+          <CopyButton text={draft} />
         </div>
       )}
 

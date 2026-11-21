@@ -6,6 +6,7 @@ import { authAPI } from './api/client'
 
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
+import TopProgress from './components/TopProgress'
 const Landing = lazy(() => import('./pages/Landing'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
@@ -67,6 +68,7 @@ export default function App() {
           the sidebar on every navigation. Route-level transitions live inside
           Layout.jsx instead, via useOutlet(). */}
       <PageMeta />
+      <TopProgress />
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Spinner size="lg" /></div>}>
       <Routes>
         <Route path="/login"           element={<Login />} />

@@ -8,6 +8,7 @@ import api from '../api/client'
 import { fadeInUp } from '../lib/motion'
 import { flush, newRequestId, pending, sendOrQueue } from '../lib/outbox'
 import { useActivityStore } from '../store/activity'
+import CopyButton from '../components/CopyButton'
 import { JobBanner, useJob } from '../lib/job'
 import Tabs from '../components/Tabs'
 import Spinner from '../components/Spinner'
@@ -227,11 +228,8 @@ function AnswerCard({ requestId, q, reload }) {
   const used = q.limit_unit === 'chars' ? text.length : words
   const over = q.limit && used > q.limit
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(text)
-    toast.success('Copied')
-    patch({ answer: text, approved: true }).catch(() => {})       // copying means it is good: learn from it
-  }
+  // copying means the answer is good: teach the persona
+  const approve = () => patch({ answer: text, approved: true }).catch(() => {})
   const sendFact = async () => {
     if (!fact.trim()) return
     try {
@@ -268,7 +266,7 @@ function AnswerCard({ requestId, q, reload }) {
                     value={text} onChange={(e) => setText(e.target.value)} />
           {(q.warnings || []).map((w) => <p key={w} className="text-xs text-warn">{w}</p>)}
           <div className="flex items-center gap-3 flex-wrap">
-            <button onClick={copy} className="btn-ghost text-sm flex items-center gap-2"><Copy size={14} /> Copy</button>
+            <CopyButton text={text} onCopied={approve} />
             <span className={clsx('text-xs', over ? 'text-bad' : 'text-text-muted')} aria-live="polite">
               {q.limit ? `${used} / ${q.limit} ${q.limit_unit === 'chars' ? 'characters' : 'words'}` : `${words} words`}
               {over ? ': over the limit' : ''}

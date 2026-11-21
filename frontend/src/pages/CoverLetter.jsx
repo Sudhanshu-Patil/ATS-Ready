@@ -15,6 +15,7 @@ import { ContinueJob, JobBanner, useJob } from '../lib/job'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 import { confirmDialog } from '../components/ConfirmDialog'
+import CharCount from '../components/CharCount'
 
 const TONES = [
   { id: 'professional',   label: 'Professional',   desc: 'Formal, polished, traditional' },
@@ -146,12 +147,13 @@ export default function CoverLetter() {
             ) : (<>
             <label className="block text-sm font-medium text-text-secondary mb-2">Job description</label>
             <textarea
-              className="input min-h-36 resize-y text-sm mb-5"
+              className="input min-h-36 resize-y text-sm"
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
               disabled={submitting}
             />
+<div className="mb-5"><CharCount value={jdText} /></div>
             </>)}
             <input aria-label="Company (optional)" className="input text-sm mb-5" maxLength={200} value={company}
                    onChange={e => setCompany(e.target.value)} disabled={submitting}

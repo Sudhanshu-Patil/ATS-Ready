@@ -25,7 +25,7 @@ export default function LandingPricing() {
   }, [])
 
   return (
-    <section id="pricing" className="border-t border-bg-border" aria-labelledby="pricing-title">
+    <section id="pricing" className="scroll-mt-16 border-t border-bg-border" aria-labelledby="pricing-title">
       <div className="max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-12 gap-x-12 gap-y-10">
         <div className="lg:col-span-4">
           <h2 id="pricing-title" className="font-display text-4xl font-medium tracking-[-0.02em] leading-tight">Pay per job</h2>

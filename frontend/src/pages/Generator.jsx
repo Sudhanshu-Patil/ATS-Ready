@@ -16,6 +16,7 @@ import { downloadFile } from '../lib/download'
 import { ContinueJob, JobBanner, useJob } from '../lib/job'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
+import CharCount from '../components/CharCount'
 
 const STEPS = [
   'Fetching job description…',
@@ -50,6 +51,7 @@ export default function Generator() {
   const [startedJobId, setStartedJobId] = useState(null)
   const [breakdownOpen, setBreakdownOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const jobId = useGeneratorStore(s => s.jobId)
   const finished = useActivityStore(s => (jobId ? s.finished[jobId] : null))
   const [searchParams, setSearchParams] = useSearchParams()
@@ -104,6 +106,13 @@ export default function Generator() {
     }
   }
 
+  // How long this run has been going, shown while it works
+  useEffect(() => {
+    if (!loading) { setElapsed(0); return undefined }
+    const t = setInterval(() => setElapsed((e) => e + 1), 1000)
+    return () => clearInterval(t)
+  }, [loading])
+
   // Progress captions are cosmetic (the worker doesn't report stages); the
   // interval is cleaned up on unmount.
   useEffect(() => {
@@ -154,9 +163,12 @@ export default function Generator() {
         )}
 
         {openJobId ? null : mode === 'text' ? (
-          <textarea className="input min-h-40 resize-y text-sm"
-            placeholder="Paste the full job description here…"
-            value={jdText} onChange={e => setJdText(e.target.value)} disabled={submitting} />
+          <>
+            <textarea className="input min-h-40 resize-y text-sm"
+              placeholder="Paste the full job description here…"
+              value={jdText} onChange={e => setJdText(e.target.value)} disabled={submitting} />
+            <CharCount value={jdText} />
+          </>
         ) : (
           <input type="url" className="input"
             placeholder="https://jobs.lever.co/company/role-id"
@@ -198,9 +210,9 @@ export default function Generator() {
             className="card-glass mb-6 overflow-hidden"
           >
             {/* Phase-caption treatment shared with the landing page's journey */}
-            <div className="flex items-center justify-between mb-1">
-              <p className="eyebrow !text-brand">Pipeline — Active Phase</p>
-              <span className="text-xs figure text-text-muted">{step + 1} / {STEPS.length}</span>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm text-text-secondary">Usually 30 to 60 seconds. You can leave this page; it keeps running.</p>
+              <span className="text-xs figure text-text-muted flex-shrink-0" aria-label="Time elapsed">{Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}</span>
             </div>
             <div className="h-8 relative overflow-hidden mb-4">
               <AnimatePresence mode="wait">

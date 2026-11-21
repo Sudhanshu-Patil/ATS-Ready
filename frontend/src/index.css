@@ -139,7 +139,21 @@
   .figure { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 }
 
+/* Dialogs fade in and rise a few pixels; on phones they are bottom sheets that slide up. */
+@keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes modal-rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@keyframes sheet-up   { from { transform: translateY(100%) } to { transform: none } }
+.modal-wrap  { animation: modal-fade 160ms var(--ease-out) both; }
+.modal-panel { animation: modal-rise 200ms var(--ease-out) both; }
+dialog[open]::backdrop { animation: modal-fade 160ms var(--ease-out) both; }
+dialog[open] { animation: modal-rise 200ms var(--ease-out) both; }
+@media (max-width: 639px) {
+  .modal-wrap { align-items: flex-end !important; padding: 0 !important; }
+  .modal-panel { border-bottom-left-radius: 0; border-bottom-right-radius: 0; max-height: 92dvh; animation: sheet-up 240ms var(--ease-out) both; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .modal-wrap, .modal-panel, dialog[open], dialog[open]::backdrop { animation: none !important; }
   html { scroll-behavior: auto; }
   .skeleton { animation: none; }
 }

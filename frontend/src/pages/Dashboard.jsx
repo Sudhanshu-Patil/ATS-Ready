@@ -11,6 +11,7 @@ import { Skeleton, SkeletonRow } from '../components/Skeleton'
 import clsx from 'clsx'
 import JobRecommendations from '../components/JobRecommendations'
 import api from '../api/client'
+import AnimatedNumber from '../components/AnimatedNumber'
 import { useCreditsStore } from '../store/credits'
 
 const JOB_STATUS = {
@@ -171,7 +172,7 @@ function StatCard({ label, value }) {
   return (
     <motion.div variants={fadeInUp} className="card p-5">
       <p className="text-sm text-text-secondary">{label}</p>
-      <p className="mt-2 text-3xl font-medium figure text-text-primary">{value}</p>
+      <p className="mt-2 text-3xl font-medium figure text-text-primary"><AnimatedNumber value={value} /></p>
     </motion.div>
   )
 }

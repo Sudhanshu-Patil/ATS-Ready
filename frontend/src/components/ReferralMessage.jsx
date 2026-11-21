@@ -3,6 +3,7 @@ import { Copy, Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../api/client'
 import Spinner from './Spinner'
+import CopyButton from './CopyButton'
 
 const NOTE_LIMIT = 300   // LinkedIn's limit for a connection-request note
 
@@ -32,7 +33,6 @@ export default function ReferralMessage({ initial = {}, applicationId = null }) 
     }
   }
 
-  const copy = (text) => { navigator.clipboard.writeText(text); toast.success('Copied to clipboard') }
 
   return (
     <div className="space-y-5">
@@ -75,13 +75,13 @@ export default function ReferralMessage({ initial = {}, applicationId = null }) 
             </div>
             <textarea aria-label="Connection request note" className="input min-h-20 resize-y text-sm font-sans" value={note}
                       onChange={e => setNote(e.target.value)} />
-            <button onClick={() => copy(note)} className="btn-ghost flex items-center gap-2 text-sm"><Copy size={14} /> Copy note</button>
+            <CopyButton text={note} label="Copy note" />
           </div>
           <div className="card space-y-2">
             <h2 className="font-semibold text-text-primary">Message (if you are already connected)</h2>
             <textarea aria-label="Referral message" className="input min-h-40 resize-y text-sm font-sans leading-relaxed" value={message}
                       onChange={e => setMessage(e.target.value)} />
-            <button onClick={() => copy(message)} className="btn-ghost flex items-center gap-2 text-sm"><Copy size={14} /> Copy message</button>
+            <CopyButton text={message} label="Copy message" />
           </div>
           <p className="text-xs text-text-muted">Edit freely before you send. Check the details are accurate: AI drafts can be wrong.</p>
         </div>
