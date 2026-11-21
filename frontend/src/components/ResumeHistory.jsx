@@ -18,7 +18,7 @@ import { confirmDialog } from './ConfirmDialog'
 
 const STATUS_CONFIG = {
   done:    { icon: CheckCircle, color: 'text-score' },
-  failed:  { icon: XCircle,     color: 'text-red-400' },
+  failed:  { icon: XCircle,     color: 'text-bad' },
   running: { spinning: true },
   pending: { icon: Clock,       color: 'text-text-muted' },
 }
@@ -107,7 +107,7 @@ export default function ResumeHistory() {
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-2">
           {filtered.map(job => (
             <motion.div key={job.id} variants={fadeInUp}
-              className="card p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 hover:border-brand/20 transition-colors">
+              className="card p-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3 sm:gap-4 hover:border-text-muted/60 transition-colors">
               <div className="flex items-center gap-4 min-w-0 flex-1">
                 <StatusBadge variant="icon" {...(STATUS_CONFIG[job.status] || STATUS_CONFIG.pending)} />
                 <div className="flex-1 min-w-0">
@@ -122,7 +122,7 @@ export default function ResumeHistory() {
               <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
                 {job.ats_score != null && (
                   <div className="text-right">
-                    <p className={clsx('text-sm font-mono font-semibold', scoreColorClass(job.ats_score))}>
+                    <p className={clsx('text-sm figure font-medium', scoreColorClass(job.ats_score))}>
                       {job.ats_score.toFixed(1)}
                     </p>
                     <p className="text-xs text-text-muted">ATS</p>
@@ -130,7 +130,7 @@ export default function ResumeHistory() {
                 )}
 
                 {job.status === 'failed' && job.error && (
-                  <p className="text-xs text-red-400 max-w-32 truncate" title={job.error}>{job.error}</p>
+                  <p className="text-xs text-bad max-w-32 truncate" title={job.error}>{job.error}</p>
                 )}
 
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -151,21 +151,21 @@ export default function ResumeHistory() {
                   {job.status === 'done' && (
                     <button onClick={() => setOpenId(openId === job.id ? null : job.id)}
                       aria-expanded={openId === job.id}
-                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
+                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-bg-hover transition-colors"
                       title="Score breakdown and suggestions" aria-label="Score breakdown and suggestions">
                       <BarChart3 size={15} />
                     </button>
                   )}
                   {job.status === 'failed' && (
                     <button onClick={() => handleRetry(job.id)}
-                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-brand-muted transition-colors"
+                      className="p-1.5 rounded-md text-text-muted hover:text-brand hover:bg-bg-hover transition-colors"
                       title="Retry" aria-label="Retry generation">
                       <RefreshCw size={15} />
                     </button>
                   )}
                   {job.status !== 'running' && (
                     <button onClick={() => handleDelete(job.id)}
-                      className="p-1.5 rounded-md text-text-muted hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      className="p-1.5 rounded-md text-text-muted hover:text-bad hover:bg-bad/10 transition-colors"
                       title="Delete" aria-label="Delete resume">
                       <Trash2 size={15} />
                     </button>
@@ -202,7 +202,7 @@ function ResumeDetails({ job, onStarted }) {
     jobsAPI.get(job.id).then(r => setDetail(r.data)).catch(() => setFailed(true))
   }, [job.id])
 
-  if (failed) return <p className="text-sm text-red-400 pt-3">Could not load the details. Try again.</p>
+  if (failed) return <p className="text-sm text-bad pt-3">Could not load the details. Try again.</p>
   if (!detail) return <div className="pt-3"><Spinner size="sm" /></div>
 
   const b = detail.ats_breakdown || {}
@@ -239,7 +239,7 @@ function ResumeDetails({ job, onStarted }) {
       {(b.matched_skills?.length > 0 || b.missing_skills?.length > 0) && (
         <div className="text-xs space-y-1">
           {b.matched_skills?.length > 0 && <p className="text-text-secondary"><span className="text-score">Matched:</span> {b.matched_skills.join(', ')}</p>}
-          {b.missing_skills?.length > 0 && <p className="text-text-secondary"><span className="text-red-400">Not shown:</span> {b.missing_skills.join(', ')}</p>}
+          {b.missing_skills?.length > 0 && <p className="text-text-secondary"><span className="text-bad">Not shown:</span> {b.missing_skills.join(', ')}</p>}
         </div>
       )}
       <SuggestionsPanel breakdown={shown} score={job.ats_score} emphasis={picked} setEmphasis={setPicked} onRegenerate={improve} />

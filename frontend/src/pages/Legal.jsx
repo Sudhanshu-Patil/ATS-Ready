@@ -5,7 +5,7 @@ function Page({ title, children }) {
   return (
     <main className="max-w-3xl mx-auto p-6 sm:p-10 text-text-secondary leading-relaxed space-y-4">
       <Link to="/" className="text-brand text-sm">← ATS-Ready</Link>
-      <h1 className="font-display text-3xl font-bold text-text-primary">{title}</h1>
+      <h1 className="font-display text-3xl font-medium text-text-primary">{title}</h1>
       <p className="text-xs">Last updated: 18 November 2026.</p>
       {children}
       <Contact />

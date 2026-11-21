@@ -57,7 +57,7 @@ export default function Generator() {
   const setTab = (t) => setSearchParams(t === 'history' ? { tab: 'history' } : {}, { replace: true })
   const location = useLocation()
 
-  // Pre-fill from the Job Recommendations "Generate Resume" button. Prefer the
+  // Pre-fill from the Job Recommendations "Generate resume" button. Prefer the
   // listing's own text: LinkedIn/Indeed/Naukri URLs can't be scraped.
   useEffect(() => {
     const urlParam = searchParams.get('url')
@@ -136,10 +136,9 @@ export default function Generator() {
   }, [finished])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="p-4 sm:p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
-        <p className="eyebrow !text-brand mb-2">Pipeline</p>
-        <h1 className="font-display text-2xl font-bold text-text-primary">Generate Resume</h1>
+        <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Generate resume</h1>
         <p className="text-text-secondary mt-1">Get a one-page, ATS-scored resume as Word and PDF, tailored to a job description, in about a minute.</p>
       </motion.div>
 
@@ -155,7 +154,7 @@ export default function Generator() {
         )}
 
         {openJobId ? null : mode === 'text' ? (
-          <textarea className="input min-h-40 resize-y font-mono text-sm"
+          <textarea className="input min-h-40 resize-y text-sm"
             placeholder="Paste the full job description here…"
             value={jdText} onChange={e => setJdText(e.target.value)} disabled={submitting} />
         ) : (
@@ -180,7 +179,7 @@ export default function Generator() {
           <button onClick={handleGenerate} disabled={submitting}
             className="btn-primary flex-1 flex items-center justify-center gap-2 py-3">
             {submitting ? <Spinner size="sm" color="white" /> : <Zap size={16} />}
-            {submitting ? 'Starting…' : loading ? 'Queue another resume' : 'Generate Resume'}
+            {submitting ? 'Starting…' : loading ? 'Queue another resume' : 'Generate resume'}
           </button>
           {(result || error) && !loading && (
             <button onClick={() => { reset(); setBreakdownOpen(false) }}
@@ -201,7 +200,7 @@ export default function Generator() {
             {/* Phase-caption treatment shared with the landing page's journey */}
             <div className="flex items-center justify-between mb-1">
               <p className="eyebrow !text-brand">Pipeline — Active Phase</p>
-              <span className="text-xs font-mono text-text-muted">{step + 1} / {STEPS.length}</span>
+              <span className="text-xs figure text-text-muted">{step + 1} / {STEPS.length}</span>
             </div>
             <div className="h-8 relative overflow-hidden mb-4">
               <AnimatePresence mode="wait">
@@ -223,7 +222,7 @@ export default function Generator() {
                   <div className={clsx(
                     'w-5 h-5 rounded-full flex items-center justify-center text-xs flex-shrink-0 transition-all duration-500',
                     i < step   ? 'bg-score text-bg' :
-                    i === step ? 'bg-brand animate-pulse-slow text-white' :
+                    i === step ? 'bg-brand text-white' :
                     'bg-bg-hover text-text-muted'
                   )}>
                     {i < step ? '✓' : i + 1}
@@ -245,10 +244,10 @@ export default function Generator() {
       {/* Error */}
       {error && !loading && (
         <motion.div initial="hidden" animate="visible" variants={fadeInUp}
-          className="card border-red-400/30 bg-red-400/5 mb-6">
+          className="card border-bad/30 bg-bad/5 mb-6">
           <div className="flex items-center gap-2">
-            <AlertCircle size={16} className="text-red-400" />
-            <p className="text-sm text-red-400">{error}</p>
+            <AlertCircle size={16} className="text-bad" />
+            <p className="text-sm text-bad">{error}</p>
           </div>
         </motion.div>
       )}
@@ -259,7 +258,7 @@ export default function Generator() {
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 mb-6">
             <ScoreRing score={result.ats_score || 0} size="lg" />
             <div className="flex-1 min-w-0 w-full">
-              <h2 className="text-lg font-bold text-text-primary">{result.job_title || 'Resume Generated'}</h2>
+              <h2 className="text-lg font-semibold text-text-primary">{result.job_title || 'Resume generated'}</h2>
               {result.company && <p className="text-text-secondary text-sm mb-3">@ {result.company}</p>}
 
               <div className="mb-3">
@@ -269,7 +268,7 @@ export default function Generator() {
                     <span key={s} className="badge bg-score-muted text-score">{s}</span>
                   ))}
                   {(result.skills_missing || []).map(s => (
-                    <span key={s} className="badge bg-red-400/10 text-red-400">{s} ✗</span>
+                    <span key={s} className="badge bg-bad/10 text-bad">{s} ✗</span>
                   ))}
                 </div>
               </div>
@@ -322,7 +321,7 @@ export default function Generator() {
                       {Object.entries({
                         'Keywords':     result.ats_breakdown.keyword_score,
                         'Skills':       result.ats_breakdown.skills_score,
-                        'Action Verbs': result.ats_breakdown.action_verb_score,
+                        'Action verbs': result.ats_breakdown.action_verb_score,
                         'Format':       result.ats_breakdown.format_score,
                       }).map(([label, score]) => <ScoreBar key={label} label={label} score={score} />)}
                     </div>
@@ -364,10 +363,10 @@ function BaselineUpload({ baselineId, baselineName, setBaseline, disabled }) {
       </p>
       {baselineId ? (
         <div className="flex items-center gap-2 text-sm">
-          <FileText size={15} className="text-brand" />
+          <FileText size={15} className="text-text-secondary" />
           <span className="text-text-primary truncate">{baselineName}</span>
           <button onClick={() => setBaseline(null, '')} disabled={disabled}
-                  className="text-xs text-text-muted hover:text-red-400 underline">Remove</button>
+                  className="text-xs text-text-muted hover:text-bad underline">Remove</button>
         </div>
       ) : (
         <label className={clsx('btn-ghost inline-flex items-center gap-2 text-sm cursor-pointer', (busy || disabled) && 'opacity-60 pointer-events-none')}>
@@ -393,12 +392,12 @@ function BaselineCompare({ breakdown, score }) {
       <div className="flex items-center gap-4 flex-wrap">
         <div>
           <p className="text-xs text-text-muted truncate max-w-48">{b.filename || 'Your resume'}</p>
-          <p className="text-2xl font-bold text-text-secondary">{Math.round(b.total_score)}</p>
+          <p className="text-2xl font-semibold text-text-secondary">{Math.round(b.total_score)}</p>
         </div>
         <span className="text-text-muted" aria-hidden="true">→</span>
         <div>
           <p className="text-xs text-text-muted">New resume</p>
-          <p className="text-2xl font-bold text-score">{Math.round(now)}</p>
+          <p className="text-2xl font-semibold text-score">{Math.round(now)}</p>
         </div>
         <span className={clsx('badge', gain > 0 ? 'bg-score-muted text-score' : 'bg-bg-card text-text-secondary')}>
           {gain > 0 ? `+${gain.toFixed(1)} points` : gain === 0 ? 'same score' : `${gain.toFixed(1)} points`}

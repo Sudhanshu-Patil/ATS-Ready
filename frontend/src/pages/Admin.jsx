@@ -15,7 +15,7 @@ function Stat({ label, value, hint, spark, color }) {
   return (
     <div className="card">
       <p className="text-xs text-text-muted">{label}</p>
-      <p className="text-2xl font-display font-bold text-text-primary mt-1 tabular-nums">{value}</p>
+      <p className="text-2xl font-medium text-text-primary mt-1 figure">{value}</p>
       {hint && <p className="text-xs text-text-secondary mt-1">{hint}</p>}
       {spark && <Sparkline values={spark} color={color} />}
     </div>
@@ -56,7 +56,7 @@ export default function Admin() {
       <VizStyles />
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Admin</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Admin</h1>
           <p className="text-xs text-text-muted mt-1">
             Last {data.days} days{updated ? ` · updated ${updated.toLocaleTimeString()}` : ''} · times are UTC
           </p>
@@ -65,7 +65,7 @@ export default function Admin() {
           {RANGES.map((r) => (
             <button key={r} onClick={() => setDays(r)} aria-pressed={days === r}
                     className={clsx('px-3 py-2 rounded-lg text-sm border transition-colors',
-                      days === r ? 'border-brand/50 bg-brand-muted text-brand' : 'border-bg-border text-text-secondary hover:text-text-primary')}>
+                      days === r ? 'border-text-muted bg-bg-hover text-text-primary' : 'border-bg-border text-text-secondary hover:text-text-primary')}>
               {r}d
             </button>
           ))}
@@ -156,7 +156,7 @@ export default function Admin() {
               <li key={k.kind} className="py-2.5">
                 <p className="text-sm text-text-primary flex items-center gap-2">
                   <span aria-hidden="true" className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: kindColor(k.kind) }} />{KIND_LABEL[k.kind] || k.kind}
-                  <span className={clsx('ml-auto text-xs tabular-nums', k.failure_rate > 0.1 ? 'text-red-400' : 'text-text-muted')}>{pct(k.failure_rate)} failed{k.failure_rate > 0.1 ? ' ▲' : ''}</span>
+                  <span className={clsx('ml-auto text-xs tabular-nums', k.failure_rate > 0.1 ? 'text-bad' : 'text-text-muted')}>{pct(k.failure_rate)} failed{k.failure_rate > 0.1 ? ' ▲' : ''}</span>
                 </p>
                 <p className="text-xs text-text-secondary mt-1 tabular-nums">
                   {fmt(k.runs)} runs · {fmt(k.tokens_per_run)} tokens each · ≈ ₹{(k.tokens_per_run / 1000 * money.cost_per_1k_tokens_inr).toFixed(2)} · {k.avg_seconds}s avg, {k.p95_seconds}s slowest 5%
@@ -178,7 +178,7 @@ export default function Admin() {
                     <td className="pr-4">{fmt(k.runs)}</td><td className="pr-4">{fmt(k.tokens_per_run)}</td>
                     <td className="pr-4">{(k.tokens_per_run / 1000 * money.cost_per_1k_tokens_inr).toFixed(2)}</td>
                     <td className="pr-4">{k.avg_seconds}s</td><td className="pr-4">{k.p95_seconds}s</td>
-                    <td className={k.failure_rate > 0.1 ? 'text-red-400' : ''}>{pct(k.failure_rate)}{k.failure_rate > 0.1 ? ' ▲' : ''}</td>
+                    <td className={k.failure_rate > 0.1 ? 'text-bad' : ''}>{pct(k.failure_rate)}{k.failure_rate > 0.1 ? ' ▲' : ''}</td>
                   </tr>
                 ))}
                 {!llm.by_kind.length && <tr><td colSpan={7} className="py-3">No runs yet.</td></tr>}

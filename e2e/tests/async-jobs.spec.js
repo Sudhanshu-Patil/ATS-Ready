@@ -124,7 +124,7 @@ test('a generated resume can be downloaded as PDF as well as DOCX', async ({ pag
   await userWithProfile(page)
   await page.goto('/generate')
   await page.locator('textarea').first().fill(JD)
-  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await page.getByRole('button', { name: /^generate resume$/i }).click()
 
   await expect(page.getByRole('link', { name: 'Download DOCX' })).toBeVisible({ timeout: 60000 })
   const pdf = page.waitForEvent('download')
@@ -170,7 +170,7 @@ test('score my current resume against the job, then suggestions only shrink acro
   await page.locator('input[type="file"]').setInputFiles('fixtures/baseline_resume.docx')
   await expect(page.getByText('baseline_resume.docx')).toBeVisible({ timeout: 15000 })
 
-  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await page.getByRole('button', { name: /^generate resume$/i }).click()
   await expect(page.getByLabel('Score comparison')).toBeVisible({ timeout: 60000 })
   await expect(page.getByLabel('Score comparison')).toContainText('baseline_resume.docx')
 
@@ -194,7 +194,7 @@ test('an earlier resume keeps its breakdown and can be improved from History', a
   await userWithProfile(page)
   await page.goto('/generate')
   await page.locator('textarea').first().fill(JD)
-  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await page.getByRole('button', { name: /^generate resume$/i }).click()
   await expect(page.getByRole('link', { name: 'Download DOCX' })).toBeVisible({ timeout: 60000 })
 
   // Later, from History: the stored breakdown and the job's suggestions.

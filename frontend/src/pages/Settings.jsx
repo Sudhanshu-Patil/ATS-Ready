@@ -36,10 +36,7 @@ export default function Settings() {
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
-            <SettingsIcon size={18} className="text-brand" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Settings</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Settings</h1>
         </div>
         <p className="text-text-secondary">Manage your account, credits and invites.</p>
       </motion.div>
@@ -59,7 +56,7 @@ export default function Settings() {
                   'text-left px-3 py-2.5 rounded-lg text-sm font-medium capitalize transition-colors',
                   'flex-1 sm:flex-none sm:w-full',
                   activeSection === s
-                    ? 'bg-brand-muted text-brand border border-brand/20'
+                    ? 'bg-bg-hover text-text-primary border border-bg-border font-medium'
                     : 'text-text-secondary hover:text-text-primary hover:bg-bg-hover border border-transparent'
                 )}
               >
@@ -127,7 +124,7 @@ function AccountSection({ user, login, accessToken }) {
           )}
           {verified === false && (
             <>
-              <span className="badge bg-yellow-400/10 text-yellow-400">Unverified</span>
+              <span className="badge bg-warn/10 text-warn">Unverified</span>
               <button
                 onClick={resendVerification}
                 disabled={sendingVerify}
@@ -261,12 +258,12 @@ function PrivacySection({ email }) {
         <button onClick={download} className="btn-ghost text-sm">Download my data</button>
       </div>
       <div className="border-t border-bg-border pt-4">
-        <h3 className="text-sm font-medium text-red-400 mb-1">Delete account</h3>
+        <h3 className="text-sm font-medium text-bad mb-1">Delete account</h3>
         <p className="text-sm text-text-secondary mb-3">
           Permanently deletes your profile, resumes, cover letters, interview prep and generated files. This cannot be undone.
         </p>
         {!confirming ? (
-          <button onClick={() => setConfirming(true)} className="btn-ghost text-sm text-red-400">Delete my account…</button>
+          <button onClick={() => setConfirming(true)} className="btn-ghost text-sm text-bad">Delete my account…</button>
         ) : (
           <form onSubmit={remove} className="space-y-3">
             <div>
@@ -324,9 +321,9 @@ function BillingSection() {
       <div className="card">
         <h2 className="font-semibold text-text-primary mb-3">Your credits</h2>
         <div className="flex gap-6 flex-wrap">
-          <div><p className="text-3xl font-bold text-text-primary" data-testid="credits-job">{credits?.job ?? '…'}</p>
+          <div><p className="text-3xl font-semibold text-text-primary" data-testid="credits-job">{credits?.job ?? '…'}</p>
             <p className="text-xs text-text-muted">job credits</p></div>
-          <div><p className="text-3xl font-bold text-text-primary" data-testid="credits-resume">{credits?.resume ?? '…'}</p>
+          <div><p className="text-3xl font-semibold text-text-primary" data-testid="credits-resume">{credits?.resume ?? '…'}</p>
             <p className="text-xs text-text-muted">resume-only credits</p></div>
         </div>
         <p className="text-xs text-text-muted mt-3">
@@ -365,7 +362,7 @@ function BillingSection() {
               <li key={r.id} className="py-2 flex items-center justify-between text-sm">
                 <span className="text-text-secondary">{REASON[r.reason] || r.reason}
                   <span className="text-text-muted"> · {r.kind === 'job' ? 'job' : 'resume-only'} · {new Date(r.created_at).toLocaleDateString()}</span></span>
-                <span className={clsx('font-mono', r.delta > 0 ? 'text-score' : 'text-text-secondary')}>{r.delta > 0 ? '+' : ''}{r.delta}</span>
+                <span className={clsx('figure', r.delta > 0 ? 'text-score' : 'text-text-secondary')}>{r.delta > 0 ? '+' : ''}{r.delta}</span>
               </li>
             ))}
           </ul>

@@ -53,7 +53,7 @@ processes (PowerShell `Get-CimInstance Win32_Process`), not just the one you sta
 - The built SPA (`app/static/dist`) is not committed; the Dockerfile builds it. Check builds with `vite build --outDir <tmp>`.
 - Dates: columns are naive UTC (`datetime.utcnow()`); never pass tz-aware values to asyncpg for them.
 - Do not commit secrets or `.env`; gitleaks runs in CI. Privacy: never put user data in logs, Sentry, or outside-service requests.
-- Brand orange `#FF6B35` fails AA with white text; buttons use `#C2410C`. Keep axe tests (`e2e/tests/a11y.spec.js`) green.
+- Design: warm paper/ink tokens as CSS variables in `frontend/src/index.css` (light is the default theme), one accent (`--color-brand`, a burnt red-orange; buttons use `#B23A0E` for AA with white text), Newsreader for large headings only, Instrument Sans for the interface, Geist Mono rarely, figures use `.figure` (tabular). No gradients, glows, glass, emoji or looping motion. Keep axe tests (`e2e/tests/a11y.spec.js`) green.
 
 ## Before you merge
 

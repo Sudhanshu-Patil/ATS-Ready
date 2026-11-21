@@ -43,7 +43,7 @@ test('paste the job once, then make a resume, cover letter and answers from it w
   await page.locator('a[href*="/generate?job="]').first().click()
   await expect(page.getByLabel('Current job')).toContainText('Acme · Backend Engineer')
   await expect(page.getByPlaceholder('Paste the full job description here…')).toHaveCount(0)
-  await page.getByRole('button', { name: /^Generate Resume$/ }).click()
+  await page.getByRole('button', { name: /^generate resume$/i }).click()
   await expect(page.getByRole('link', { name: 'Download DOCX' })).toBeVisible({ timeout: 60000 })
 
   // Cover letter for the same job, again without pasting.

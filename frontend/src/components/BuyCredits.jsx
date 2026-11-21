@@ -76,12 +76,12 @@ export default function BuyCredits({ onPaid, compact = false }) {
   return (
     <div className={clsx('grid gap-3 grid-cols-2', !compact && 'lg:grid-cols-4')}>
       {catalog.packs.map((p) => (
-        <div key={p.id} className={clsx('rounded-xl border p-4 flex flex-col gap-2', p.id === 'hunt' ? 'border-brand/50 bg-brand/5' : 'border-bg-border')}>
+        <div key={p.id} className={clsx('rounded-xl border p-4 flex flex-col gap-2', p.id === 'hunt' ? 'border-text-muted bg-bg-hover' : 'border-bg-border')}>
           <div className="flex items-baseline justify-between">
             <p className="font-semibold text-text-primary">{p.label}</p>
-            {p.id === 'hunt' && <span className="badge bg-brand-muted text-brand">Popular</span>}
+            {p.id === 'hunt' && <span className="badge bg-bg-hover text-brand">Popular</span>}
           </div>
-          <p className="text-2xl font-bold text-text-primary">{inr(p.inr)}</p>
+          <p className="text-2xl font-semibold text-text-primary">{inr(p.inr)}</p>
           <p className="text-xs text-text-secondary">
             {p.credits} job credit{p.credits > 1 ? 's' : ''}{p.credits > 1 ? ` · ₹${p.per_credit_inr} each` : ''}
           </p>

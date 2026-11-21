@@ -71,7 +71,7 @@ function Ask({ app, onDone, onLater }) {
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="att-title">
       <div className="card w-full max-w-md space-y-4">
         <div>
-          <h2 id="att-title" className="font-display text-lg font-bold text-text-primary">Which job was this for?</h2>
+          <h2 id="att-title" className="text-lg font-semibold text-text-primary">Which job was this for?</h2>
           <p className="text-sm text-text-secondary mt-1">
             I could not tell the {app.needs.join(' or ')} from what you pasted, so I will not guess. You asked on {new Date(app.created_at).toLocaleDateString()}.
           </p>
@@ -110,7 +110,7 @@ function AskLetter({ letter, onDone }) {
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60" role="dialog" aria-modal="true" aria-labelledby="att-letter-title">
       <div className="card w-full max-w-md space-y-4">
         <div>
-          <h2 id="att-letter-title" className="font-display text-lg font-bold text-text-primary">Which company is this letter for?</h2>
+          <h2 id="att-letter-title" className="text-lg font-semibold text-text-primary">Which company is this letter for?</h2>
           <p className="text-sm text-text-secondary mt-1">
             The posting{letter.job_title ? ` for ${letter.job_title}` : ''} does not name the company, and a cover letter should.
             I will write it as soon as you answer.

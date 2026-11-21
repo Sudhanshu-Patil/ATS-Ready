@@ -70,7 +70,7 @@ export default function LetterEditor({ letter, onSaved }) {
           </div>
           <div>
             <label htmlFor={`cl-body-${letter.id}`} className="block text-xs text-text-muted mb-1">
-              Letter <span className={over ? 'text-red-400 font-medium' : 'text-text-muted'} aria-live="polite">({counter}{over ? ': over your limit' : ''})</span>
+              Letter <span className={over ? 'text-bad font-medium' : 'text-text-muted'} aria-live="polite">({counter}{over ? ': over your limit' : ''})</span>
             </label>
             <textarea id={`cl-body-${letter.id}`} className="input min-h-64 resize-y text-sm leading-relaxed font-sans"
                       value={body} onChange={e => setBody(e.target.value)} />
@@ -98,7 +98,7 @@ export default function LetterEditor({ letter, onSaved }) {
       )}
 
       {!editing && (
-        <p className={over ? 'text-xs text-red-400' : 'text-xs text-text-muted'}>{counter}{over ? ': over your limit' : ''}</p>
+        <p className={over ? 'text-xs text-bad' : 'text-xs text-text-muted'}>{counter}{over ? ': over your limit' : ''}</p>
       )}
 
       <div className="flex flex-wrap gap-2 mt-3">

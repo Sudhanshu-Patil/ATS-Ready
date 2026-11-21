@@ -23,7 +23,7 @@ export default function CreditsModal() {
         <button onClick={() => setDetail(null)} aria-label="Close"
                 className="absolute top-2 right-2 w-10 h-10 flex items-center justify-center rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-hover text-xl leading-none">×</button>
         <div className="pr-8">
-          <h2 id="credits-title" className="font-display text-lg font-bold text-text-primary">
+          <h2 id="credits-title" className="text-lg font-semibold text-text-primary">
             {resumeOnly ? 'Unlock this resume' : 'Unlock this job'} with a credit
           </h2>
           <p className="text-sm text-text-secondary mt-1">

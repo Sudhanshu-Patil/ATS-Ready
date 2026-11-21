@@ -31,9 +31,9 @@ const TAB_ITEMS = [
 ]
 
 const TONE_BADGE = {
-  professional:   'bg-brand-muted text-brand',
+  professional:   'bg-bg-hover text-brand',
   enthusiastic:   'bg-score-muted text-score',
-  conversational: 'bg-yellow-400/10 text-yellow-400',
+  conversational: 'bg-warn/10 text-warn',
 }
 
 export default function CoverLetter() {
@@ -128,10 +128,7 @@ export default function CoverLetter() {
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
-            <FileText size={18} className="text-brand" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Cover Letter</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Cover letter</h1>
         </div>
         <p className="text-text-secondary">AI-written, personalized to your experience and the job — not a template.</p>
       </motion.div>
@@ -147,9 +144,9 @@ export default function CoverLetter() {
             {jobId ? (
               <JobBanner job={job} jobId={jobId} missing={jobMissing} kind="cover_letter" toolPath="/cover-letter" />
             ) : (<>
-            <label className="block text-sm font-medium text-text-secondary mb-2">Job Description</label>
+            <label className="block text-sm font-medium text-text-secondary mb-2">Job description</label>
             <textarea
-              className="input min-h-36 resize-y font-mono text-sm mb-5"
+              className="input min-h-36 resize-y text-sm mb-5"
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
@@ -167,7 +164,7 @@ export default function CoverLetter() {
                 <button key={t.id} onClick={() => setTone(t.id)}
                   className={clsx('p-3 rounded-xl border text-left transition-all',
                     tone === t.id
-                      ? 'border-brand bg-brand-muted'
+                      ? 'border-text-primary bg-bg-hover'
                       : 'border-bg-border hover:border-bg-hover'
                   )}>
                   <p className={clsx('text-sm font-semibold mb-0.5', tone === t.id ? 'text-brand' : 'text-text-primary')}>
@@ -200,7 +197,7 @@ export default function CoverLetter() {
             <button onClick={generate} disabled={submitting}
               className="btn-primary w-full flex items-center justify-center gap-2 py-3">
               {loading ? <Spinner size="sm" color="white" /> : <Sparkles size={16} />}
-              {submitting ? 'Starting…' : loading ? 'Writing your cover letter…' : 'Generate Cover Letter'}
+              {submitting ? 'Starting…' : loading ? 'Writing your cover letter…' : 'Generate cover letter'}
             </button>
           </motion.div>
 
@@ -279,7 +276,7 @@ export default function CoverLetter() {
                         <button onClick={() => retryItem(cl.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
                       )}
                       <button onClick={() => deleteItem(cl.id)} aria-label="Delete cover letter"
-                        className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+                        className="p-1.5 text-text-muted hover:text-bad hover:bg-bad/10 rounded-md transition-colors">
                         <Trash2 size={15} />
                       </button>
                     </div>

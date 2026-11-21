@@ -54,7 +54,7 @@ export default function ReferralMessage({ initial = {}, applicationId = null }) 
         ) : (
           <div>
             <label htmlFor="ref-jd" className="block text-sm font-medium text-text-secondary mb-1.5">Job description</label>
-            <textarea id="ref-jd" className="input min-h-32 resize-y font-mono text-sm" placeholder="Paste the full job description here…"
+            <textarea id="ref-jd" className="input min-h-32 resize-y text-sm" placeholder="Paste the full job description here…"
                       value={jd} onChange={e => setJd(e.target.value)} />
           </div>
         )}
@@ -69,7 +69,7 @@ export default function ReferralMessage({ initial = {}, applicationId = null }) 
           <div className="card space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold text-text-primary">Connection request note</h2>
-              <span className={note.length > NOTE_LIMIT ? 'text-xs text-red-400' : 'text-xs text-text-muted'}>
+              <span className={note.length > NOTE_LIMIT ? 'text-xs text-bad' : 'text-xs text-text-muted'}>
                 {note.length}/{NOTE_LIMIT}
               </span>
             </div>

@@ -63,7 +63,7 @@ export default function JobPanel({ job, statuses, reload, onDeleted }) {
         {job.assistant_requests?.[0] && (
           <Link to={`/assistant?job=${job.id}&request=${job.assistant_requests[0]}`} className="btn-ghost text-sm">Open answers</Link>
         )}
-        <button className="btn-ghost text-sm text-red-400 flex items-center gap-1.5"
+        <button className="btn-ghost text-sm text-bad flex items-center gap-1.5"
                 onClick={async () => {
                   if (await confirmDialog('Delete this job and its history? Resumes and letters made for it stay in their lists.')) {
                     await api.delete(`/applications/${job.id}`); onDeleted?.()

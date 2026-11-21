@@ -12,7 +12,7 @@ export default function Tabs({ tabs, active, onChange, className }) {
   const uid = useId()
 
   return (
-    <div role="tablist" className={clsx('flex gap-1 p-1 bg-bg-card border border-bg-border rounded-xl w-fit max-w-full overflow-x-auto', className)}>
+    <div role="tablist" className={clsx('flex gap-1 p-1 bg-bg-hover/60 border border-bg-border rounded-lg w-fit max-w-full overflow-x-auto', className)}>
       {tabs.map(({ id, label, icon: Icon }) => {
         const isActive = active === id
         return (
@@ -29,7 +29,7 @@ export default function Tabs({ tabs, active, onChange, className }) {
             {isActive && (
               <motion.div
                 layoutId={`tabs-pill-${uid}`}
-                className="absolute inset-0 bg-bg-hover rounded-lg shadow-sm"
+                className="absolute inset-0 bg-bg-card border border-bg-border rounded-md"
                 transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
               />
             )}

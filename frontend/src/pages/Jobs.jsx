@@ -27,14 +27,11 @@ export default function Jobs() {
   useEffect(() => { load() }, [load])
 
   return (
-    <div className="p-4 sm:p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-6 flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
-              <Briefcase size={18} className="text-brand" />
-            </div>
-            <h1 className="font-display text-2xl font-bold text-text-primary">Jobs</h1>
+            <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Jobs</h1>
           </div>
           <p className="text-text-secondary">
             One place per job: paste the posting once, then make the resume, cover letter, answers and interview prep from it.
@@ -66,7 +63,7 @@ export default function Jobs() {
           {items.map((a) => {
             const due = a.follow_up_at && new Date(a.follow_up_at) <= new Date() && ['applied', 'referral_requested'].includes(a.status)
             return (
-              <Link key={a.id} to={`/jobs/${a.id}`} className="card flex items-center justify-between gap-3 flex-wrap hover:border-brand/30 transition-colors">
+              <Link key={a.id} to={`/jobs/${a.id}`} className="card flex items-center justify-between gap-3 flex-wrap hover:border-text-muted/60 transition-colors">
                 <div className="min-w-0">
                   <p className="font-medium text-text-primary truncate">
                     {a.company || <span className="text-text-muted">Company not set</span>}{a.role ? ` · ${a.role}` : ''}
@@ -114,7 +111,7 @@ function NewJob({ onCreated }) {
   return (
     <div className="card mb-5 space-y-3">
       <label htmlFor="nj-jd" className="block text-sm font-medium text-text-secondary">Job description</label>
-      <textarea id="nj-jd" className="input min-h-36 resize-y font-mono text-sm" placeholder="Paste the full job description here…"
+      <textarea id="nj-jd" className="input min-h-36 resize-y text-sm" placeholder="Paste the full job description here…"
                 value={f.jd} onChange={(e) => set({ jd: e.target.value })} />
       <input aria-label="Job link" className="input text-sm" placeholder="Or a link to the posting (we read it once)" value={f.url}
              onChange={(e) => set({ url: e.target.value })} />

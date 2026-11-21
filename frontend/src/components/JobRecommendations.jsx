@@ -20,11 +20,11 @@ const DISPLAY_CAP = 20
 // ── Source badge ──────────────────────────────────────────────────────────────
 const SOURCE_COLORS = {
   'Remotive':  'bg-blue-500/15 text-blue-400 border-blue-500/30',
-  'Arbeitnow': 'bg-accent-violet/15 text-accent-violet border-accent-violet/30',
-  'The Muse':  'bg-accent-magenta/15 text-accent-magenta border-accent-magenta/30',
+  'Arbeitnow': 'bg-bg-hover text-text-secondary border-bg-border',
+  'The Muse':  'bg-bg-hover text-text-secondary border-bg-border',
   'HN Hiring': 'bg-orange-500/15 text-orange-400 border-orange-500/30',
   'LinkedIn':  'bg-sky-500/15 text-sky-400 border-sky-500/30',
-  'Naukri':    'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  'Naukri':    'bg-warn/15 text-warn border-yellow-500/30',
   'Indeed':    'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
 }
 
@@ -117,7 +117,7 @@ function FilterBar({ filters, setFilter, locationOptions, sourceOptions, onClear
       {isActive && (
         <button
           onClick={onClear}
-          className="flex items-center gap-1 text-xs text-text-muted hover:text-red-400 transition-colors"
+          className="flex items-center gap-1 text-xs text-text-muted hover:text-bad transition-colors"
         >
           <X size={12} /> Clear filters
         </button>
@@ -139,8 +139,7 @@ function JobCard({ job }) {
   return (
     <div
       className="group relative rounded-xl border border-bg-border bg-bg-card p-4 flex flex-col gap-3
-                 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/5
-                 transition-all duration-300"
+                 hover:border-text-muted/60 transition-all duration-300"
     >
       {/* Top row: score ring + title/company */}
       <div className="flex items-start gap-3">
@@ -168,7 +167,7 @@ function JobCard({ job }) {
           {visibleSkills.map(skill => (
             <span
               key={skill}
-              className="px-2 py-0.5 rounded-full bg-brand/10 border border-brand/20 text-brand text-[10px] font-medium"
+              className="px-2 py-0.5 rounded-full bg-bg-hover border border-bg-border text-brand text-[10px] font-medium"
             >
               {skill}
             </span>
@@ -193,15 +192,15 @@ function JobCard({ job }) {
           rel="noopener noreferrer"
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
                      border border-bg-border text-xs text-text-secondary
-                     hover:border-brand/40 hover:text-brand transition-colors"
+                     hover:border-text-muted/60 hover:text-brand transition-colors"
         >
           <ExternalLink size={11} /> View Job
         </a>
         <button
           onClick={() => startJob(job).then((id) => id && navigate(`/jobs/${id}`))}
           className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg
-                     bg-brand/10 border border-brand/30 text-xs text-brand font-medium
-                     hover:bg-brand/20 transition-colors"
+                     bg-bg-hover border border-bg-border text-xs text-brand font-medium
+                     hover:bg-bg-hover transition-colors"
         >
           <Zap size={11} /> Start this job
         </button>
@@ -339,12 +338,9 @@ export default function JobRecommendations() {
       {/* Section header */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand/15 border border-brand/30 flex items-center justify-center">
-            <Sparkles size={15} className="text-brand" />
-          </div>
           <div>
             <h2 className="text-base font-semibold text-text-primary leading-tight">
-              Jobs Matching Your Skills
+              Jobs matching your skills
             </h2>
             {!loading && !error && (
               <p className="text-xs text-text-muted mt-0.5">
@@ -354,7 +350,7 @@ export default function JobRecommendations() {
                     : `${total} openings with strong match · sorted by relevance`
                   : 'Fetching fresh listings…'}
                 {lastFetched && (
-                  <span className="ml-2 opacity-60">
+                  <span className="ml-2">
                     · updated {relativeTime(lastFetched.toISOString())}
                   </span>
                 )}
@@ -370,7 +366,7 @@ export default function JobRecommendations() {
             'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all',
             loading || refreshing
               ? 'border-bg-border text-text-muted cursor-not-allowed'
-              : 'border-bg-border text-text-secondary hover:border-brand/40 hover:text-brand'
+              : 'border-bg-border text-text-secondary hover:border-text-muted/60 hover:text-brand'
           )}
           title="Refresh job listings"
         >
@@ -396,7 +392,7 @@ export default function JobRecommendations() {
 
       {/* Error state */}
       {error && (
-        <div className="flex items-center gap-3 p-4 rounded-xl border border-red-500/20 bg-red-500/5 text-sm text-red-400 mb-4">
+        <div className="flex items-center gap-3 p-4 rounded-xl border border-bad/20 bg-bad/5 text-sm text-bad mb-4">
           <AlertCircle size={16} className="flex-shrink-0" />
           {error}
         </div>
