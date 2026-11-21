@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Briefcase, Plus, Clock } from 'lucide-react'
+import { ArrowRight, Briefcase, Plus, Clock, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../api/client'
 import { fadeInUp } from '../lib/motion'
@@ -9,11 +9,19 @@ import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 import { STATUS_LABEL, day } from '../components/JobPanel'
 import CharCount from '../components/CharCount'
+import Tabs from '../components/Tabs'
+import JobRecommendations from '../components/JobRecommendations'
 
 const LEVEL = { none: null, resume: 'Resume unlocked', full: 'Unlocked' }
 
+const TABS = [{ id: 'mine', label: 'My jobs' }, { id: 'find', label: 'Find jobs' }]
+
 export default function Jobs() {
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') === 'find' ? 'find' : 'mine'
   const [items, setItems] = useState(null)
+  const [q, setQ] = useState('')
+  const [sort, setSort] = useState('new')
   const [statuses, setStatuses] = useState(Object.keys(STATUS_LABEL))
   const [filter, setFilter] = useState('')
   const [adding, setAdding] = useState(false)
@@ -26,6 +34,16 @@ export default function Jobs() {
     } catch { setItems((cur) => cur || []) }
   }, [filter])
   useEffect(() => { load() }, [load])
+
+  const shownItems = useMemo(() => {
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+    const t = (d) => (d ? new Date(d).getTime() : Infinity)
+    const out = (items || []).filter((a) => words.every((w) => `${a.company || ''} ${a.role || ''}`.toLowerCase().includes(w)))
+    if (sort === 'old') out.sort((a, b) => t(a.created_at) - t(b.created_at))
+    else if (sort === 'follow') out.sort((a, b) => t(a.follow_up_at) - t(b.follow_up_at))
+    else out.sort((a, b) => t(b.created_at) - t(a.created_at))
+    return out
+  }, [items, q, sort])
 
   return (
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
@@ -45,7 +63,20 @@ export default function Jobs() {
 
       {adding && <NewJob onCreated={() => setAdding(false)} />}
 
-      <div className="mb-4 flex items-center gap-2">
+      <Tabs tabs={TABS} active={tab} onChange={(id) => setParams(id === 'find' ? { tab: 'find' } : {}, { replace: true })} className="mb-5" />
+
+      {tab === 'find' ? <JobRecommendations bare /> : (<>
+      <div className="mb-4 flex items-center gap-2 flex-wrap">
+        <div className="relative w-full sm:w-64">
+          <Search size={14} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input type="search" aria-label="Search my jobs" className="input text-sm !pl-9 py-1.5" placeholder="Search company or role"
+                 value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <select aria-label="Sort" className="input text-sm !w-auto py-1.5" value={sort} onChange={(e) => setSort(e.target.value)}>
+          <option value="new">Newest first</option>
+          <option value="old">Oldest first</option>
+          <option value="follow">Follow-up soonest</option>
+        </select>
         <label htmlFor="job-filter" className="text-sm text-text-secondary">Show</label>
         <select id="job-filter" className="input text-sm !w-auto" value={filter} onChange={(e) => setFilter(e.target.value)}>
           <option value="">All</option>
@@ -53,7 +84,9 @@ export default function Jobs() {
         </select>
       </div>
 
-      {items === null ? <Spinner size="lg" /> : items.length === 0 ? (
+      {items === null ? <Spinner size="lg" /> : shownItems.length === 0 && items.length > 0 ? (
+        <p className="text-sm text-text-muted py-8 text-center">No jobs match "{q}". Clear the search or change the filter.</p>
+      ) : items.length === 0 ? (
         <div className="card">
           <EmptyState icon={Briefcase} title="No jobs yet"
                       description="Start one with a job posting. Everything for that application then lives in one place."
@@ -61,7 +94,7 @@ export default function Jobs() {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((a) => {
+          {shownItems.map((a) => {
             const due = a.follow_up_at && new Date(a.follow_up_at) <= new Date() && ['applied', 'referral_requested'].includes(a.status)
             return (
               <Link key={a.id} to={`/jobs/${a.id}`} className="group card flex items-center justify-between gap-3 flex-wrap hover:border-text-muted/60 transition-colors">
@@ -81,6 +114,7 @@ export default function Jobs() {
           })}
         </div>
       )}
+      </>)}
     </div>
   )
 }
