@@ -46,6 +46,7 @@ CACHING:
   Bust : refresh=True, rate-limited to one refetch per REFRESH_COOLDOWN
 """
 import asyncio
+from collections import Counter
 import hashlib
 import logging
 import re
@@ -368,9 +369,12 @@ def score_job(
     if user_location.strip():
         loc = _normalise(f"{job.location} {job.title}")
         user_tokens = [t for t in _normalise(user_location).split() if len(t) > 2]
-        if "remote" in loc or any(_has(t, loc) for t in user_tokens):
+        if any(_has(t, loc) for t in user_tokens):
             earned += 15.0
-            reasons.append("Remote" if "remote" in loc else "In your area")
+            reasons.append("In your area")
+        elif "remote" in loc:
+            earned += 9.0                   # open remote is fine, but a job in the user's own area ranks above it
+            reasons.append("Remote")
         elif not job.location.strip() or "flexible" in loc:
             earned += 7.0
         possible += 15.0
@@ -844,6 +848,21 @@ def _relevant(job: JobListing, profile: UserProfile) -> bool:
     return sum(1 for s in profile.skills if any(_has(v, head) for v in _skill_variants(s))) >= 2
 
 
+SOURCE_SHARE = 0.35        # no single source may fill more than this share of the list
+
+
+def _balance(jobs: List[JobListing]) -> List[JobListing]:
+    """Best first, but one board (the remote-only feeds list hundreds a day) cannot crowd out the others: jobs
+    beyond a source's share move behind the rest, so they only show when there is room."""
+    cap = max(5, round(MAX_RESULTS * SOURCE_SHARE))
+    count: Dict[str, int] = {}
+    head, spill = [], []
+    for j in jobs:
+        count[j.source] = count.get(j.source, 0) + 1
+        (head if count[j.source] <= cap else spill).append(j)
+    return head + spill
+
+
 def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
     """Score, drop stale and out-of-location jobs, dedupe, best first.
 
@@ -853,7 +872,7 @@ def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
     without lowering the bar for everyone."""
     prefs = profile.effective_locations()
     for job in jobs:
-        score_job(job, profile.skills, profile.titles, profile.years, profile.location)
+        score_job(job, profile.skills, profile.titles, profile.years, " ".join(prefs))   # where they will work, not only where they live
 
     eligible: List[JobListing] = []
     for j in jobs:
@@ -870,7 +889,7 @@ def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
             j.match_reasons.insert(0, reason)
         eligible.append(j)
 
-    eligible = _dedupe(eligible)
+    eligible = _balance(_dedupe(eligible))
     strong = [j for j in eligible if j.match_score >= MIN_MATCH_SCORE]
     if len(strong) < MIN_RESULTS:
         near = [j for j in eligible if j.match_score < MIN_MATCH_SCORE][:MIN_RESULTS - len(strong)]
@@ -888,7 +907,10 @@ _inflight: Dict[str, "asyncio.Future[List[Dict[str, Any]]]"] = {}
 async def _compute(cache_key: str, last_key: str, profile: UserProfile) -> List[Dict[str, Any]]:
     all_jobs = await _fetch_all_jobs(profile)
     logger.info("Total jobs fetched across all sources: %d", len(all_jobs))
-    result = [j.to_dict() for j in rank_jobs(all_jobs, profile)[:MAX_RESULTS]]
+    ranked = rank_jobs(all_jobs, profile)
+    by_src = lambda js: dict(sorted(Counter(j.source for j in js).items()))   # noqa: E731
+    logger.info("Jobs by source, fetched %s, kept %s", by_src(all_jobs), by_src(ranked[:MAX_RESULTS]))
+    result = [j.to_dict() for j in ranked[:MAX_RESULTS]]
     if result:                      # an outage must not pin an empty list for 2h
         await cache_service.set(cache_key, result, ttl=CACHE_TTL)
     await cache_service.set(last_key, 1, ttl=REFRESH_COOLDOWN)

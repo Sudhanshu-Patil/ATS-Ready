@@ -127,3 +127,22 @@ def test_irrelevant_roles_that_only_mention_skills_are_dropped():
     kept = [j.title for j in rank_jobs([job("Python Backend Engineer", desc), job("Sales Manager", desc),
                                         job("Marketing Analyst", desc)], p)]
     assert kept == ["Python Backend Engineer"]
+
+
+def test_one_source_cannot_fill_the_list():
+    from app.services.job_recommendations import JobListing, UserProfile, rank_jobs, MAX_RESULTS
+    def job(i, src):
+        return JobListing(title="Backend Engineer", company=f"{src}{i}", location="Remote", url=f"https://{src}/{i}",
+                          source=src, tags=[], description="Python FastAPI PostgreSQL " * 5, posted_at=None)
+    p = UserProfile(skills=["Python", "FastAPI", "PostgreSQL"], titles=["Backend Engineer"], years=4)
+    out = rank_jobs([job(i, "WWR") for i in range(80)] + [job(i, "Naukri") for i in range(10)], p)[:MAX_RESULTS]
+    assert sum(j.source == "Naukri" for j in out) == 10
+
+
+def test_a_job_in_the_users_area_outranks_open_remote():
+    from app.services.job_recommendations import JobListing, UserProfile, rank_jobs
+    def job(loc, src):
+        return JobListing(title="Backend Engineer", company=src, location=loc, url=f"https://{src}/1", source=src,
+                          tags=[], description="Python FastAPI " * 5, posted_at=None)
+    p = UserProfile(skills=["Python", "FastAPI"], titles=["Backend Engineer"], years=4, preferred_locations=["Pune"])
+    assert rank_jobs([job("Remote", "WWR"), job("Pune, India", "Naukri")], p)[0].source == "Naukri"
