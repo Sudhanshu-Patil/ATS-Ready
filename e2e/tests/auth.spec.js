@@ -35,6 +35,6 @@ test('rejects an invalid login with a clear error', async ({ page }) => {
   await page.getByPlaceholder('••••••••').fill('whatever-password')
   await page.getByRole('button', { name: 'Sign in' }).click()
 
-  await expect(page.getByText(/invalid email or password/i)).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('alert').filter({ hasText: /invalid email or password/i })).toBeVisible({ timeout: 10000 })
   await expect(page).toHaveURL(/\/login/)
 })

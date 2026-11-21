@@ -47,7 +47,7 @@ test('export my data, then delete the account for good', async ({ page }) => {
   await page.getByPlaceholder('you@example.com').fill(email)
   await page.getByPlaceholder('••••••••').fill(PASSWORD)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByText(/invalid email or password/i)).toBeVisible({ timeout: 10000 })
+  await expect(page.getByRole('alert').filter({ hasText: /invalid email or password/i })).toBeVisible({ timeout: 10000 })
 })
 
 test('"sign out everywhere" ends the session', async ({ page }) => {
