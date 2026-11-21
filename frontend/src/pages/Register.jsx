@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/auth'
 import { authAPI } from '../api/client'
 import Spinner from '../components/Spinner'
 import GoogleButton from '../components/GoogleButton'
+import { Wordmark } from '../components/Brand'
 import ThemeToggle from '../components/ThemeToggle'
 import toast from 'react-hot-toast'
 
@@ -62,10 +63,7 @@ export default function Register() {
           transition={{ duration: 0.4 }}
           className="flex items-center gap-2.5 justify-center mb-8"
         >
-          <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center shadow-[0_0_20px_-3px_rgba(255,107,53,0.6)]">
-            <Zap size={18} className="text-white" />
-          </div>
-          <span className="font-display font-bold text-text-primary text-xl tracking-tight">ATS-Ready</span>
+          <Wordmark to="/" size="text-xl" />
         </motion.div>
 
         {/* Card */}
@@ -75,7 +73,7 @@ export default function Register() {
           transition={{ duration: 0.4, delay: 0.08 }}
           className="card-glass"
         >
-          <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Create account</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary mb-1">Create account</h1>
           <p className="text-sm text-text-secondary mb-6">
             Your first job is free, plus 2 more resumes. No card needed.
           </p>
@@ -133,7 +131,7 @@ export default function Register() {
                 </button>
               </div>
               {password && password.length < 8 && (
-                <p className="text-xs text-red-400 mt-1">At least 8 characters required</p>
+                <p className="text-xs text-bad mt-1">At least 8 characters required</p>
               )}
             </div>
 

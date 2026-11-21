@@ -17,7 +17,7 @@ export default class ErrorBoundary extends Component {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
         <div className="card max-w-md text-center space-y-4">
-          <h1 className="font-display text-2xl font-bold text-text-primary">Something went wrong</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Something went wrong</h1>
           <p className="text-text-secondary text-sm">
             The page hit an unexpected error. Your data is safe. Reloading usually fixes it.
           </p>

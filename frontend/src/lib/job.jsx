@@ -40,8 +40,8 @@ export function JobBanner({ job, jobId, missing, kind, toolPath }) {
   return (
     <div className="card mb-5 flex items-center justify-between gap-3 flex-wrap" aria-label="Current job">
       <div className="flex items-center gap-3 min-w-0">
-        <div className="w-9 h-9 rounded-lg bg-brand-muted flex items-center justify-center flex-shrink-0">
-          <Briefcase size={16} className="text-brand" />
+        <div className="w-9 h-9 rounded-lg bg-bg-hover flex items-center justify-center flex-shrink-0">
+          <Briefcase size={16} className="text-text-secondary" />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium text-text-primary truncate">

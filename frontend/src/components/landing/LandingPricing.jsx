@@ -1,8 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Check } from 'lucide-react'
-import { fadeInUp } from '../../lib/motion'
 import { useAuthStore } from '../../store/auth'
 
 // Public pricing. Shows the live catalog from the server and falls back to the same numbers if it is unreachable.
@@ -13,11 +10,11 @@ const FALLBACK = [
   { id: 'power', label: 'Power', credits: 35, inr: 19900, per_credit_inr: 5.7 },
 ]
 const INCLUDES = [
-  'Up to 3 tailored resumes, one page each, as Word and PDF, with an ATS score',
+  'Up to 3 one-page resumes as Word and PDF, each with an ATS score',
   'Up to 3 cover letters, with a length limit if the form has one',
-  'Answers to the application form questions (copy and paste)',
+  'Answers to the application form questions',
   'Interview prep with answers in your own voice',
-  'LinkedIn referral messages and follow-up drafts',
+  'Referral messages and follow-up drafts',
 ]
 
 export default function LandingPricing() {
@@ -28,52 +25,42 @@ export default function LandingPricing() {
   }, [])
 
   return (
-    <section id="pricing" className="relative bg-[#050409] pb-24 px-6" aria-labelledby="pricing-title">
-      <div className="max-w-5xl mx-auto">
-        <motion.div initial="hidden" whileInView="visible" viewport={{ once: true, margin: '-80px' }} variants={fadeInUp} className="text-center mb-10">
-          <p className="eyebrow !text-brand mb-3">Pricing</p>
-          <h2 id="pricing-title" className="font-display text-3xl sm:text-4xl font-bold text-text-primary">Pay per job. No subscription.</h2>
-          <p className="text-text-secondary mt-3 max-w-2xl mx-auto">
-            One job credit covers everything for one job. Your first job is free, plus two extra resumes. Credits never expire.
-          </p>
-        </motion.div>
-
-        <div className="grid lg:grid-cols-5 gap-6">
-          <div className="lg:col-span-2 card p-6">
-            <h3 className="font-semibold text-text-primary mb-3">One credit, one job</h3>
-            <ul className="space-y-2.5">
-              {INCLUDES.map((t) => (
-                <li key={t} className="flex gap-2 text-sm text-text-secondary"><Check size={15} className="text-score mt-0.5 flex-shrink-0" />{t}</li>
-              ))}
-            </ul>
-            <p className="text-xs text-text-muted mt-4">
-              A job is one job description. Starting another posting is another job. A failed first run returns your credit automatically.
-            </p>
-          </div>
-
-          <div className="lg:col-span-3 grid grid-cols-2 gap-4">
-            {packs.map((p) => (
-              <div key={p.id} className={`card p-5 flex flex-col ${p.id === 'hunt' ? 'border-brand/50' : ''}`}>
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-text-primary">{p.label}</p>
-                  {p.id === 'hunt' && <span className="badge bg-brand-muted text-brand">Popular</span>}
-                </div>
-                <p className="text-3xl font-bold text-text-primary mt-2">₹{(p.inr / 100).toLocaleString('en-IN')}</p>
-                <p className="text-xs text-text-secondary mt-1">
-                  {p.credits} job credit{p.credits > 1 ? 's' : ''}{p.credits > 1 ? ` · ₹${p.per_credit_inr} each` : ''}
-                </p>
-              </div>
-            ))}
-            <p className="col-span-2 text-xs text-text-muted">
-              Prices include taxes. Pay with UPI, cards or netbanking through Razorpay. Outside India, pay in dollars with PayPal.
-            </p>
-          </div>
+    <section id="pricing" className="border-t border-bg-border" aria-labelledby="pricing-title">
+      <div className="max-w-6xl mx-auto px-6 py-24 grid lg:grid-cols-12 gap-x-12 gap-y-10">
+        <div className="lg:col-span-4">
+          <h2 id="pricing-title" className="font-display text-4xl font-medium tracking-[-0.02em] leading-tight">Pay per job</h2>
+          <p className="mt-4 text-text-secondary max-w-xs">No subscription. Your first job is free, with two extra resume credits. Credits never expire.</p>
         </div>
 
-        <div className="text-center mt-8">
-          <Link to={accessToken ? '/dashboard' : '/register'} className="btn-primary text-sm py-3 px-8 inline-block">
-            {accessToken ? 'Open your dashboard' : 'Start your first job free'}
-          </Link>
+        <div className="lg:col-span-8">
+          <div className="grid sm:grid-cols-2 border-y border-bg-border divide-y sm:divide-y-0 sm:divide-x divide-bg-border">
+            <div className="py-6 sm:pr-8">
+              <p className="font-medium">One credit covers one job</p>
+              <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+                {INCLUDES.map((t) => <li key={t} className="flex gap-2"><span aria-hidden="true" className="text-text-muted">·</span>{t}</li>)}
+              </ul>
+              <p className="mt-4 text-xs text-text-muted">A job is one job description. Another posting is another job. If the first run fails, the credit comes back.</p>
+            </div>
+            <table className="sm:pl-8 py-6 w-full text-sm self-start">
+              <caption className="sr-only">Credit packs and prices</caption>
+              <thead className="sr-only"><tr><th>Pack</th><th>Credits</th><th>Price</th></tr></thead>
+              <tbody>
+                {packs.map((p) => (
+                  <tr key={p.id} className="border-b last:border-0 border-bg-border">
+                    <td className="py-3.5 pr-3 sm:pl-8">
+                      <span className="font-medium">{p.label}</span>
+                      <span className="block text-xs text-text-muted">{p.credits} job credit{p.credits > 1 ? 's' : ''}{p.credits > 1 ? ` · ₹${p.per_credit_inr} each` : ''}</span>
+                    </td>
+                    <td className="py-3.5 text-right figure font-mono text-lg pr-1">₹{(p.inr / 100).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <Link to={accessToken ? '/dashboard' : '/register'} className="btn-primary">{accessToken ? 'Open your dashboard' : 'Start your first job free'}</Link>
+            <p className="text-xs text-text-muted">Prices include taxes. Pay with UPI, cards or netbanking. Outside India, pay in dollars with PayPal.</p>
+          </div>
         </div>
       </div>
     </section>

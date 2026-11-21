@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Zap, Eye, EyeOff } from 'lucide-react'
 import { authAPI } from '../api/client'
 import Spinner from '../components/Spinner'
+import { Wordmark } from '../components/Brand'
 import ThemeToggle from '../components/ThemeToggle'
 import toast from 'react-hot-toast'
 
@@ -41,23 +42,20 @@ export default function ResetPassword() {
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="flex items-center gap-2.5 justify-center mb-8"
         >
-          <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center shadow-[0_0_20px_-3px_rgba(255,107,53,0.6)]">
-            <Zap size={18} className="text-white" />
-          </div>
-          <span className="font-display font-bold text-text-primary text-xl tracking-tight">ATS-Ready</span>
+          <Wordmark to="/" size="text-xl" />
         </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.08 }}
           className="card-glass"
         >
-          <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Set a new password</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary mb-1">Set a new password</h1>
           <p className="text-sm text-text-secondary mb-6">
             Choose a new password for your account.
           </p>
 
           {!token ? (
-            <p className="text-sm text-red-400">
+            <p className="text-sm text-bad">
               Missing reset token — use the link from your email, or{' '}
               <Link to="/forgot-password" className="underline">request a new one</Link>.
             </p>
@@ -96,7 +94,7 @@ export default function ResetPassword() {
                   required
                 />
                 {confirm && confirm !== password && (
-                  <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
+                  <p className="text-xs text-bad mt-1">Passwords do not match</p>
                 )}
               </div>
               <button

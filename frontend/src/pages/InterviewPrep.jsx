@@ -18,17 +18,17 @@ import { confirmDialog } from '../components/ConfirmDialog'
 // Lucide icons replacing the previous emoji glyphs — keeps icon sourcing
 // consistent with the rest of the app instead of mixing emoji with lucide.
 const CATEGORY_CONFIG = {
-  behavioral:  { label: 'Behavioral',  color: 'bg-brand-muted text-brand',           icon: Target },
-  technical:   { label: 'Technical',   color: 'bg-accent-violet/10 text-accent-violet', icon: Wrench },
-  situational: { label: 'Situational', color: 'bg-yellow-400/10 text-yellow-400',     icon: Puzzle },
+  behavioral:  { label: 'Behavioral',  color: 'bg-bg-hover text-brand',           icon: Target },
+  technical:   { label: 'Technical',   color: 'bg-bg-hover text-text-secondary', icon: Wrench },
+  situational: { label: 'Situational', color: 'bg-warn/10 text-warn',     icon: Puzzle },
   cultural:    { label: 'Cultural',    color: 'bg-score-muted text-score',            icon: Handshake },
-  skill_gap:   { label: 'Skill Gap',   color: 'bg-red-400/10 text-red-400',           icon: TrendingUp },
+  skill_gap:   { label: 'Skill gap',   color: 'bg-bad/10 text-bad',           icon: TrendingUp },
 }
 
 const DIFFICULTY_COLOR = {
   easy:   'text-score',
-  medium: 'text-yellow-400',
-  hard:   'text-red-400',
+  medium: 'text-warn',
+  hard:   'text-bad',
 }
 
 const TAB_ITEMS = [
@@ -115,10 +115,7 @@ export default function InterviewPrep() {
     <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-9 h-9 rounded-xl bg-accent-violet/10 flex items-center justify-center">
-            <BrainCircuit size={18} className="text-accent-violet" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Interview Prep</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Interview prep</h1>
         </div>
         <p className="text-text-secondary">10 tailored questions with model answers using your real experience — not generic advice.</p>
       </motion.div>
@@ -133,9 +130,9 @@ export default function InterviewPrep() {
             {jobId ? (
               <div className="mb-5"><JobBanner job={job} jobId={jobId} missing={jobMissing} kind="interview_prep" toolPath="/interview-prep" /></div>
             ) : (<>
-            <label className="block text-sm font-medium text-text-secondary mb-2">Job Description</label>
+            <label className="block text-sm font-medium text-text-secondary mb-2">Job description</label>
             <textarea
-              className="input min-h-36 resize-y font-mono text-sm mb-5"
+              className="input min-h-36 resize-y text-sm mb-5"
               placeholder="Paste the full job description here…"
               value={jdText}
               onChange={e => setJdText(e.target.value)}
@@ -143,14 +140,9 @@ export default function InterviewPrep() {
             />
             </>)}
             <button onClick={generate} disabled={submitting}
-              className={clsx(
-                'w-full flex items-center justify-center gap-2 py-3 rounded-lg font-semibold text-white transition-all',
-                submitting
-                  ? 'bg-brand opacity-50 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-brand to-accent-magenta hover:shadow-[0_0_24px_-4px_rgba(255,61,119,0.5)]'
-              )}>
+              className="btn-primary w-full flex items-center justify-center gap-2 py-3">
               {loading ? <Spinner size="sm" color="white" /> : <BrainCircuit size={16} />}
-              {submitting ? 'Starting…' : loading ? 'Preparing your interview kit…' : 'Generate Interview Prep'}
+              {submitting ? 'Starting…' : loading ? 'Preparing your interview kit…' : 'Generate interview prep'}
             </button>
             {needsUpgrade && (
               <p role="status" className="mt-3 text-sm text-text-secondary">
@@ -254,9 +246,9 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
                 >
                   {/* Why asked */}
                   <div className="flex items-start gap-2">
-                    <Lightbulb size={14} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                    <Lightbulb size={14} className="text-warn flex-shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-semibold text-yellow-400 mb-1">Why they ask this</p>
+                      <p className="text-xs font-semibold text-warn mb-1">Why they ask this</p>
                       <p className="text-sm text-text-secondary">{q.why_asked}</p>
                     </div>
                   </div>
@@ -293,13 +285,13 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
       {result.quick_tips?.length > 0 && (
         <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
           <div className="flex items-center gap-2 mb-4">
-            <Lightbulb size={16} className="text-yellow-400" />
+            <Lightbulb size={16} className="text-warn" />
             <h3 className="font-semibold text-text-primary">Quick Tips for This Interview</h3>
           </div>
           <ul className="space-y-2">
             {result.quick_tips.map((tip, i) => (
               <li key={i} className="flex items-start gap-3 text-sm text-text-secondary">
-                <span className="w-5 h-5 rounded-full bg-yellow-400/10 text-yellow-400 flex items-center justify-center text-xs flex-shrink-0 mt-0.5">{i + 1}</span>
+                <span className="w-5 h-5 rounded-full bg-warn/10 text-warn flex items-center justify-center text-xs flex-shrink-0 mt-0.5">{i + 1}</span>
                 {tip}
               </li>
             ))}
@@ -309,15 +301,15 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
 
       {/* Red flags */}
       {result.red_flags_to_avoid?.length > 0 && (
-        <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card border-red-400/20">
+        <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card border-bad/20">
           <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle size={16} className="text-red-400" />
+            <AlertTriangle size={16} className="text-bad" />
             <h3 className="font-semibold text-text-primary">Common Mistakes to Avoid</h3>
           </div>
           <ul className="space-y-2">
             {result.red_flags_to_avoid.map((flag, i) => (
               <li key={i} className="flex items-start gap-3 text-sm text-text-secondary">
-                <span className="text-red-400 flex-shrink-0">✗</span> {flag}
+                <span className="text-bad flex-shrink-0">✗</span> {flag}
               </li>
             ))}
           </ul>
@@ -328,7 +320,7 @@ function PrepResult({ result, openQ, setOpenQ, onNew }) {
       {result.questions_to_ask?.length > 0 && (
         <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="card">
           <div className="flex items-center gap-2 mb-4">
-            <MessageSquare size={16} className="text-brand" />
+            <MessageSquare size={16} className="text-text-secondary" />
             <h3 className="font-semibold text-text-primary">Smart Questions to Ask Them</h3>
           </div>
           <div className="space-y-3">
@@ -383,7 +375,7 @@ function HistoryItem({ item, onDelete, onRetry }) {
           {item.status === 'failed' && (
             <button onClick={() => onRetry(item.id)} className="btn-ghost text-sm px-3 py-1.5">Retry</button>
           )}
-          <button onClick={() => onDelete(item.id)} aria-label="Delete prep session" className="p-1.5 text-text-muted hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors">
+          <button onClick={() => onDelete(item.id)} aria-label="Delete prep session" className="p-1.5 text-text-muted hover:text-bad hover:bg-bad/10 rounded-md transition-colors">
             <Trash2 size={15} />
           </button>
         </div>

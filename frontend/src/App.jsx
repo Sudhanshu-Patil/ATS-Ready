@@ -4,7 +4,6 @@ import { useAuthStore } from './store/auth'
 import { useJobsStore } from './store/jobs'
 import { authAPI } from './api/client'
 
-import AuroraBackground from './components/AuroraBackground'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 const Landing = lazy(() => import('./pages/Landing'))
@@ -61,8 +60,6 @@ export default function App() {
 
   return (
     <>
-      {/* Mounted once, persists across navigation — see AuroraBackground.jsx */}
-      <AuroraBackground />
 
       {/* NOTE: do not wrap this in AnimatePresence / key off location here —
           Layout (sidebar + nav pill) is rendered BY this same Routes tree as

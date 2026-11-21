@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Zap, MailCheck } from 'lucide-react'
 import { authAPI } from '../api/client'
 import Spinner from '../components/Spinner'
+import { Wordmark } from '../components/Brand'
 import ThemeToggle from '../components/ThemeToggle'
 import toast from 'react-hot-toast'
 
@@ -35,10 +36,7 @@ export default function ForgotPassword() {
           initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
           className="flex items-center gap-2.5 justify-center mb-8"
         >
-          <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center shadow-[0_0_20px_-3px_rgba(255,107,53,0.6)]">
-            <Zap size={18} className="text-white" />
-          </div>
-          <span className="font-display font-bold text-text-primary text-xl tracking-tight">ATS-Ready</span>
+          <Wordmark to="/" size="text-xl" />
         </motion.div>
 
         <motion.div
@@ -48,7 +46,7 @@ export default function ForgotPassword() {
           {sent ? (
             <div className="text-center py-4">
               <MailCheck size={36} className="text-score mx-auto mb-3" />
-              <h1 className="font-display text-xl font-bold text-text-primary mb-2">Check your inbox</h1>
+              <h1 className="font-display text-xl font-medium text-text-primary mb-2">Check your inbox</h1>
               <p className="text-sm text-text-secondary">
                 If <span className="text-text-primary">{email}</span> is registered,
                 a reset link is on its way. It expires in 30 minutes.
@@ -56,7 +54,7 @@ export default function ForgotPassword() {
             </div>
           ) : (
             <>
-              <h1 className="font-display text-2xl font-bold text-text-primary mb-1">Forgot password</h1>
+              <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary mb-1">Forgot password</h1>
               <p className="text-sm text-text-secondary mb-6">
                 Enter your email and we'll send you a reset link.
               </p>

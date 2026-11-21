@@ -25,7 +25,8 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="theme-color" content="#0A0A0F" />
+    <meta name="theme-color" content="#F7F4EE" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)" />
 
     <script type="application/ld+json">
     {
@@ -75,7 +76,7 @@
         var saved = localStorage.getItem('theme');
         var theme = saved === 'light' || saved === 'dark'
           ? saved
-          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+          : 'light';
         document.documentElement.setAttribute('data-theme', theme);
       })();
     </script>

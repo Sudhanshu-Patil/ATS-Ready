@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, FileText, TrendingUp, Target, ChevronRight, Clock, CheckCircle, XCircle, Download } from 'lucide-react'
-import { useAuthStore } from '../store/auth'
 import { useJobsStore } from '../store/jobs'
 import { fadeInUp, staggerContainer } from '../lib/motion'
 import { scoreColorClass } from '../components/ScoreRing'
@@ -16,18 +15,17 @@ import { useCreditsStore } from '../store/credits'
 
 const JOB_STATUS = {
   done:    { icon: CheckCircle, color: 'text-score' },
-  failed:  { icon: XCircle,     color: 'text-red-400' },
+  failed:  { icon: XCircle,     color: 'text-bad' },
   running: { spinning: true },
   pending: { icon: Clock,       color: 'text-text-muted' },
 }
 
 function ScoreBadge({ score }) {
   if (score == null) return <span className="text-text-muted text-sm">—</span>
-  return <span className={clsx('font-mono font-semibold text-sm', scoreColorClass(score))}>{score.toFixed(1)}</span>
+  return <span className={clsx('figure font-medium text-sm', scoreColorClass(score))}>{score.toFixed(1)}</span>
 }
 
 export default function Dashboard() {
-  const { user } = useAuthStore()
   const { stats, jobs, loading, initialized, fetchAll } = useJobsStore()
   const { credits, billingEnabled } = useCreditsStore()
   const [attention, setAttention] = useState(null)
@@ -39,14 +37,12 @@ export default function Dashboard() {
   }, [initialized])
 
   const recentJobs = jobs.slice(0, 5)
-  const firstName = user?.full_name?.split(' ')[0] || 'there'
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
-        <p className="eyebrow !text-brand mb-2">Overview</p>
-        <h1 className="font-display text-2xl font-bold text-text-primary">
-          Good {getGreeting()}, {firstName} 👋
+        <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">
+          Dashboard
         </h1>
         <p className="text-text-secondary mt-1">Your job search, in one place.</p>
       </motion.div>
@@ -56,10 +52,10 @@ export default function Dashboard() {
         initial="hidden" animate="visible" variants={staggerContainer}
         className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
       >
-        <StatCard icon={FileText}    label="Total Resumes" value={loading ? '—' : stats?.total_resumes ?? 0}                                    color="text-brand"      bgColor="bg-brand-muted" />
-        <StatCard icon={CheckCircle} label="Completed"     value={loading ? '—' : stats?.completed ?? 0}                                         color="text-score"      bgColor="bg-score-muted" />
-        <StatCard icon={Target}      label="Avg ATS Score" value={loading ? '—' : stats?.avg_ats_score ? `${stats.avg_ats_score}%` : '—'}        color="text-yellow-400" bgColor="bg-yellow-400/10" />
-        <StatCard icon={TrendingUp}  label="Best Score"    value={loading ? '—' : stats?.best_ats_score ? `${stats.best_ats_score}%` : '—'}      color="text-accent-magenta" bgColor="bg-accent-magenta/10" />
+        <StatCard label="Total resumes" value={loading ? '—' : stats?.total_resumes ?? 0} />
+        <StatCard label="Completed"     value={loading ? '—' : stats?.completed ?? 0} />
+        <StatCard label="Average ATS score" value={loading ? '—' : stats?.avg_ats_score ? `${stats.avg_ats_score}%` : '—'} />
+        <StatCard label="Best ATS score"    value={loading ? '—' : stats?.best_ats_score ? `${stats.best_ats_score}%` : '—'} />
       </motion.div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -70,10 +66,9 @@ export default function Dashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="eyebrow mb-1">Recent activity</p>
-              <h2 className="font-semibold text-text-primary">Recent Resumes</h2>
+              <h2 className="font-semibold text-text-primary">Recent resumes</h2>
             </div>
-            <Link to="/generate?tab=history" className="text-xs text-brand hover:text-brand-hover flex items-center gap-1">
+            <Link to="/generate?tab=history" className="text-xs text-text-secondary hover:text-text-primary flex items-center gap-1">
               View all <ChevronRight size={12} />
             </Link>
           </div>
@@ -122,23 +117,13 @@ export default function Dashboard() {
           <div className="card">
             <h2 className="font-semibold text-text-primary mb-4">Quick actions</h2>
             <div className="space-y-2">
-              <Link to="/generate" className="flex items-center gap-3 p-3 rounded-lg bg-brand/10 border border-brand/20 hover:bg-brand/20 transition-colors">
-                <div className="w-8 h-8 rounded-md bg-brand flex items-center justify-center">
-                  <Zap size={15} className="text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-brand">Start a job</p>
-                  <p className="text-xs text-text-muted">Paste a posting once, use it everywhere</p>
-                </div>
+              <Link to="/jobs" className="block rounded-lg border border-bg-border px-4 py-3 hover:bg-bg-hover transition-colors">
+                <p className="text-sm font-medium text-text-primary">Start a job</p>
+                <p className="text-xs text-text-muted mt-0.5">Paste a posting once, use it everywhere</p>
               </Link>
-              <Link to="/metabase" className="flex items-center gap-3 p-3 rounded-lg hover:bg-bg-hover transition-colors">
-                <div className="w-8 h-8 rounded-md bg-bg-hover flex items-center justify-center">
-                  <FileText size={15} className="text-text-secondary" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-text-primary">Update your profile</p>
-                  <p className="text-xs text-text-muted">Skills, experience, projects</p>
-                </div>
+              <Link to="/metabase" className="block rounded-lg border border-bg-border px-4 py-3 hover:bg-bg-hover transition-colors">
+                <p className="text-sm font-medium text-text-primary">Update your profile</p>
+                <p className="text-xs text-text-muted mt-0.5">Skills, experience, projects</p>
               </Link>
             </div>
           </div>
@@ -163,7 +148,7 @@ export default function Dashboard() {
             <div className="card">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="font-semibold text-text-primary">Credits</h2>
-                <span className="badge bg-brand-muted text-brand">{credits ? credits.job : '…'} job{credits && credits.job !== 1 ? 's' : ''}</span>
+                <span className="badge bg-bg-hover text-brand">{credits ? credits.job : '…'} job{credits && credits.job !== 1 ? 's' : ''}</span>
               </div>
               <p className="text-xs text-text-muted mb-3">
                 One credit covers everything for one job. {credits?.resume ? `${credits.resume} resume-only credit${credits.resume > 1 ? 's' : ''} too.` : ''}
@@ -182,24 +167,15 @@ export default function Dashboard() {
   )
 }
 
-function StatCard({ icon: Icon, label, value, color, bgColor }) {
+function StatCard({ label, value }) {
   return (
     <motion.div variants={fadeInUp} className="card p-5">
-      <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center mb-3', bgColor)}>
-        <Icon size={17} className={color} />
-      </div>
-      <p className="text-2xl font-bold text-text-primary font-mono">{value}</p>
-      <p className="text-xs text-text-secondary mt-1">{label}</p>
+      <p className="text-sm text-text-secondary">{label}</p>
+      <p className="mt-2 text-3xl font-medium figure text-text-primary">{value}</p>
     </motion.div>
   )
 }
 
-function getGreeting() {
-  const h = new Date().getHours()
-  if (h < 12) return 'morning'
-  if (h < 17) return 'afternoon'
-  return 'evening'
-}
 
 function formatDate(str) {
   if (!str) return ''

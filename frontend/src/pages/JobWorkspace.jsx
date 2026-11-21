@@ -73,19 +73,19 @@ export default function JobWorkspace() {
   })()
 
   return (
-    <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-5">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto space-y-5">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp}>
         <Link to="/jobs" className="text-sm text-text-muted hover:text-text-primary inline-flex items-center gap-1 mb-3">
           <ArrowLeft size={14} /> All jobs
         </Link>
-        <h1 className="font-display text-2xl font-bold text-text-primary">
+        <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">
           {job.company || 'Job'}{job.role ? ` · ${job.role}` : ''}
         </h1>
         {billing && <p className="text-sm text-text-secondary mt-1">{LEVEL_TEXT[job.unlock_level] || LEVEL_TEXT.none}</p>}
       </motion.div>
 
       {next && (
-        <div className="card border-brand/30 bg-brand/5 flex items-center justify-between gap-3 flex-wrap">
+        <div className="card border-l-2 !border-l-brand flex items-center justify-between gap-3 flex-wrap">
           <p className="text-sm text-text-primary">{next.text}</p>
           {next.cta && <Link to={next.to} className="btn-primary text-sm">{next.cta}</Link>}
         </div>
@@ -93,9 +93,9 @@ export default function JobWorkspace() {
 
       <div className="grid sm:grid-cols-2 gap-3">
         {tools.map((t) => (
-          <Link key={t.title} to={t.to} className="card hover:border-brand/30 transition-colors flex items-start gap-3">
-            <div className="w-9 h-9 rounded-lg bg-brand-muted flex items-center justify-center flex-shrink-0">
-              <t.icon size={16} className="text-brand" />
+          <Link key={t.title} to={t.to} className="card hover:border-text-muted/60 transition-colors flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-bg-hover flex items-center justify-center flex-shrink-0">
+              <t.icon size={16} className="text-text-secondary" />
             </div>
             <div className="min-w-0">
               <p className="font-medium text-text-primary">{t.title}</p>

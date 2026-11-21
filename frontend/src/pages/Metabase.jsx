@@ -54,8 +54,8 @@ function ImportResumeCard({ onImported }) {
   return (
     <div className="card-glass !p-4 mb-6 flex items-center justify-between gap-4 flex-wrap">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-brand-muted flex items-center justify-center flex-shrink-0">
-          <Upload size={16} className="text-brand" />
+        <div className="w-9 h-9 rounded-lg bg-bg-hover flex items-center justify-center flex-shrink-0">
+          <Upload size={16} className="text-text-secondary" />
         </div>
         <div>
           <p className="text-sm font-semibold text-text-primary">Already have a resume?</p>
@@ -86,10 +86,7 @@ export default function Metabase() {
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-8">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
-            <User size={18} className="text-brand" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">My profile</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">My profile</h1>
         </div>
         <p className="text-text-secondary">Your skills, experience and projects. Everything the AI writes for you is built from this, so keep it accurate.</p>
       </motion.div>
@@ -284,7 +281,7 @@ function SkillsTab() {
     } catch { toast.error('Delete failed') }
   }
 
-  const profColors = { Expert: 'text-score', Advanced: 'text-brand', Intermediate: 'text-yellow-400', Beginner: 'text-text-muted' }
+  const profColors = { Expert: 'text-score', Advanced: 'text-brand', Intermediate: 'text-warn', Beginner: 'text-text-muted' }
 
   const grouped = skills.reduce((acc, s) => {
     ;(acc[s.category] = acc[s.category] || []).push(s)
@@ -321,19 +318,19 @@ function SkillsTab() {
         <motion.div initial="hidden" animate="visible" variants={staggerContainer} className="space-y-5">
           {Object.entries(grouped).map(([cat, items]) => (
             <motion.div key={cat} variants={fadeInUp} className="card">
-              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">{cat}</p>
+              <p className="text-xs font-medium text-text-muted mb-3">{cat}</p>
               <div className="flex flex-wrap gap-2">
                 {items.map(s => (
                   <div key={s.id} className="flex flex-col gap-2 rounded-lg border border-bg-border bg-bg-hover px-3 py-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm text-text-primary">{s.name}</span>
                       <span className={clsx('text-xs', profColors[s.proficiency] || 'text-text-muted')}>{s.proficiency}</span>
-                      {s.is_primary ? <span className="rounded-full bg-brand-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand">Primary</span> : null}
+                      {s.is_primary ? <span className="rounded-md bg-bg-hover px-1.5 py-0.5 text-[11px] font-medium text-brand">Primary</span> : null}
                       <span className="text-[11px] text-text-muted">{s.years_experience}y</span>
                       <button onClick={() => startEdit(s)} className="ml-auto rounded-md border border-bg-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:border-brand hover:text-brand">
                         Edit
                       </button>
-                      <button onClick={() => del(s.id, s.name)} className="rounded-md border border-bg-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:border-red-400 hover:text-red-400">
+                      <button onClick={() => del(s.id, s.name)} className="rounded-md border border-bg-border px-2 py-1 text-[11px] font-medium text-text-secondary hover:border-red-400 hover:text-bad">
                         Delete
                       </button>
                     </div>
@@ -487,7 +484,7 @@ function ExperienceTab() {
                   <button onClick={() => startEdit(e)} className="text-text-muted hover:text-brand transition-colors p-1" title="Edit experience">
                     <Pencil size={15} />
                   </button>
-                  <button onClick={() => del(e.id)} className="text-text-muted hover:text-red-400 transition-colors p-1" title="Delete experience">
+                  <button onClick={() => del(e.id)} className="text-text-muted hover:text-bad transition-colors p-1" title="Delete experience">
                     <Trash2 size={15} />
                   </button>
                 </div>
@@ -626,7 +623,7 @@ function ProjectsTab() {
                   {p.tech_stack?.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {p.tech_stack.map(t => (
-                        <span key={t} className="badge bg-brand-muted text-brand">{t}</span>
+                        <span key={t} className="badge bg-bg-hover text-brand">{t}</span>
                       ))}
                     </div>
                   )}
@@ -635,7 +632,7 @@ function ProjectsTab() {
                   <button onClick={() => startEdit(p)} className="text-text-muted hover:text-brand transition-colors p-1" title="Edit project">
                     <Pencil size={15} />
                   </button>
-                  <button onClick={() => del(p.id)} className="text-text-muted hover:text-red-400 transition-colors p-1" title="Delete project">
+                  <button onClick={() => del(p.id)} className="text-text-muted hover:text-bad transition-colors p-1" title="Delete project">
                     <Trash2 size={15} />
                   </button>
                 </div>

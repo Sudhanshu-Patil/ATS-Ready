@@ -100,13 +100,10 @@ export default function Assistant() {
   }
 
   return (
-    <div className="p-4 sm:p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-5xl mx-auto">
       <motion.div initial="hidden" animate="visible" variants={fadeInUp} className="mb-6">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-9 h-9 rounded-xl bg-brand-muted flex items-center justify-center">
-            <MessageSquare size={18} className="text-brand" />
-          </div>
-          <h1 className="font-display text-2xl font-bold text-text-primary">Application assistant</h1>
+          <h1 className="font-display text-[32px] leading-tight font-medium tracking-[-0.02em] text-text-primary">Application assistant</h1>
         </div>
         <p className="text-text-secondary">
           Paste the questions from any application form, with or without the job description. Answers are written as
@@ -143,7 +140,7 @@ export default function Assistant() {
                 Job description and details <span className="text-text-muted">(optional: makes answers specific to the job)</span>
               </summary>
               <div className="mt-3 space-y-3">
-                <textarea aria-label="Job description" className="input min-h-28 resize-y font-mono text-sm"
+                <textarea aria-label="Job description" className="input min-h-28 resize-y text-sm"
                           placeholder="Paste the job description (optional)" value={draft.jd}
                           onChange={(e) => set({ jd: e.target.value })} />
                 <div className="grid sm:grid-cols-2 gap-3">
@@ -205,7 +202,7 @@ function RequestView({ request, reload }) {
         </p>
       )}
       {running && <div className="card flex items-center gap-2 text-sm text-text-secondary"><Spinner size="sm" /> Writing your answers… you can leave this page.</div>}
-      {request.status === 'failed' && <div className="card text-sm text-red-400">{request.error || 'Something went wrong. Please try again.'}</div>}
+      {request.status === 'failed' && <div className="card text-sm text-bad">{request.error || 'Something went wrong. Please try again.'}</div>}
       {(request.questions || []).map((q) => <AnswerCard key={q.id} requestId={request.id} q={q} reload={reload} />)}
     </div>
   )
@@ -250,7 +247,7 @@ function AnswerCard({ requestId, q, reload }) {
       <p className="text-sm font-medium text-text-primary">{q.question}</p>
 
       {q.status === 'needs_input' && (
-        <div className="rounded-lg border border-brand/30 bg-brand/5 p-3 space-y-2">
+        <div className="rounded-lg border border-bg-border bg-bg-hover p-3 space-y-2">
           <label htmlFor={`fact-${q.id}`} className="text-sm text-text-primary">
             {q.needs.label}: I will not guess this. Tell me once and I will remember it.
           </label>
@@ -262,17 +259,17 @@ function AnswerCard({ requestId, q, reload }) {
         </div>
       )}
       {q.status === 'skipped' && <p className="text-sm text-text-secondary">{q.note || 'Answer this one yourself.'}</p>}
-      {q.status === 'failed' && <p className="text-sm text-red-400">Could not answer this one. Try again.</p>}
+      {q.status === 'failed' && <p className="text-sm text-bad">Could not answer this one. Try again.</p>}
       {q.status === 'pending' && <p className="text-sm text-text-muted flex items-center gap-2"><Spinner size="sm" /> Writing…</p>}
 
       {q.status === 'done' && (
         <>
           <textarea aria-label={`Answer to: ${q.question}`} className="input min-h-28 resize-y text-sm leading-relaxed"
                     value={text} onChange={(e) => setText(e.target.value)} />
-          {(q.warnings || []).map((w) => <p key={w} className="text-xs text-yellow-400">{w}</p>)}
+          {(q.warnings || []).map((w) => <p key={w} className="text-xs text-warn">{w}</p>)}
           <div className="flex items-center gap-3 flex-wrap">
             <button onClick={copy} className="btn-ghost text-sm flex items-center gap-2"><Copy size={14} /> Copy</button>
-            <span className={clsx('text-xs', over ? 'text-red-400' : 'text-text-muted')} aria-live="polite">
+            <span className={clsx('text-xs', over ? 'text-bad' : 'text-text-muted')} aria-live="polite">
               {q.limit ? `${used} / ${q.limit} ${q.limit_unit === 'chars' ? 'characters' : 'words'}` : `${words} words`}
               {over ? ': over the limit' : ''}
             </span>
@@ -300,7 +297,7 @@ function History({ onOpen }) {
               {r.needs_input > 0 && ` · ${r.needs_input} waiting for you`} {r.status !== 'done' && `· ${r.status}`}
             </p>
           </button>
-          <button aria-label="Delete" className="p-1.5 text-text-muted hover:text-red-400 rounded-md"
+          <button aria-label="Delete" className="p-1.5 text-text-muted hover:text-bad rounded-md"
                   onClick={async () => { if (await confirmDialog('Delete these questions and answers?')) { await api.delete(`/assistant/requests/${r.id}`); refresh() } }}>
             <Trash2 size={15} />
           </button>
@@ -331,7 +328,7 @@ function PersonaPanel() {
   return (
     <div className="space-y-5">
       <div className="card space-y-3">
-        <h2 className="font-semibold text-text-primary flex items-center gap-2"><Brain size={16} className="text-brand" /> Things I will reuse</h2>
+        <h2 className="font-semibold text-text-primary flex items-center gap-2"><Brain size={16} className="text-text-secondary" /> Things I will reuse</h2>
         <p className="text-sm text-text-secondary">Facts your profile cannot hold. I never guess these: I ask once and remember.</p>
         {Object.entries(data.fields || {}).map(([field, spec]) => {
           const f = factOf(field)
@@ -343,7 +340,7 @@ function PersonaPanel() {
                      onKeyDown={(e) => e.key === 'Enter' && save(field)} />
               <div className="flex gap-2">
                 <button className="btn-ghost text-xs px-3" onClick={() => save(field)}>{f ? 'Update' : 'Save'}</button>
-                {f && <button className="text-xs text-text-muted hover:text-red-400" onClick={() => forget(f.id)}>Forget</button>}
+                {f && <button className="text-xs text-text-muted hover:text-bad" onClick={() => forget(f.id)}>Forget</button>}
               </div>
             </div>
           )
@@ -363,11 +360,11 @@ function PersonaPanel() {
         {data.stories.map((s) => (
           <div key={s.id} className="flex items-start justify-between gap-3 text-sm border-t border-bg-border pt-2">
             <div><p className="text-text-primary">{s.label}</p><p className="text-text-muted line-clamp-2">{s.data?.answer}</p></div>
-            <button className="text-xs text-text-muted hover:text-red-400" onClick={() => forget(s.id)}>Forget</button>
+            <button className="text-xs text-text-muted hover:text-bad" onClick={() => forget(s.id)}>Forget</button>
           </div>
         ))}
         {(data.stories.length > 0 || data.facts.length > 0) && (
-          <button className="text-xs text-red-400 underline"
+          <button className="text-xs text-bad underline"
                   onClick={async () => { if (await confirmDialog('Forget everything I have learned about you?')) { await api.delete('/persona'); refresh() } }}>
             Forget everything
           </button>

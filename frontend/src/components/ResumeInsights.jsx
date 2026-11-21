@@ -12,7 +12,7 @@ export function ScoreBar({ label, score }) {
     <div>
       <div className="flex justify-between text-xs mb-1">
         <span className="text-text-secondary">{label}</span>
-        <span className={clsx('font-mono', scoreColorClass(score))}>{score?.toFixed(1)}</span>
+        <span className={clsx('figure', scoreColorClass(score))}>{score?.toFixed(1)}</span>
       </div>
       <div className="h-1.5 bg-bg-hover rounded-full overflow-hidden">
         <motion.div
@@ -49,10 +49,10 @@ export function SuggestionsPanel({ breakdown, score, emphasis, setEmphasis, onRe
   const canGain = open.length > 0 && projected > (score ?? 0)
 
   return (
-    <div className="mt-4 p-3 bg-brand/5 border border-brand/20 rounded-lg">
+    <div className="mt-4 p-3 bg-bg-hover border border-bg-border rounded-lg">
       <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-brand" />
+          <Sparkles size={14} className="text-text-secondary" />
           <span className="text-sm font-medium text-brand">
             {open.length ? `${open.length} skill${open.length !== 1 ? 's' : ''} this job asks for that your profile does not show` : 'All suggestions applied'}
           </span>
@@ -79,7 +79,7 @@ export function SuggestionsPanel({ breakdown, score, emphasis, setEmphasis, onRe
                   className={clsx(
                     'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
                     on ? 'bg-score-muted text-score border-score/30'
-                       : 'bg-bg-hover text-text-secondary border-bg-border hover:border-brand/40 hover:text-brand')}>
+                       : 'bg-bg-hover text-text-secondary border-bg-border hover:border-text-muted/60 hover:text-brand')}>
                   {on ? <Check size={11} /> : <Plus size={11} />} {s.term}
                   <span className="text-[10px] opacity-70">· {KIND_LABEL[s.kind] || s.kind}</span>
                 </button>
