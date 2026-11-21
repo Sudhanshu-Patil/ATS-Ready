@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Application, CreditLedger, Referral, User
+from app.db.models import Application, CreditLedger, Payment, Referral, User
 from app.services import pricing
 
 logger = logging.getLogger(__name__)
@@ -35,12 +35,16 @@ def verification_required() -> bool:
     return settings.REQUIRE_VERIFIED_EMAIL or settings.is_production
 
 
-def require_verified(user: User) -> None:
-    """AI features are for verified emails: a made-up address cannot burn model tokens."""
-    if verification_required() and not user.is_verified:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
-            "error": "verify_email",
-            "message": f"Please verify your email first. We sent a link to {user.email}; check your spam folder too."})
+async def require_verified(db: AsyncSession, user: User) -> None:
+    """AI features are for verified emails: a made-up address cannot burn model tokens. Someone who has paid is a real
+    person, so a completed payment counts as verification (free starter credits still wait for the email)."""
+    if not verification_required() or user.is_verified:
+        return
+    if (await db.execute(select(Payment.id).where(Payment.user_id == user.id, Payment.status == "paid").limit(1))).first():
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={
+        "error": "verify_email",
+        "message": f"Please verify your email first. We sent a link to {user.email}; check your spam folder too."})
 
 
 class InsufficientCredits(Exception):
@@ -176,7 +180,7 @@ def _no_credits(user: User, kind: str) -> HTTPException:
 async def ensure_unlocked(db: AsyncSession, user: User, app: Application, kind: str, amount: int = 1) -> None:
     """Spend a credit if this job is not yet unlocked far enough for `kind`, then count the use against the job's
     cap. Raises 402 no_credits or 429 (job limit). The caller commits."""
-    require_verified(user)
+    await require_verified(db, user)
     if not settings.BILLING_ENABLED:
         return
     app = await _lock_app(db, app.id)

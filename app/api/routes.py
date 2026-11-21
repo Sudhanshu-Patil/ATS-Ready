@@ -732,7 +732,7 @@ async def import_resume(
     import asyncio
 
     from app.services import credits
-    credits.require_verified(user)
+    await credits.require_verified(db, user)
     data = await file.read()
     if len(data) > MAX_RESUME_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large (max 5MB)")
