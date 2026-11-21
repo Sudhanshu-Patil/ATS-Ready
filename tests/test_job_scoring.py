@@ -115,3 +115,15 @@ def test_match_reasons_explain_the_score():
     assert any("Title is close" in r for r in job.match_reasons)
     assert "Remote" in job.match_reasons
     assert job.to_dict()["match_reasons"] == job.match_reasons
+
+
+def test_irrelevant_roles_that_only_mention_skills_are_dropped():
+    from app.services.job_recommendations import JobListing, UserProfile, rank_jobs
+    def job(title, desc):
+        return JobListing(title=title, company="Co", location="Remote", url=f"https://x.test/{title}",
+                          source="t", tags=[], description=desc, posted_at=None)
+    p = UserProfile(skills=["Python", "FastAPI", "PostgreSQL"], titles=["Backend Developer"], years=4)
+    desc = "We use Python, FastAPI and PostgreSQL every day. " * 5
+    kept = [j.title for j in rank_jobs([job("Python Backend Engineer", desc), job("Sales Manager", desc),
+                                        job("Marketing Analyst", desc)], p)]
+    assert kept == ["Python Backend Engineer"]

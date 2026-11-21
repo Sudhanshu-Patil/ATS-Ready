@@ -97,6 +97,21 @@ WORLDWIDE = ("worldwide", "anywhere", "global", "work from anywhere", "world wid
 REMOTE_WORDS = ("remote", "work from home", "wfh", "distributed", "telecommute")
 
 
+# "US only", "US-based", "US residents": the bare word "us" is not a country word, but with one of these it is a fence.
+_FENCE_US = re.compile(r"(?<![a-z])(?:us|u s)(?![a-z])[ -]*(?:only|based|residents?|citizens?|candidates|time ?zones?)")
+# Sentences in a description that restrict where the person must live or may work.
+_FENCE_SENTENCE = re.compile(
+    r"(?:must (?:be )?(?:located|based|reside|living|resident)|(?:authori[sz]ed|eligible|legally entitled|right) to work|"
+    r"work authori[sz]ation|only (?:accepting|considering) (?:applicants|candidates)|open to candidates)"
+    r"[^.\n]{0,80}", re.I)
+
+
+def restriction_text(description: str) -> str:
+    """The location-fence sentences of a job description ('must be located in the US', 'authorized to work in
+    Canada'), so a bare 'Remote' job that is really US-only is not shown to someone in India."""
+    return " . ".join(m.group(0) for m in _FENCE_SENTENCE.finditer((description or "")[:4000]))[:600]
+
+
 def _clean(text: str) -> str:
     t = (text or "").lower().replace("&", " and ")
     t = re.sub(r"[()\[\]{}/;|•·\\+]", ",", t)
@@ -157,6 +172,9 @@ def parse_place(location: str, extra: str = "") -> Place:
                 place.named_countries.add(last)
         if last.lower() in US_STATES and "US" not in place.named_countries and last not in known_city_countries:
             place.countries.add("US")                       # "Austin, TX": a US state, not a country code
+    if _FENCE_US.search(text):
+        place.countries.add("US")
+        place.named_countries.add("US")
     for region in REGIONS:
         if re.search(rf"(?<![a-z]){re.escape(region)}(?![a-z])", text):
             place.regions.add(region)

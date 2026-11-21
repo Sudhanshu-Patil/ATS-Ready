@@ -71,3 +71,16 @@ def test_remote_only_sources_may_omit_the_location():
 
 def test_split_preferences():
     assert split_preferences("Bangalore, Pune; Remote\nIndia") == ["Bangalore", "Pune", "Remote", "India"]
+
+
+@pytest.mark.parametrize("loc,extra,ok", [
+    ("Remote", "Python Developer (US only)", False),
+    ("Remote", "Python Developer", True),
+    ("Remote", "Developer. Candidates must be located in the United States.", False),
+    ("Remote", "Developer. You must be authorized to work in Canada.", False),
+    ("Remote", "Developer. Open to candidates anywhere in India.", True),
+])
+def test_bare_remote_with_a_fence_in_the_text(loc, extra, ok):
+    from app.services.locations import restriction_text
+    title, _, desc = extra.partition(". ")
+    assert location_ok(loc, INDIA, True, extra=f"{title} {restriction_text(desc)}")[0] is ok
