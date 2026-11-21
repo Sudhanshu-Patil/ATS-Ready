@@ -881,7 +881,7 @@ async def import_resume(
 # Job Recommendations
 # ─────────────────────────────────────────────────────────────────────────────
 
-@router.get("/recommendations", dependencies=[Depends(per_user_limit("recs", 12))])
+@router.get("/recommendations", dependencies=[Depends(per_user_limit("recs", 40))])
 async def get_recommendations(
     refresh: bool = False,
     db: AsyncSession = Depends(get_db),
