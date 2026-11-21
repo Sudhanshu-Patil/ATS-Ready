@@ -37,6 +37,8 @@ structlog.configure(
     logger_factory=structlog.stdlib.LoggerFactory(),
 )
 logging.basicConfig(level=logging.DEBUG if settings.DEBUG else logging.INFO)
+# httpx logs every request URL at INFO, and some of ours carry API keys in the query string
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = structlog.get_logger(__name__)
 
 if settings.SENTRY_DSN:
