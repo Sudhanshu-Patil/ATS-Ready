@@ -528,6 +528,18 @@ async def test_unverified_accounts_cannot_use_ai_features_when_verification_is_r
     assert (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A})).status_code == 202
 
 
+async def test_someone_who_has_paid_does_not_need_a_verified_email(client, billing, monkeypatch):
+    monkeypatch.setattr(settings, "REQUIRE_VERIFIED_EMAIL", True)
+    h, uid = await _user_with_profile(client)                       # never verified
+    await give(uid, job=1)
+    assert (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A})).status_code == 403
+    async with AsyncSessionLocal() as db:
+        db.add(Payment(user_id=uid, provider="razorpay", provider_order_id="order_" + uuid.uuid4().hex[:12], pack_id="single",
+                       amount_minor=1000, currency="INR", status="paid"))
+        await db.commit()
+    assert (await client.post("/api/cover-letter", headers=h, json={"jd_text": JD_A})).status_code == 202
+
+
 async def test_verification_is_always_required_in_production(client, monkeypatch):
     monkeypatch.setattr(settings, "REQUIRE_VERIFIED_EMAIL", False)
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
