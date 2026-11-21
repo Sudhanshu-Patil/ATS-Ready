@@ -316,6 +316,11 @@ export default function JobRecommendations({ bare = false }) {
       polls.current = 0
       setLastFetched(new Date())
     } catch (err) {
+      if (err?.response?.status === 429 && polls.current < MAX_POLLS) {   // too many checks too fast: wait, look again
+        polls.current += 1
+        pollTimer.current = setTimeout(() => fetchJobs(false), 15000)
+        return
+      }
       polls.current = 0
       setError(err?.response?.data?.detail || 'Failed to load job recommendations.')
     }
