@@ -65,7 +65,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_fixed
 from app.config import settings
 from app.db.models import PersonalInfo, Skill, WorkExperience
 from app.services.cache_service import cache_service
-from app.services.locations import location_ok, search_locations
+from app.services.locations import location_ok, restriction_text, search_locations
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -832,6 +832,18 @@ async def load_user_profile(user_id: UUID, db: AsyncSession) -> UserProfile:
     )
 
 
+def _relevant(job: JobListing, profile: UserProfile) -> bool:
+    """The job is the kind of work the user does: its title shares a word with one of their roles
+    (developer and engineer count as the same), or names at least two of their skills. Skills in the description alone do not count:
+    a Sales Manager posting that mentions Python is not a match for a Python developer."""
+    if not profile.titles:
+        return True
+    if any(_title_words(t) & _title_words(job.title) for t in profile.titles):
+        return True
+    head = _normalise(f"{job.title} {' '.join(job.tags)}")
+    return sum(1 for s in profile.skills if any(_has(v, head) for v in _skill_variants(s))) >= 2
+
+
 def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
     """Score, drop stale and out-of-location jobs, dedupe, best first.
 
@@ -848,7 +860,10 @@ def rank_jobs(jobs: List[JobListing], profile: UserProfile) -> List[JobListing]:
         age = _age_days(j.posted_at)          # None = unknown date: keep
         if not j.url or (age is not None and age > MAX_AGE_DAYS) or j.match_score < NEAR_MATCH_FLOOR:
             continue
-        ok, reason = location_ok(j.location, prefs, profile.remote_ok, extra=j.title)
+        if not _relevant(j, profile):
+            continue                           # a different kind of job that merely mentions the user's skills
+        ok, reason = location_ok(j.location, prefs, profile.remote_ok,
+                                 extra=f"{j.title} {restriction_text(j.description)}")
         if not ok:
             continue                           # never show jobs outside the places the user will work
         if reason:
