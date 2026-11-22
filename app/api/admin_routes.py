@@ -1,7 +1,9 @@
 """Admin analytics. Access is by email allowlist (ADMIN_EMAILS), verified-only."""
+import uuid
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import Integer, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -187,3 +189,27 @@ async def stats(days: int = Query(30, ge=7, le=90), db: AsyncSession = Depends(g
         "heatmap": heat,
         "daily": daily,
     }
+
+
+class GrantIn(BaseModel):
+    email: EmailStr
+    job: int = Field(0, ge=0, le=1000)
+    resume: int = Field(0, ge=0, le=1000)
+
+
+@admin_router.post("/credits/grant")
+async def grant_credits(body: GrantIn, db: AsyncSession = Depends(get_db), admin: User = Depends(require_admin)):
+    """Add credits to an account (yours or anyone's). Recorded in the ledger as reason 'admin', one row per grant."""
+    from app.services import credits
+
+    if not (body.job or body.resume):
+        raise HTTPException(status_code=422, detail="Give at least one credit")
+    user = (await db.execute(select(User).where(func.lower(User.email) == body.email.lower()))).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="No account with that email")
+    for kind, n in (("job", body.job), ("resume", body.resume)):
+        if n:
+            await credits.apply(db, user.id, kind, n, "admin", f"admin:{uuid.uuid4()}")
+    await db.commit()
+    await db.refresh(user)
+    return {"email": user.email, **credits.balances(user)}
