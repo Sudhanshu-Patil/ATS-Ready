@@ -28,9 +28,19 @@ ACCENT = colors.HexColor("#1B357A")
 GRAY = colors.HexColor("#555555")
 
 
+# Typographic characters the model likes to write that Helvetica (cp1252) cannot draw: each becomes a plain one.
+_PLAIN = str.maketrans({
+    "‐": "-", "‑": "-", "‒": "-", "−": "-",      # hyphens, non-breaking hyphen, minus
+    " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", " ": " ",
+    "​": "", "‌": "", "‍": "", "﻿": "", "­": "",
+    "→": "->", "⇒": "=>", "≤": "<=", "≥": ">=", "≈": "~", "×": "x",
+    "✓": "", "✔": "", "●": "•", "▪": "•", "‣": "•",
+})
+
+
 def _t(value: Any) -> str:
     """Escape for reportlab's mini-markup and keep to what Helvetica can draw."""
-    text = escape(str(value or ""))
+    text = escape(str(value or "")).translate(_PLAIN)
     return text.encode("cp1252", "replace").decode("cp1252")
 
 
