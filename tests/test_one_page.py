@@ -37,7 +37,7 @@ def _pages(pdf: bytes) -> int:
 
 def test_a_short_resume_is_left_alone():
     fitted = fit_resume(_resume(roles=2, bullets=3, projects=1, project_bullets=2))
-    assert fitted["scale"] == 1.0 and fitted["trim_level"] == 0
+    assert fitted["scale"] >= 1.0 and fitted["trim_level"] == 0
     assert len(fitted["tailored"]["work_experience"][0]["bullets"]) == 3
 
 

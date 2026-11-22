@@ -80,7 +80,8 @@ def _pdf(story: List, title: str, margins=(0.65, 0.55)) -> bytes:
 # same plan stays on ONE page whether printed on A4 or Letter, and in Word (Calibri is narrower and tighter
 # than the Helvetica used here, so a layout that fits here fits there).
 _FIT_PAGE = (A4[0], 11 * inch)
-_SCALES = (1.0, 0.95, 0.9)                         # body text is 9.5pt at 1.0: never below ~8.5pt
+# Largest first: a short resume grows (to 10.9pt body) so the page is not a third empty; a long one shrinks to ~8.5pt.
+_SCALES = (1.15, 1.1, 1.05, 1.0, 0.95, 0.9)
 # Content trimmed progressively (lowest-value first) when shrinking is not enough.
 # proj_n / exp_n: projects / roles kept; proj_b / exp_b: max bullets each; sum: summary sentences.
 _LEVELS = (

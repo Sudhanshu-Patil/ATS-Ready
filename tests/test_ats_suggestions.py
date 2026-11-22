@@ -237,3 +237,19 @@ async def test_an_older_resume_keeps_its_breakdown_and_shows_todays_suggestions(
     assert "Kubernetes" not in open_now and "FastAPI" not in open_now and "Kafka" in open_now
     assert set(now["applied"]) == {"Kubernetes", "FastAPI"}
     assert now["projected_score"] > v1["total_score"]
+
+
+async def test_resume_file_is_named_after_the_company_the_user_gave(client, pipeline):
+    from app.db.models import Application
+    _, uid = await _user_with_profile(client)
+    async with AsyncSessionLocal() as db:
+        app = Application(user_id=uid, company="Zeta Labs", role="Platform Engineer")
+        job = JobApplication(user_id=uid, status="pending")
+        db.add_all([app, job])
+        await db.commit()
+        app_id, job_id = app.id, job.id
+    await tasks.generate_resume({}, str(job_id), str(uid), None, JD_TEXT, None, None, str(app_id))
+    async with AsyncSessionLocal() as db:
+        row = (await db.execute(select(JobApplication).where(JobApplication.id == job_id))).scalar_one()
+        assert row.status == "done", row.error_message
+        assert row.company == "Zeta Labs" and "zeta" in row.resume_filename.lower()

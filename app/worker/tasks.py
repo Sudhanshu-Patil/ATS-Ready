@@ -45,7 +45,7 @@ from app.services.ats_score import score_view, terms_owned, view_from_resume, vi
 from app.services.documents import fit_resume
 from app.services.grounding import add_known_terms, enforce_letter, enforce_resume, source_text
 from app.services.usage import mark_failed, tracked
-from app.db.models import AssistantRequest, CoverLetter, InterviewPrep, JobApplication
+from app.db.models import Application, AssistantRequest, CoverLetter, InterviewPrep, JobApplication
 from app.services.cache_service import cache_service
 from app.services.content_service import build_context, friendly_error
 from app.services.metabase_service import metabase_service
@@ -152,6 +152,15 @@ async def generate_resume(
                 logger.info("Calling AI JD parser…")
                 parsed_jd = ai_agent.parse_jd(jd_text)
                 await cache_service.set_parsed_jd(jd_text, parsed_jd.model_dump())
+
+            # What the user typed for this job (company, role) beats what the model read from the posting
+            app_uuid = credits.parse_uuid(application_id)
+            saved_app = await db.get(Application, app_uuid) if app_uuid else None
+            if saved_app is not None:
+                if saved_app.company and not applications.is_unclear_company(saved_app.company):
+                    parsed_jd.company = saved_app.company
+                if saved_app.role:
+                    parsed_jd.job_title = saved_app.role
 
             # Update job row with parsed JD info
             await _update_job_status(db, job_app_id, "running", {
