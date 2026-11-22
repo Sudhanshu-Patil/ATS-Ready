@@ -209,6 +209,44 @@ export default function Admin() {
                  rows: heatmap.map((row, i) => ({ day: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i], ...Object.fromEntries(row.map((v, h) => [`h${h}`, v])) })) }}>
         <Heatmap grid={heatmap} />
       </ChartCard>
+
+      <GrantCredits />
     </div>
+  )
+}
+
+// Add credits to an account (use your own email to top up yourself). Each grant is a ledger row with reason "admin".
+function GrantCredits() {
+  const [f, setF] = useState({ email: '', job: 5, resume: 0 })
+  const [busy, setBusy] = useState(false)
+  const [done, setDone] = useState('')
+  const [err, setErr] = useState('')
+  const submit = async (e) => {
+    e.preventDefault()
+    setBusy(true); setDone(''); setErr('')
+    try {
+      const { data } = await api.post('/admin/credits/grant', { email: f.email.trim(), job: Number(f.job) || 0, resume: Number(f.resume) || 0 })
+      setDone(`${data.email} now has ${data.job} job and ${data.resume} resume credits`)
+    } catch (ex) { setErr(ex.response?.data?.detail || 'Could not add credits') }
+    finally { setBusy(false) }
+  }
+  return (
+    <form onSubmit={submit} className="card mt-6 space-y-3">
+      <h2 className="text-base font-medium text-text-primary">Add credits</h2>
+      <div className="grid sm:grid-cols-[1fr_7rem_7rem_auto] gap-3 items-end">
+        <label className="text-sm text-text-secondary">Account email
+          <input type="email" required className="input mt-1" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+        </label>
+        <label className="text-sm text-text-secondary">Job credits
+          <input type="number" min="0" max="1000" className="input mt-1" value={f.job} onChange={(e) => setF({ ...f, job: e.target.value })} />
+        </label>
+        <label className="text-sm text-text-secondary">Resume-only
+          <input type="number" min="0" max="1000" className="input mt-1" value={f.resume} onChange={(e) => setF({ ...f, resume: e.target.value })} />
+        </label>
+        <button className="btn-primary py-2.5" disabled={busy}>{busy ? 'Adding…' : 'Add'}</button>
+      </div>
+      {done && <p role="status" className="text-sm text-score">{done}</p>}
+      {err && <p role="alert" className="text-sm text-bad">{err}</p>}
+    </form>
   )
 }

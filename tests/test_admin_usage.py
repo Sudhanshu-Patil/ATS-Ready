@@ -157,3 +157,18 @@ async def test_follow_up_drafts_and_resume_imports_are_counted(client, monkeypat
     async with AsyncSessionLocal() as db:
         rows = (await db.execute(select(UsageEvent).where(UsageEvent.user_id == uid))).scalars().all()
     assert {(e.kind, e.tokens) for e in rows} == {("follow_up", 1234), ("import", 777)}
+
+
+async def test_admin_can_grant_credits_and_others_cannot(client, monkeypatch):
+    normal_email = unique_email()
+    normal = await register(client, normal_email)
+    body = {"email": normal_email, "job": 5, "resume": 2}
+    assert (await client.post("/api/admin/credits/grant", json=body, headers=bearer(normal))).status_code == 404
+    admin, _ = await make_admin(monkeypatch, client)
+    r = await client.post("/api/admin/credits/grant", json=body, headers=bearer(admin))
+    assert r.status_code == 200 and r.json()["job"] >= 5 and r.json()["resume"] >= 2
+    again = await client.post("/api/admin/credits/grant", json=body, headers=bearer(admin))
+    assert again.json()["job"] == r.json()["job"] + 5                  # each grant is its own ledger row
+    assert (await client.post("/api/admin/credits/grant", json={"email": normal_email}, headers=bearer(admin))).status_code == 422
+    missing = {"email": "nobody-here@example.com", "job": 1}
+    assert (await client.post("/api/admin/credits/grant", json=missing, headers=bearer(admin))).status_code == 404
