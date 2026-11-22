@@ -24,7 +24,8 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import HRFlowable, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
 
-ACCENT = colors.HexColor("#1B357A")
+ACCENT = colors.HexColor("#2563EB")          # section headings and links, as on the candidate's own resumes
+LINK = "#2563EB"
 GRAY = colors.HexColor("#555555")
 
 
@@ -42,6 +43,22 @@ def _t(value: Any) -> str:
     """Escape for reportlab's mini-markup and keep to what Helvetica can draw."""
     text = escape(str(value or "")).translate(_PLAIN)
     return text.encode("cp1252", "replace").decode("cp1252")
+
+
+def _url(raw: Any) -> str:
+    """A safe absolute link, or '' (bare 'linkedin.com/in/x' gets https)."""
+    u = str(raw or "").strip()
+    if not u or " " in u or u.lower().startswith(("javascript:", "data:")):
+        return ""
+    if "@" in u and "://" not in u and not u.lower().startswith("mailto:"):
+        return "mailto:" + u
+    return u if re.match(r"^(https?://|mailto:)", u, re.I) else "https://" + u
+
+
+def _link(url: Any, label: str) -> str:
+    """Real clickable link (a PDF annotation) with a short label, e.g. LinkedIn, not the raw address."""
+    u = _url(url)
+    return f'<a href="{escape(u, {chr(34): "&quot;"})}" color="{LINK}">{_t(label)}</a>' if u else ""
 
 
 def _style(name: str, **kw) -> ParagraphStyle:
@@ -103,10 +120,14 @@ def _resume_story(data: Dict[str, Any], k: float) -> List:
                              bulletType="bullet", bulletFontSize=6 * k, leftIndent=12)]
 
     story: List = [Paragraph(_t(personal.get("full_name") or "Your Name"), name)]
-    contact_bits = [personal.get(c) for c in ("email", "phone", "location", "linkedin", "github", "portfolio")
-                    if personal.get(c)]
-    if contact_bits:
-        story.append(Paragraph("  |  ".join(_t(b) for b in contact_bits), contact))
+    bits = [_t(personal[c]) for c in ("location", "phone") if personal.get(c)]
+    if personal.get("email"):
+        bits.append(_link(personal["email"], str(personal["email"])))
+    for key, label in (("linkedin", "LinkedIn"), ("github", "GitHub"), ("portfolio", "Portfolio")):
+        if _link(personal.get(key), label):
+            bits.append(_link(personal[key], label))
+    if bits:
+        story.append(Paragraph(" | ".join(bits), contact))
 
     if tailored.get("professional_summary"):
         story += head("Summary") + [Paragraph(_t(tailored["professional_summary"]), body)]
@@ -119,31 +140,34 @@ def _resume_story(data: Dict[str, Any], k: float) -> List:
     if tailored.get("work_experience"):
         story += head("Work Experience")
         for e in tailored["work_experience"]:
-            story.append(Paragraph(f"{_t(e.get('role'))} - <font color='#1B357A'>{_t(e.get('company'))}</font>", role))
-            dates = f"{e.get('start_date') or ''} - {e.get('end_date') or 'Present'}"
-            if e.get("location"):
-                dates += f"  |  {e['location']}"
-            story.append(Paragraph(_t(dates), meta))
+            story.append(Paragraph(_t(" | ".join(x for x in [e.get("role"), e.get("company"), e.get("location")] if x)), role))
+            story.append(Paragraph(_t(f"{e.get('start_date') or ''} – {e.get('end_date') or 'Present'}"), meta))
             story += bullets(e.get("bullets"))
 
     if tailored.get("projects"):
         story += head("Projects")
         for p in tailored["projects"]:
-            story.append(Paragraph(_t(p.get("title")), role))
-            sub = "  |  ".join(x for x in [" | ".join((p.get("tech_stack") or [])[:5]), p.get("date_range") or ""] if x)
-            if sub:
-                story.append(Paragraph(_t(sub), meta))
-            story += bullets(p.get("bullets"))
+            links = [_link(p.get(k), lbl) for k, lbl in (("live_url", "Live"), ("demo_url", "Demo"), ("github_url", "GitHub"))]
+            links = [x for x in links if x]
+            story.append(Paragraph(_t(p.get("title")) + (f" ({', '.join(links)})" if links else ""), role))
+            text = " ".join(str(b).strip() for b in (p.get("bullets") or []) if b)
+            if text:
+                story.append(Paragraph(_t(text), body))
+            stack = ", ".join((p.get("tech_stack") or [])[:6])
+            if not text and stack:
+                story.append(Paragraph(_t(stack), meta))
 
     if data.get("education"):
         story += head("Education")
         for ed in data["education"]:
             line = " in ".join(x for x in [ed.get("degree"), ed.get("field")] if x)
-            story.append(Paragraph(f"{_t(line)} - <font color='#1B357A'>{_t(ed.get('institution'))}</font>", role))
-            extra = [f"Class of {ed['end_year']}" if ed.get("end_year") else "",
-                     f"GPA: {ed['gpa']}" if ed.get("gpa") else "", ed.get("honors") or ""]
+            story.append(Paragraph(_t(ed.get("institution")), role))
+            years = " – ".join(str(y) for y in (ed.get("start_year"), ed.get("end_year")) if y)
+            extra = [years, f"GPA: {ed['gpa']}" if ed.get("gpa") else "", ed.get("honors") or ""]
             if any(extra):
                 story.append(Paragraph(_t("  |  ".join(x for x in extra if x)), meta))
+            if line:
+                story.append(Paragraph(_t(line), body))
     return story
 
 

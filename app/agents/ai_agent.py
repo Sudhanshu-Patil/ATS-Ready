@@ -176,6 +176,7 @@ Always respond with valid JSON only."""
 
 Rules:
 - skills: extract EVERY skill mentioned anywhere (skills section, bullets, tech stacks); dedupe.
+- experience and projects: keep EVERY bullet or sentence of each role and project, in the resume's own words. Never merge, shorten or drop them to save space.
 - Mark is_primary=true for skills that appear prominently/repeatedly.
 - Dates: keep the resume's own format for start_date/end_date strings.
 - Missing sections → empty arrays. Missing fields → empty string or null.
@@ -187,7 +188,7 @@ Resume text:
 ---
 Return ONLY the JSON object."""
 
-        response = self._call(self.SYSTEM_RESUME_PARSER, prompt, max_tokens=3500)
+        response = self._call(self.SYSTEM_RESUME_PARSER, prompt, max_tokens=6000)   # a dense resume has ~60 skills; 3500 squeezed the bullets out
         try:
             return json.loads(response.strip())
         except json.JSONDecodeError:
