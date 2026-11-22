@@ -222,7 +222,7 @@ def test_thin_pool_is_topped_up_with_labelled_near_matches():
                           titles=["Backend Engineer"], years=4, preferred_locations=["Pune"])
     strong = _job("Backend Engineer", "Pune")
     near = JobListing("Software Developer", "Near Co", "Pune", "https://x.test/near", "x", [],
-                      "We use Python, FastAPI, Docker and AWS daily.", None)      # scores ~56: below 60, above the floor
+                      "We use Python, FastAPI and Docker daily.", None)      # scores ~54: below 60, above the floor
     weak = JobListing("Recruiter", "Weak Co", "Pune", "https://x.test/weak", "x", [], "Hiring people.", None)
     out = rank_jobs([strong, near, weak], profile)
     assert [j.company for j in out][0] == "Co Pune"
